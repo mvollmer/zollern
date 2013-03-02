@@ -8,7 +8,7 @@ void foo (long a,
           long f,
           long g)
 {
-  c = a + b;
+  c = -b;
 }
 
 void main()

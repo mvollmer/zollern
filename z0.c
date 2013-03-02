@@ -384,6 +384,8 @@ emit_syscall ()
   emit_8 (0x05);
 }
 
+int stack_offset;
+
 void
 emit_push (uint64_t val)
 {
@@ -399,6 +401,8 @@ emit_push (uint64_t val)
       emit_8 (0x04);
       emit_32 (val >> 32);
     }
+
+  stack_offset += 1;
 }
 
 void
@@ -406,6 +410,7 @@ emit_pop_a ()
 {
   // pop %rax
   emit_8 (0x58);
+  stack_offset -= 1;
 }
 
 void
@@ -413,6 +418,18 @@ emit_pop_b ()
 {
   // pop %rbx
   emit_8 (0x5B);
+  stack_offset -= 1;
+}
+
+void
+emit_pops (int n)
+{
+  // add $8*N, %rsp
+  emit_8 (0x48);
+  emit_8 (0x81);
+  emit_8 (0xC4);
+  emit_32 (8*n);
+  stack_offset -= n;
 }
 
 void
@@ -420,6 +437,18 @@ emit_push_a ()
 {
   // push %rax
   emit_8 (0x50);
+  stack_offset += 1;
+}
+
+void
+emit_fetch_a (int o)
+{
+  // mov 8*o(%rsp), %rax
+  emit_8 (0x48);
+  emit_8 (0x8B);
+  emit_8 (0x84);
+  emit_8 (0x24);
+  emit_32 (8*o);
 }
 
 void
@@ -459,6 +488,12 @@ void
 emit_neg ()
 {
   emit_pop_a ();
+
+  // neg %rax
+  emit_8 (0x48);
+  emit_8 (0xf7);
+  emit_8 (0xd8);
+
   emit_push_a ();
 }
 
@@ -800,6 +835,52 @@ syntax_error ()
   exitf (1, "%d: syntax error", lineno);
 }
 
+struct obstack local_obs;
+
+typedef struct localvar {
+  struct localvar *next;
+  exp *name;
+  int offset;
+} localvar;
+
+localvar *localvars;
+
+void
+init_locals ()
+{
+  obstack_init (&local_obs);
+  localvars = NULL;
+}
+
+void
+reset_locals ()
+{
+  obstack_free (&local_obs, NULL);
+  init_locals ();
+}
+
+void
+declare_local (exp *sym)
+{
+  if (!is_sym (sym))
+    syntax_error ();
+
+  localvar *l = obstack_alloc (&local_obs, sizeof(localvar));
+  l->name = sym;
+  l->offset = stack_offset;
+  l->next = localvars;
+  localvars = l;
+}
+
+localvar *
+find_local (exp *sym)
+{
+  for (localvar *l = localvars; l; l = l->next)
+    if (l->name == sym)
+      return l;
+  return NULL;
+}
+
 bool
 is_form (exp *e, const char *sym)
 {
@@ -834,6 +915,14 @@ compile_exp (exp *e)
 {
   if (is_inum (e))
     emit_push (inum_val (e));
+  else if (is_sym (e))
+    {
+      localvar *l = find_local (e);
+      if (l == NULL)
+        syntax_error ();
+      emit_fetch_a (stack_offset - l->offset);
+      emit_push_a ();
+    }
   else if (is_form (e, "+"))
     compile_list (rest (e), emit_add, emit_null);
   else if (is_form (e, "-"))
@@ -845,6 +934,66 @@ compile_exp (exp *e)
     }
 }
 
+void
+compile_return ()
+{
+  emit_pop_a ();
+  emit_pops (stack_offset);
+
+  emit_mov_a_rdi ();
+  emit_mov_rax (60);
+  emit_syscall ();
+}
+
+void
+compile_statement (exp *e)
+{
+  if (is_form (e, "return"))
+    {
+      if (is_pair (rest (e)))
+        compile_exp (first (rest (e)));
+      else
+        emit_push (0);
+
+      emit_pop_a ();
+      emit_pops (stack_offset);
+
+      emit_mov_a_rdi ();
+      emit_mov_rax (60);
+      emit_syscall ();
+    }
+  else
+    syntax_error ();
+}
+
+void
+compile_body (exp *e)
+{
+  reset_locals ();
+
+  bool in_decls = true;
+  while (is_pair (e))
+    {
+      exp *s = first (e);
+      if (is_form (s, "var"))
+        {
+          if (!in_decls || !is_pair (rest (s)) || !is_sym (first (rest (s))))
+            syntax_error ();
+          if (is_pair (rest (rest (s))))
+            compile_exp (first (rest (rest (s))));
+          else
+            emit_push (0);
+          declare_local (first (rest (s)));
+        }
+      else
+        {
+          in_decls = false;
+          compile_statement (s);
+        }
+      e = rest (e);
+    }
+}
+
 /* Main */
 
 void
@@ -852,18 +1001,15 @@ main ()
 {
   init_exp();
   init_code ();
+  init_locals ();
 
+  exp *body = nil ();
   exp *e;
   while (!is_end_of_file (e = read_exp ()))
-    {
-      compile_exp (e);
-      reset_exp ();
+    body = cons (e, body);
 
-      emit_pop_a ();
-      emit_mov_a_rdi ();
-      emit_mov_rax (60);
-      emit_syscall ();
-    }
+  compile_body (reverse (body));
 
   dump_code ();
+  exit (0);
 }
