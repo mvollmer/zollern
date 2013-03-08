@@ -1,9 +1,9 @@
 /*
    Z0 -- Bootstrap language.
 
-   The first language is very primitive: there are no types and no
-   memory management, for example.  It is compiled to machine code by
-   this program.
+   The first language is very primitive: there are no types, no memory
+   management, and only primitive control structures.  It is compiled
+   to machine code by this program.
 
    This language is only used to write one program: A compiler for a
    better language.  As such, it doesn't have much in the way of
@@ -22,10 +22,6 @@
 
    Data definition.
 
-   - (const SYMBOL EXPR)
-
-   Constant definition.
-
  # Local definitions
 
    - (var SYMBOL EXPR)
@@ -39,22 +35,15 @@
 
    A label.  (Note that labels can not appear between definitions.)
 
-   - (goto SYMBOL)
+   - (goto SYMBOL EXPR)
 
-   Transfer control to the named label.
+   Transfer control to the named label if the given expression is
+   non-zero.
 
    - (return EXPR)
 
    Return the value of EXPR from the current function.  If the end of
    a functions body is reached, the return value is 0.
-
-   - (if EXPR STATEMENT STATEMENT)
-
-   The usual conditional execution.
-
-   - (do STATMENT...)
-
-   A sequence of statements.
 
    - (= SYMBOL EXPR)
 
@@ -180,19 +169,24 @@ xmalloc (size_t size)
 
 /* Machine code */
 
-struct obstack code_obs;
+uint8_t *code;
+uint8_t *code_ptr;
+uint8_t *code_end;
+uint64_t code_offset;
 
 void
 init_code()
 {
-  obstack_init (&code_obs);
+  code = xmalloc (1024*1024);
+  code_ptr = code;
+  code_end = code + 1024*1024;
+  code_offset = 0;
 }
 
 void
 dump_code()
 {
-  uint64_t code_size = obstack_object_size (&code_obs);
-  void *code = obstack_finish (&code_obs);
+  uint64_t code_size = code_offset;
 
   struct file {
     Elf64_Ehdr h;
@@ -321,13 +315,16 @@ dump_code()
       || write (1, code, code_size) != code_size)
     exitf(1, "Can't write code: %m");
 
-  obstack_free (&code_obs, code);
+  free (code);
 }
 
 void
 emit_8 (uint8_t b)
 {
-  obstack_1grow (&code_obs, b);
+  *code_ptr++ = b;
+  if (code_ptr >= code_end)
+    exitf (1, "too large, congrats");
+  code_offset += 1;
 }
 
 void
@@ -449,6 +446,17 @@ emit_fetch_a (int o)
   emit_8 (0x84);
   emit_8 (0x24);
   emit_32 (8*o);
+}
+
+uint64_t
+emit_jne_a ()
+{
+  uint64_t off;
+  emit_8 (0x0f);
+  emit_8 (0x85);
+  off = code_offset;
+  emit_32 (0);
+  return off;
 }
 
 void
@@ -689,42 +697,54 @@ reverse (exp *e)
   return r;
 }
 
+int
+len (exp *e)
+{
+  int l = 0;
+  while (is_pair (e))
+    {
+      e = rest (e);
+      l += 1;
+    }
+  return l;
+}
+
 /* Reading and writing */
 
 void
-write_exp (exp *e)
+write_exp (FILE *f, exp *e)
 {
   if (is_sym (e))
     {
       // XXX - escape things properly
-      printf ("%s", sym_name (e));
+      fprintf (f, "%s", sym_name (e));
     }
   else if (is_inum (e))
     {
-      printf ("%lu", inum_val(e));
+      fprintf (f, "%lu", inum_val(e));
     }
   else if (is_dnum (e))
     {
-      printf ("%g", dnum_val(e));
+      fprintf (f, "%g", dnum_val(e));
     }
   else if (is_nil (e) || is_pair (e))
     {
       bool need_space = false;
-      printf ("(");
+      fprintf (f, "(");
       while (is_pair (e))
         {
           if (need_space)
-            printf (" ");
-          write_exp (e->first);
+            fprintf (f, " ");
+          write_exp (f, e->first);
           e = e->rest;
           need_space = true;
         }
-      printf (")");
+      fprintf (f, ")");
     }
   else if (is_end_of_file (e))
-    printf ("<eof>");
+    fprintf (f, "<eof>");
   else
-    printf ("<???>");
+    fprintf (f, "<???>");
 }
 
 #define token_size 1024
@@ -830,26 +850,44 @@ read_exp ()
 /* Compiler */
 
 void
-syntax_error ()
+error (exp *form, const char *msg)
 {
-  exitf (1, "%d: syntax error", lineno);
+  fprintf (stderr, "%d: ", lineno);
+  write_exp (stderr, form);
+  fprintf (stderr, "\n");
+  exitf (1, "error: %s", msg);
 }
 
 struct obstack local_obs;
 
-typedef struct localvar {
-  struct localvar *next;
+typedef struct local_var {
+  struct local_var *next;
   exp *name;
   int offset;
-} localvar;
+} local_var;
 
-localvar *localvars;
+typedef struct local_labdef {
+  struct local_labdef *next;
+  struct local_labref *refs;
+  exp *name;
+  uint64_t offset;
+  bool defined;
+} local_labdef;
+
+typedef struct local_labref {
+  struct local_labref *next;
+  uint64_t offset;
+} local_labref;
+
+local_var *local_vars;
+local_labdef *local_labs;
 
 void
 init_locals ()
 {
   obstack_init (&local_obs);
-  localvars = NULL;
+  local_vars = NULL;
+  local_labs = NULL;
 }
 
 void
@@ -860,25 +898,72 @@ reset_locals ()
 }
 
 void
-declare_local (exp *sym)
+declare_local_var (exp *sym)
 {
   if (!is_sym (sym))
-    syntax_error ();
+    error (sym, "variable name must be symbol");
 
-  localvar *l = obstack_alloc (&local_obs, sizeof(localvar));
+  local_var *l = obstack_alloc (&local_obs, sizeof(local_var));
   l->name = sym;
   l->offset = stack_offset;
-  l->next = localvars;
-  localvars = l;
+  l->next = local_vars;
+  local_vars = l;
 }
 
-localvar *
-find_local (exp *sym)
+local_var *
+find_local_var (exp *sym)
 {
-  for (localvar *l = localvars; l; l = l->next)
+  for (local_var *l = local_vars; l; l = l->next)
     if (l->name == sym)
       return l;
   return NULL;
+}
+
+local_labdef *
+get_local_lab (exp *sym)
+{
+  if (!is_sym (sym))
+    error (sym, "label name must be symbol");
+
+  for (local_labdef *l = local_labs; l; l = l->next)
+    if (l->name == sym)
+      return l;
+
+  local_labdef *l = obstack_alloc (&local_obs, sizeof(local_labdef));
+  l->name = sym;
+  l->defined = false;
+  l->next = local_labs;
+  local_labs = l;
+}
+
+void
+define_local_lab (exp *sym)
+{
+  local_labdef *l = get_local_lab (sym);
+  l->offset = code_offset;
+  l->defined = true;
+}
+
+void
+reference_local_lab (exp *sym, uint64_t offset)
+{
+  local_labdef *l = get_local_lab (sym);
+  local_labref *r = obstack_alloc (&local_obs, sizeof(local_labref));
+  r->offset = offset;
+  r->next = l->refs;
+  l->refs = r;
+}
+
+void
+resolve_local_labs ()
+{
+  for (local_labdef *l = local_labs; l; l = l->next)
+    {
+      if (!l->defined)
+        exitf (1, "label %s is not defined", sym_name (l->name));
+      for (local_labref *r = l->refs; r; r = r->next)
+        *(uint32_t *)(code + r->offset) = l->offset - r->offset - 4;
+    }
 }
 
 bool
@@ -894,7 +979,7 @@ void
 compile_list (exp *e, void (*emit_op) (), void (*emit_single) ())
 {
   if (is_nil (e))
-    syntax_error ();
+    error (e, "arguments can't be empty");
   compile_exp (first (e));
   exp *r = rest (e);
   if (is_nil (r))
@@ -917,9 +1002,9 @@ compile_exp (exp *e)
     emit_push (inum_val (e));
   else if (is_sym (e))
     {
-      localvar *l = find_local (e);
+      local_var *l = find_local_var (e);
       if (l == NULL)
-        syntax_error ();
+        error (e, "undefined variable");
       emit_fetch_a (stack_offset - l->offset);
       emit_push_a ();
     }
@@ -928,10 +1013,7 @@ compile_exp (exp *e)
   else if (is_form (e, "-"))
     compile_list (rest (e), emit_sub, emit_neg);
   else
-    {
-      write_exp (e);
-      syntax_error ();
-    }
+    error (e, "syntax");
 }
 
 void
@@ -948,12 +1030,29 @@ compile_return ()
 void
 compile_statement (exp *e)
 {
-  if (is_form (e, "return"))
+  if (is_sym (e))
     {
-      if (is_pair (rest (e)))
+      define_local_lab (e);
+    }
+  else if (is_form (e, "goto"))
+    {
+      if (len (e) != 3)
+        error (e, "goto needs two arguments");
+      exp *lab = first (rest (e));
+      exp *cond = first (rest (rest (e)));
+      compile_exp (cond);
+      emit_pop_a ();
+      uint64_t offset = emit_jne_a ();
+      reference_local_lab (lab, offset);
+    }
+  else if (is_form (e, "return"))
+    {
+      if (len (e) == 2)
         compile_exp (first (rest (e)));
-      else
+      else if (len (e) == 1)
         emit_push (0);
+      else
+        error (e, "return needs 0 or 1 argument");
 
       emit_pop_a ();
       emit_pops (stack_offset);
@@ -963,7 +1062,7 @@ compile_statement (exp *e)
       emit_syscall ();
     }
   else
-    syntax_error ();
+    error (e, "syntax");
 }
 
 void
@@ -977,13 +1076,15 @@ compile_body (exp *e)
       exp *s = first (e);
       if (is_form (s, "var"))
         {
-          if (!in_decls || !is_pair (rest (s)) || !is_sym (first (rest (s))))
-            syntax_error ();
-          if (is_pair (rest (rest (s))))
+          if (!in_decls)
+            error (s, "variable declarations must be at start of body");
+          if (len (s) == 3)
             compile_exp (first (rest (rest (s))));
-          else
+          else if (len (s) == 2)
             emit_push (0);
-          declare_local (first (rest (s)));
+          else
+            error (s, "variable declarations must have 1 or 2 arguments");
+          declare_local_var (first (rest (s)));
         }
       else
         {
@@ -992,6 +1093,10 @@ compile_body (exp *e)
         }
       e = rest (e);
     }
+  emit_push (0);
+  compile_return ();
+
+  resolve_local_labs ();
 }
 
 /* Main */
