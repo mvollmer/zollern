@@ -1,2 +1,5 @@
-again
-(goto again 1)
+(fun (foo)
+  (return 12))
+
+(fun (main)
+  (return (+ (foo) 1)))

@@ -383,11 +383,12 @@ emit_syscall ()
 
 int stack_offset;
 
-void
+uint64_t
 emit_push (uint64_t val)
 {
   // pushq LO
   emit_8 (0x68);
+  uint64_t off = code_offset;
   emit_32 (val & 0xFFFFFFFF);
   if (val >> 32)
     {
@@ -400,6 +401,7 @@ emit_push (uint64_t val)
     }
 
   stack_offset += 1;
+  return off;
 }
 
 void
@@ -421,12 +423,15 @@ emit_pop_b ()
 void
 emit_pops (int n)
 {
-  // add $8*N, %rsp
-  emit_8 (0x48);
-  emit_8 (0x81);
-  emit_8 (0xC4);
-  emit_32 (8*n);
-  stack_offset -= n;
+  if (n != 0)
+    {
+      // add $8*N, %rsp
+      emit_8 (0x48);
+      emit_8 (0x81);
+      emit_8 (0xC4);
+      emit_32 (8*n);
+      stack_offset -= n;
+    }
 }
 
 void
@@ -448,6 +453,17 @@ emit_fetch_a (int o)
   emit_32 (8*o);
 }
 
+void
+emit_store_a (int o)
+{
+  // mov %rax, 8*o(%rsp)
+  emit_8 (0x48);
+  emit_8 (0x89);
+  emit_8 (0x84);
+  emit_8 (0x24);
+  emit_32 (8*o);
+}
+
 uint64_t
 emit_jne_a ()
 {
@@ -457,6 +473,22 @@ emit_jne_a ()
   off = code_offset;
   emit_32 (0);
   return off;
+}
+
+uint64_t
+emit_call ()
+{
+  uint64_t off;
+  emit_8 (0xe8);
+  off = code_offset;
+  emit_32 (0);
+  return off;
+}
+
+void
+emit_ret ()
+{
+  emit_8 (0xc3);
 }
 
 void
@@ -604,6 +636,18 @@ exp *
 rest (exp *e)
 {
   return e->rest;
+}
+
+exp *
+second (exp *e)
+{
+  return first (rest (e));
+}
+
+exp *
+third (exp *e)
+{
+  return first (rest (rest (e)));
 }
 
 exp *
@@ -858,88 +902,151 @@ error (exp *form, const char *msg)
   exitf (1, "error: %s", msg);
 }
 
-struct obstack local_obs;
+struct obstack global_decl_obs;
+struct obstack local_decl_obs;
 
-typedef struct local_var {
-  struct local_var *next;
+typedef struct decl {
+  struct decl *next;
+  enum {
+    global_func,
+    local_var
+  } kind;
   exp *name;
   int offset;
-} local_var;
+  bool defined;
+  struct funcref *refs;
+} decl;
 
-typedef struct local_labdef {
-  struct local_labdef *next;
-  struct local_labref *refs;
+typedef struct funcref {
+  struct funcref *next;
+  uint64_t offset;
+} funcref;
+
+typedef struct labdef {
+  struct labdef *next;
+  struct labref *refs;
   exp *name;
   uint64_t offset;
   bool defined;
-} local_labdef;
+} labdef;
 
-typedef struct local_labref {
-  struct local_labref *next;
+typedef struct labref {
+  struct labref *next;
   uint64_t offset;
-} local_labref;
+} labref;
 
-local_var *local_vars;
-local_labdef *local_labs;
+decl *global_decls;
+decl *local_decls;
+labdef *labdefs;
 
 void
-init_locals ()
+init_decls ()
 {
-  obstack_init (&local_obs);
-  local_vars = NULL;
-  local_labs = NULL;
+  obstack_init (&global_decl_obs);
+  global_decls = NULL;
+
+  obstack_init (&local_decl_obs);
+  local_decls = NULL;
+  labdefs = NULL;
 }
 
 void
 reset_locals ()
 {
-  obstack_free (&local_obs, NULL);
-  init_locals ();
+  obstack_free (&local_decl_obs, NULL);
+  obstack_init (&local_decl_obs);
+  local_decls = NULL;
+  labdefs = NULL;
 }
 
 void
-declare_local_var (exp *sym)
+declare_local_var (exp *sym, int offset)
 {
   if (!is_sym (sym))
     error (sym, "variable name must be symbol");
 
-  local_var *l = obstack_alloc (&local_obs, sizeof(local_var));
-  l->name = sym;
-  l->offset = stack_offset;
-  l->next = local_vars;
-  local_vars = l;
+  decl *d = obstack_alloc (&local_decl_obs, sizeof(decl));
+  d->kind = local_var;
+  d->name = sym;
+  d->offset = offset;
+  d->next = local_decls;
+  local_decls = d;
 }
 
-local_var *
-find_local_var (exp *sym)
+decl *
+find_decl (exp *sym)
 {
-  for (local_var *l = local_vars; l; l = l->next)
-    if (l->name == sym)
-      return l;
-  return NULL;
+  for (decl *d = local_decls; d; d = d->next)
+    if (d->name == sym)
+      return d;
+
+  for (decl *d = global_decls; d; d = d->next)
+    if (d->name == sym)
+      return d;
+
+  decl *d = obstack_alloc (&global_decl_obs, sizeof (decl));
+  d->kind = global_func;
+  d->name = sym;
+  d->defined = false;
+  d->next = global_decls;
+  global_decls = d;
+  return d;
 }
 
-local_labdef *
-get_local_lab (exp *sym)
+labdef *
+get_labdef (exp *sym)
 {
   if (!is_sym (sym))
     error (sym, "label name must be symbol");
 
-  for (local_labdef *l = local_labs; l; l = l->next)
+  for (labdef *l = labdefs; l; l = l->next)
     if (l->name == sym)
       return l;
 
-  local_labdef *l = obstack_alloc (&local_obs, sizeof(local_labdef));
+  labdef *l = obstack_alloc (&local_decl_obs, sizeof(labdef));
   l->name = sym;
   l->defined = false;
-  l->next = local_labs;
-  local_labs = l;
+  l->next = labdefs;
+  labdefs = l;
+}
+
+void
+define_global_func (exp *sym)
+{
+  decl *d = find_decl (sym);
+  if (d->kind != global_func)
+    error (sym, "not a function");
+  d->offset = code_offset;
+  d->defined = true;
+}
+
+void
+reference_global_func (decl *d, uint64_t offset)
+{
+  funcref *r = obstack_alloc (&global_decl_obs, sizeof(funcref));
+  r->offset = offset;
+  r->next = d->refs;
+  d->refs = r;
+}
+
+void
+resolve_global_funcs ()
+{
+  for (decl *d = global_decls; d; d = d->next)
+    {
+      if (d->kind != global_func)
+        continue;
+      if (!d->defined)
+        exitf (1, "function %s is not defined", sym_name (d->name));
+      for (funcref *r = d->refs; r; r = r->next)
+        *(uint32_t *)(code + r->offset) = d->offset - r->offset - 4;
+    }
 }
 
 void
 define_local_lab (exp *sym)
 {
-  local_labdef *l = get_local_lab (sym);
+  labdef *l = get_labdef (sym);
   l->offset = code_offset;
   l->defined = true;
 }
@@ -947,8 +1054,8 @@ define_local_lab (exp *sym)
 void
 reference_local_lab (exp *sym, uint64_t offset)
 {
-  local_labdef *l = get_local_lab (sym);
-  local_labref *r = obstack_alloc (&local_obs, sizeof(local_labref));
+  labdef *l = get_labdef (sym);
+  labref *r = obstack_alloc (&local_decl_obs, sizeof(labref));
   r->offset = offset;
   r->next = l->refs;
   l->refs = r;
@@ -957,11 +1064,11 @@ reference_local_lab (exp *sym, uint64_t offset)
 void
 resolve_local_labs ()
 {
-  for (local_labdef *l = local_labs; l; l = l->next)
+  for (labdef *l = labdefs; l; l = l->next)
     {
       if (!l->defined)
         exitf (1, "label %s is not defined", sym_name (l->name));
-      for (local_labref *r = l->refs; r; r = r->next)
+      for (labref *r = l->refs; r; r = r->next)
         *(uint32_t *)(code + r->offset) = l->offset - r->offset - 4;
     }
 }
@@ -996,22 +1103,62 @@ compile_list (exp *e, void (*emit_op) (), void (*emit_single) ())
 }
 
 void
+compile_exps_reverse (exp *e)
+{
+  if (is_pair (e))
+    {
+      compile_exps_reverse (rest (e));
+      compile_exp (first (e));
+    }
+}
+
+void
+compile_call (exp *e)
+{
+  compile_exps_reverse (rest (e));
+  if (is_sym (first (e)))
+    {
+      decl *d = find_decl (first (e));
+      if (d->kind == global_func)
+        {
+          uint64_t off = emit_call ();
+          reference_global_func (d, off);
+        }
+      else
+        error (first (e), "sorry");
+    }
+  else
+    error (first (e), "sorry");
+
+  emit_pops (len(e)-1);
+  emit_push_a ();
+}
+
+void
 compile_exp (exp *e)
 {
   if (is_inum (e))
     emit_push (inum_val (e));
   else if (is_sym (e))
     {
-      local_var *l = find_local_var (e);
-      if (l == NULL)
-        error (e, "undefined variable");
-      emit_fetch_a (stack_offset - l->offset);
-      emit_push_a ();
+      decl *d = find_decl (e);
+      if (d->kind == local_var)
+        {
+          emit_fetch_a (stack_offset - d->offset);
+          emit_push_a ();
+        }
+      else if (d->kind == global_func)
+        {
+          uint64_t offset = emit_push (0);
+          reference_global_func (d, offset);
+        }
     }
   else if (is_form (e, "+"))
     compile_list (rest (e), emit_add, emit_null);
   else if (is_form (e, "-"))
     compile_list (rest (e), emit_sub, emit_neg);
+  else if (is_pair (e))
+    compile_call (e);
   else
     error (e, "syntax");
 }
@@ -1021,25 +1168,33 @@ compile_return ()
 {
   emit_pop_a ();
   emit_pops (stack_offset);
-
-  emit_mov_a_rdi ();
-  emit_mov_rax (60);
-  emit_syscall ();
+  emit_ret ();
 }
 
-void
+bool
 compile_statement (exp *e)
 {
   if (is_sym (e))
     {
       define_local_lab (e);
     }
+  else if (is_form (e, "="))
+    {
+      if (len (e) != 3)
+        error (e, "'=' needs two arguments");
+      decl *d = find_decl (second (e));
+      if (d->kind != local_var)
+        error (e, "can only assign to variables");
+      compile_exp (third (e));
+      emit_pop_a ();
+      emit_store_a (stack_offset - d->offset);
+    }
   else if (is_form (e, "goto"))
     {
       if (len (e) != 3)
         error (e, "goto needs two arguments");
-      exp *lab = first (rest (e));
-      exp *cond = first (rest (rest (e)));
+      exp *lab = second (e);
+      exp *cond = third (e);
       compile_exp (cond);
       emit_pop_a ();
       uint64_t offset = emit_jne_a ();
@@ -1048,55 +1203,96 @@ compile_statement (exp *e)
   else if (is_form (e, "return"))
     {
       if (len (e) == 2)
-        compile_exp (first (rest (e)));
+        compile_exp (second (e));
       else if (len (e) == 1)
         emit_push (0);
       else
         error (e, "return needs 0 or 1 argument");
 
-      emit_pop_a ();
-      emit_pops (stack_offset);
-
-      emit_mov_a_rdi ();
-      emit_mov_rax (60);
-      emit_syscall ();
+      compile_return ();
+      return true;
     }
   else
     error (e, "syntax");
+
+  return false;
 }
 
 void
-compile_body (exp *e)
+compile_function (exp *e)
 {
+  if (len (e) < 2)
+    error (e, "syntax error");
+
+  exp *head = second (e);
+  exp *body = rest (rest (e));
+
+  if (len (head) < 1)
+    error (e, "syntax error");
+
   reset_locals ();
 
-  bool in_decls = true;
-  while (is_pair (e))
+  define_global_func (first (head));
+  int off = 0;
+  for (exp *params = rest (head); is_pair (params); params = rest (params))
     {
-      exp *s = first (e);
+      declare_local_var (first (params), off);
+      off -= 1;
+    }
+
+  bool in_decls = true;
+  bool did_return = false;
+  while (is_pair (body))
+    {
+      exp *s = first (body);
       if (is_form (s, "var"))
         {
           if (!in_decls)
             error (s, "variable declarations must be at start of body");
           if (len (s) == 3)
-            compile_exp (first (rest (rest (s))));
+            compile_exp (third (s));
           else if (len (s) == 2)
             emit_push (0);
           else
             error (s, "variable declarations must have 1 or 2 arguments");
-          declare_local_var (first (rest (s)));
+          declare_local_var (second (s), stack_offset);
         }
       else
         {
           in_decls = false;
-          compile_statement (s);
+          did_return = compile_statement (s);
         }
-      e = rest (e);
+      body = rest (body);
     }
-  emit_push (0);
-  compile_return ();
+
+  if (!did_return)
+    {
+      emit_push (0);
+      compile_return ();
+    }
 
   resolve_local_labs ();
+}
+
+void
+compile_global (exp *e)
+{
+  if (is_form (e, "fun"))
+    compile_function (e);
+  else
+    error (e, "syntax error");
+}
+
+void
+compile_start ()
+{
+  decl *d = find_decl (sym ("main"));
+  uint64_t off = emit_call (0);
+  reference_global_func (d, off);
+
+  emit_mov_a_rdi ();
+  emit_mov_rax (60);
+  emit_syscall ();
 }
 
 /* Main */
@@ -1106,14 +1302,15 @@ main ()
 {
   init_exp();
   init_code ();
-  init_locals ();
+  init_decls ();
 
-  exp *body = nil ();
+  compile_start ();
+
   exp *e;
   while (!is_end_of_file (e = read_exp ()))
-    body = cons (e, body);
+    compile_global (e);
 
-  compile_body (reverse (body));
+  resolve_global_funcs ();
 
   dump_code ();
   exit (0);
