@@ -2,7 +2,7 @@
   (syscall 1 1 str len))
 
 (fun (main)
-  (write hello (- hello_end hello)))
+  (write hello (- hello:end hello)))
 
 (data hello (b 'Hello World' 10))
-(data hello_end)
+(data hello:end)
