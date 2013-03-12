@@ -1,5 +1,8 @@
-(fun (foo)
-  (return 12))
+(fun (write str len)
+  (syscall 1 1 str len))
 
 (fun (main)
-  (return (+ (foo) 1)))
+  (write hello (- hello_end hello)))
+
+(data hello (b 'Hello World' 10))
+(data hello_end)

@@ -426,6 +426,57 @@ emit_pop_b ()
 }
 
 void
+emit_pop_rdi ()
+{
+  // pop %rdi
+  emit_8 (0x5f);
+  stack_offset -= 1;
+}
+
+void
+emit_pop_rsi ()
+{
+  // pop %rsi
+  emit_8 (0x5e);
+  stack_offset -= 1;
+}
+
+void
+emit_pop_rdx ()
+{
+  // pop %rdx
+  emit_8 (0x5a);
+  stack_offset -= 1;
+}
+
+void
+emit_pop_r10 ()
+{
+  // pop %r10
+  emit_8 (0x41);
+  emit_8 (0x5a);
+  stack_offset -= 1;
+}
+
+void
+emit_pop_r8 ()
+{
+  // pop %r8
+  emit_8 (0x41);
+  emit_8 (0x58);
+  stack_offset -= 1;
+}
+
+void
+emit_pop_r9 ()
+{
+  // pop %r9
+  emit_8 (0x41);
+  emit_8 (0x59);
+  stack_offset -= 1;
+}
+
+void
 emit_pops (int n)
 {
   if (n != 0)
@@ -970,6 +1021,7 @@ reset_locals ()
   obstack_init (&local_decl_obs);
   local_decls = NULL;
   labdefs = NULL;
+  stack_offset = 0;
 }
 
 void
@@ -1152,6 +1204,25 @@ compile_call (exp *e)
 }
 
 void
+compile_syscall (exp *e)
+{
+  int l = len (rest (e));
+  if (l > 7)
+    error (e, "too many arguments to syscall");
+
+  compile_exps_reverse (rest (e));
+  if (l > 0) emit_pop_a ();
+  if (l > 1) emit_pop_rdi ();
+  if (l > 2) emit_pop_rsi ();
+  if (l > 3) emit_pop_rdx ();
+  if (l > 4) emit_pop_r10 ();
+  if (l > 5) emit_pop_r8 ();
+  if (l > 6) emit_pop_r9 ();
+  emit_syscall ();
+  emit_push_a ();
+}
+
+void
 compile_exp (exp *e)
 {
   if (is_inum (e))
@@ -1176,6 +1247,8 @@ compile_exp (exp *e)
     compile_list (rest (e), emit_add, emit_null);
   else if (is_form (e, "-"))
     compile_list (rest (e), emit_sub, emit_neg);
+  else if (is_form (e, "syscall"))
+    compile_syscall (e);
   else if (is_pair (e))
     compile_call (e);
   else
@@ -1232,7 +1305,7 @@ compile_statement (exp *e)
       return true;
     }
   else
-    error (e, "syntax");
+    compile_exp (e);
 
   return false;
 }
@@ -1252,7 +1325,7 @@ compile_function (exp *e)
   reset_locals ();
 
   define_global_func (first (head));
-  int off = 0;
+  int off = -1;
   for (exp *params = rest (head); is_pair (params); params = rest (params))
     {
       declare_local_var (first (params), off);
@@ -1294,10 +1367,48 @@ compile_function (exp *e)
 }
 
 void
+compile_data (exp *e)
+{
+  if (len (e) < 2)
+    error (e, "syntax");
+
+  exp *sym = second (e);
+
+  define_global_func (sym);
+
+  e = rest (rest (e));
+  while (is_pair (e))
+    {
+      if (is_form (first (e), "b"))
+        {
+          exp *b = rest (first (e));
+          while (is_pair (b))
+            {
+              if (is_sym (first (b)))
+                {
+                  for (const char *bytes = sym_name (first (b)); *bytes; bytes++)
+                    emit_8 (*bytes);
+                }
+              else if (is_inum (first (b)))
+                emit_8 (inum_val (first (b)));
+              else
+                error (b, "syntax");
+              b = rest (b);
+            }
+        }
+      else
+        error (e, "sorry");
+      e = rest (e);
+    }
+}
+
+void
 compile_global (exp *e)
 {
   if (is_form (e, "fun"))
     compile_function (e);
+  else if (is_form (e, "data"))
+    compile_data (e);
   else
     error (e, "syntax error");
 }
@@ -1305,13 +1416,8 @@ compile_global (exp *e)
 void
 compile_start ()
 {
-  decl *d = find_decl (sym ("main"));
-  uint64_t off = emit_call (0);
-  reference_global_func (d, off);
-
-  emit_mov_a_rdi ();
-  emit_mov_rax (60);
-  emit_syscall ();
+  exp *e = cons (sym ("syscall"), cons (inum (60), cons (cons (sym ("main"), nil ()), nil ())));
+  compile_exp (e);
 }
 
 /* Main */
