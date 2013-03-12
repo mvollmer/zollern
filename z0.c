@@ -174,6 +174,17 @@ uint8_t *code_ptr;
 uint8_t *code_end;
 uint64_t code_offset;
 
+struct file {
+  Elf64_Ehdr h;
+  Elf64_Phdr ph[2];
+  Elf64_Shdr sh[4];
+  Elf64_Sym symtab[3];
+  char strtab[5*16];
+};
+
+#define CODE_VADDR 0x40000000
+uint64_t code_start = CODE_VADDR + sizeof(struct file);
+
 void
 init_code()
 {
@@ -188,15 +199,9 @@ dump_code()
 {
   uint64_t code_size = code_offset;
 
-  struct file {
-    Elf64_Ehdr h;
-    Elf64_Phdr ph[2];
-    Elf64_Shdr sh[4];
-    Elf64_Sym symtab[3];
-    char strtab[5*16];
-  } f;
+  struct file f;
 
-  uint64_t vaddr = 0x40000000;
+  uint64_t vaddr = CODE_VADDR;
 
   memset (f.h.e_ident, 0, sizeof (f.h.e_ident));
   f.h.e_ident[EI_MAG0] = ELFMAG0;
@@ -483,6 +488,13 @@ emit_call ()
   off = code_offset;
   emit_32 (0);
   return off;
+}
+
+void
+emit_call_a ()
+{
+  emit_8 (0xFF);
+  emit_8 (0xD0);
 }
 
 void
@@ -920,6 +932,7 @@ typedef struct decl {
 typedef struct funcref {
   struct funcref *next;
   uint64_t offset;
+  bool absolute;
 } funcref;
 
 typedef struct labdef {
@@ -1025,6 +1038,17 @@ reference_global_func (decl *d, uint64_t offset)
 {
   funcref *r = obstack_alloc (&global_decl_obs, sizeof(funcref));
   r->offset = offset;
+  r->absolute = false;
+  r->next = d->refs;
+  d->refs = r;
+}
+
+void
+reference_global_func_abs (decl *d, uint64_t offset)
+{
+  funcref *r = obstack_alloc (&global_decl_obs, sizeof(funcref));
+  r->offset = offset;
+  r->absolute = true;
   r->next = d->refs;
   d->refs = r;
 }
@@ -1039,7 +1063,12 @@ resolve_global_funcs ()
       if (!d->defined)
         exitf (1, "function %s is not defined", sym_name (d->name));
       for (funcref *r = d->refs; r; r = r->next)
-        *(uint32_t *)(code + r->offset) = d->offset - r->offset - 4;
+        {
+          if (r->absolute)
+            *(uint32_t *)(code + r->offset) = code_start + d->offset;
+          else
+            *(uint32_t *)(code + r->offset) = d->offset - r->offset - 4;
+        }
     }
 }
 
@@ -1115,21 +1144,9 @@ compile_exps_reverse (exp *e)
 void
 compile_call (exp *e)
 {
-  compile_exps_reverse (rest (e));
-  if (is_sym (first (e)))
-    {
-      decl *d = find_decl (first (e));
-      if (d->kind == global_func)
-        {
-          uint64_t off = emit_call ();
-          reference_global_func (d, off);
-        }
-      else
-        error (first (e), "sorry");
-    }
-  else
-    error (first (e), "sorry");
-
+  compile_exps_reverse (e);
+  emit_pop_a ();
+  emit_call_a ();
   emit_pops (len(e)-1);
   emit_push_a ();
 }
@@ -1150,8 +1167,10 @@ compile_exp (exp *e)
       else if (d->kind == global_func)
         {
           uint64_t offset = emit_push (0);
-          reference_global_func (d, offset);
+          reference_global_func_abs (d, offset);
         }
+      else
+        error (e, "internal error");
     }
   else if (is_form (e, "+"))
     compile_list (rest (e), emit_add, emit_null);
