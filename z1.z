@@ -1,5 +1,5 @@
-(fun (write str len)
-  (syscall 1 1 str len))
+(fun (write buf len)
+  (return (syscall 1 1 buf len)))
 
 (fun (main)
   (write hello (- hello:end hello)))

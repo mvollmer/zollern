@@ -353,30 +353,15 @@ emit_64 (uint64_t o)
   emit_32 (o >> 32);
 }
 
-void
-emit_mov_rdi (uint32_t t)
-{
-  emit_8 (0x48);
-  emit_8 (0xC7);
-  emit_8 (0xC7);
-  emit_32 (t);
-}
-
-void
-emit_mov_rax (uint32_t t)
+uint64_t
+emit_set (uint32_t t)
 {
   emit_8 (0x48);
   emit_8 (0xC7);
   emit_8 (0xC0);
+  uint64_t off = code_offset;
   emit_32 (t);
-}
-
-void
-emit_mov_a_rdi ()
-{
-  emit_8 (0x48);
-  emit_8 (0x89);
-  emit_8 (0xC7);
+  return off;
 }
 
 void
@@ -388,40 +373,11 @@ emit_syscall ()
 
 int stack_offset;
 
-uint64_t
-emit_push (uint64_t val)
-{
-  // pushq LO
-  emit_8 (0x68);
-  uint64_t off = code_offset;
-  emit_32 (val & 0xFFFFFFFF);
-  if (val >> 32)
-    {
-      // movl HI,4(%rsp)
-      emit_8 (0xc7);
-      emit_8 (0x44);
-      emit_8 (0x24);
-      emit_8 (0x04);
-      emit_32 (val >> 32);
-    }
-
-  stack_offset += 1;
-  return off;
-}
-
 void
 emit_pop_a ()
 {
   // pop %rax
   emit_8 (0x58);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_b ()
-{
-  // pop %rbx
-  emit_8 (0x5B);
   stack_offset -= 1;
 }
 
@@ -560,44 +516,42 @@ emit_null ()
 }
 
 void
-emit_add ()
+emit_pop_b ()
 {
-  emit_pop_a ();
+  // pop %rbx
+  emit_8 (0x5B);
+  stack_offset -= 1;
+}
+
+void
+emit_pop_add ()
+{
   emit_pop_b ();
 
   // add %rbx, %rax
   emit_8 (0x48);
   emit_8 (0x01);
   emit_8 (0xd8);
-
-  emit_push_a ();
 }
 
 void
-emit_sub ()
+emit_pop_sub ()
 {
   emit_pop_b ();
-  emit_pop_a ();
 
   // sub %rbx, %rax
   emit_8 (0x48);
   emit_8 (0x29);
   emit_8 (0xd8);
-
-  emit_push_a ();
 }
 
 void
 emit_neg ()
 {
-  emit_pop_a ();
-
   // neg %rax
   emit_8 (0x48);
   emit_8 (0xf7);
   emit_8 (0xd8);
-
-  emit_push_a ();
 }
 
 /* Lists */
@@ -1161,57 +1115,37 @@ is_form (exp *e, const char *sym)
           is_sym (first (e)) && strcmp (sym_name (first (e)), sym) == 0);
 }
 
+// Compiling an expression leaves the result in %rax.
+
 void compile_exp (exp *e);
 
 void
-compile_list (exp *e, void (*emit_op) (), void (*emit_single) ())
+compile_exps (exp *e)
 {
-  if (is_nil (e))
-    error (e, "arguments can't be empty");
+  if (is_pair (rest (e)))
+    {
+      compile_exps (rest (e));
+      emit_push_a ();
+    }
   compile_exp (first (e));
-  exp *r = rest (e);
-  if (is_nil (r))
-    emit_single ();
-  else
-    {
-      while (!is_nil (r))
-        {
-          compile_exp (first (r));
-          emit_op ();
-          r = rest (r);
-        }
-    }
-}
-
-void
-compile_exps_reverse (exp *e)
-{
-  if (is_pair (e))
-    {
-      compile_exps_reverse (rest (e));
-      compile_exp (first (e));
-    }
 }
 
 void
 compile_call (exp *e)
 {
-  compile_exps_reverse (e);
-  emit_pop_a ();
+  compile_exps (e);
   emit_call_a ();
   emit_pops (len(e)-1);
-  emit_push_a ();
 }
 
 void
 compile_syscall (exp *e)
 {
   int l = len (rest (e));
-  if (l > 7)
-    error (e, "too many arguments to syscall");
+  if (l < 1 || l > 7)
+    error (e, "only 1 to 7 arguments to syscall");
 
-  compile_exps_reverse (rest (e));
-  if (l > 0) emit_pop_a ();
+  compile_exps (rest (e));
   if (l > 1) emit_pop_rdi ();
   if (l > 2) emit_pop_rsi ();
   if (l > 3) emit_pop_rdx ();
@@ -1219,48 +1153,59 @@ compile_syscall (exp *e)
   if (l > 5) emit_pop_r8 ();
   if (l > 6) emit_pop_r9 ();
   emit_syscall ();
-  emit_push_a ();
+}
+
+void
+compile_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
+{
+  int l = len (e);
+
+  if (l == 1)
+    error (e, "syntax");
+  else if (l == 2)
+    {
+      compile_exp (second (e));
+      emit_single ();
+    }
+  else
+    {
+      compile_exps (rest (e));
+      while (l > 2)
+        {
+          emit_op ();
+          l -= 1;
+        }
+    }
 }
 
 void
 compile_exp (exp *e)
 {
   if (is_inum (e))
-    emit_push (inum_val (e));
+    emit_set (inum_val (e));
   else if (is_sym (e))
     {
       decl *d = find_decl (e);
       if (d->kind == local_var)
-        {
-          emit_fetch_a (stack_offset - d->offset);
-          emit_push_a ();
-        }
+        emit_fetch_a (stack_offset - d->offset);
       else if (d->kind == global_func)
         {
-          uint64_t offset = emit_push (0);
+          uint64_t offset = emit_set (0);
           reference_global_func_abs (d, offset);
         }
       else
         error (e, "internal error");
     }
   else if (is_form (e, "+"))
-    compile_list (rest (e), emit_add, emit_null);
+    compile_op (e, emit_pop_add, emit_null);
   else if (is_form (e, "-"))
-    compile_list (rest (e), emit_sub, emit_neg);
+    compile_op (e, emit_pop_sub, emit_neg);
   else if (is_form (e, "syscall"))
     compile_syscall (e);
   else if (is_pair (e))
     compile_call (e);
   else
     error (e, "syntax");
-}
-
-void
-compile_return ()
-{
-  emit_pop_a ();
-  emit_pops (stack_offset);
-  emit_ret ();
 }
 
 bool
@@ -1278,7 +1223,6 @@ compile_statement (exp *e)
       if (d->kind != local_var)
         error (e, "can only assign to variables");
       compile_exp (third (e));
-      emit_pop_a ();
       emit_store_a (stack_offset - d->offset);
     }
   else if (is_form (e, "goto"))
@@ -1288,7 +1232,6 @@ compile_statement (exp *e)
       exp *lab = second (e);
       exp *cond = third (e);
       compile_exp (cond);
-      emit_pop_a ();
       uint64_t offset = emit_jne_a ();
       reference_local_lab (lab, offset);
     }
@@ -1297,11 +1240,12 @@ compile_statement (exp *e)
       if (len (e) == 2)
         compile_exp (second (e));
       else if (len (e) == 1)
-        emit_push (0);
+        emit_set (0);
       else
         error (e, "return needs 0 or 1 argument");
 
-      compile_return ();
+      emit_pops (stack_offset);
+      emit_ret ();
       return true;
     }
   else
@@ -1344,9 +1288,10 @@ compile_function (exp *e)
           if (len (s) == 3)
             compile_exp (third (s));
           else if (len (s) == 2)
-            emit_push (0);
+            emit_set (0);
           else
             error (s, "variable declarations must have 1 or 2 arguments");
+          emit_push_a ();
           declare_local_var (second (s), stack_offset);
         }
       else
@@ -1359,8 +1304,8 @@ compile_function (exp *e)
 
   if (!did_return)
     {
-      emit_push (0);
-      compile_return ();
+      emit_set (0);
+      emit_ret ();
     }
 
   resolve_local_labs ();
