@@ -479,10 +479,15 @@ emit_store_a (int o)
 uint64_t
 emit_jne_a ()
 {
-  uint64_t off;
+  // test %rax,%rax
+  emit_8 (0x48);
+  emit_8 (0x85);
+  emit_8 (0xC0);
+
+  // jne
   emit_8 (0x0f);
   emit_8 (0x85);
-  off = code_offset;
+  uint64_t off = code_offset;
   emit_32 (0);
   return off;
 }
@@ -562,6 +567,34 @@ emit_neg ()
   emit_8 (0x48);
   emit_8 (0xf7);
   emit_8 (0xd8);
+}
+
+void
+emit_not ()
+{
+  // test %rax,%rax
+  emit_8 (0x48);
+  emit_8 (0x85);
+  emit_8 (0xC0);
+
+  // sete %al
+  emit_8 (0x0F);
+  emit_8 (0x94);
+  emit_8 (0xC0);
+
+  // movzbl %al,%eax
+  emit_8 (0x0F);
+  emit_8 (0xB6);
+  emit_8 (0xC0);
+}
+
+void
+emit_ref_byte ()
+{
+  // movsbl (%rax),%eax
+  emit_8 (0x0f);
+  emit_8 (0xbe);
+  emit_8 (0x00);
 }
 
 /* Lists */
@@ -1201,7 +1234,7 @@ compile_syscall (exp *e)
 }
 
 void
-compile_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
+compile_multi_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
 {
   int l = len (e);
 
@@ -1224,6 +1257,15 @@ compile_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
 }
 
 void
+compile_single_op (exp *e, void (*emit_op)(void))
+{
+  exp *val;
+  parse_form (e, 1, 0, &val);
+  compile_exp (val);
+  emit_op ();
+}
+
+void
 compile_exp (exp *e)
 {
   if (is_inum (e))
@@ -1242,9 +1284,29 @@ compile_exp (exp *e)
         error (e, "internal error");
     }
   else if (is_form (e, "+"))
-    compile_op (e, emit_pop_add, emit_null);
+    compile_multi_op (e, emit_pop_add, emit_null);
   else if (is_form (e, "-"))
-    compile_op (e, emit_pop_sub, emit_neg);
+    compile_multi_op (e, emit_pop_sub, emit_neg);
+  else if (is_form (e, "not"))
+    compile_single_op (e, emit_not);
+  else if (is_form (e, "b@"))
+    {
+      exp *ptr, *off;
+      parse_form (e, 1, 1, &ptr, &off);
+      if (off)
+        {
+          compile_exp (off);
+          emit_push_a ();
+          compile_exp (ptr);
+          emit_pop_add ();
+          emit_ref_byte ();
+        }
+      else
+        {
+          compile_exp (ptr);
+          emit_ref_byte ();
+        }
+    }
   else if (is_form (e, "syscall"))
     compile_syscall (e);
   else if (is_pair (e))

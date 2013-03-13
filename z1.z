@@ -1,8 +1,16 @@
 (fun (write buf len)
   (return (syscall 1 1 buf len)))
 
-(fun (main)
-  (write hello (- hello:end hello)))
+(fun (strlen str)
+  (var l 0)
+again
+  (goto done (not (b@ str l)))
+  (= l (+ l 1))
+  (goto again)
+done
+  (return l))
 
-(data hello (b 'Hello World' 10))
-(data hello:end)
+(fun (main)
+  (write hello (strlen hello)))
+
+(data hello (b 'Hello World' 10 0))
