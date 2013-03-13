@@ -5,9 +5,11 @@
    management, and only primitive control structures.  It is compiled
    to machine code by this program.
 
-   This language is only used to write one program: A compiler for a
-   better language.  As such, it doesn't have much in the way of
-   convenience or performance.
+   This language is only used to write one program: A bad compiler for
+   a better language (which is then used to compile a good compiler
+   written in the better language for the better language, which is
+   then used to compile itself).  As such, many low hanging fruits are
+   left rotting.
 
  # Global definitions
 
@@ -35,10 +37,11 @@
 
    A label.  (Note that labels can not appear between definitions.)
 
-   - (goto SYMBOL EXPR)
+   - (goto SYMBOL [EXPR])
 
    Transfer control to the named label if the given expression is
-   non-zero.
+   non-zero.  When the expression is omitted, control is transferred
+   unconditionally.
 
    - (return EXPR)
 
@@ -49,13 +52,14 @@
 
    Assignment.  SYMBOL must refer to a variable.
 
-   - (o@ EXPR EXPR)
-   - (t@ EXPR EXPR)
-   - (w@ EXPR EXPR)
-   - (b@ EXPR EXPR)
+   - (@ EXPR [EXPR] EXPR)
+   - (t@ EXPR [EXPR] EXPR)
+   - (w@ EXPR [EXPR] EXPR)
+   - (b@ EXPR [EXPR] EXPR)
 
    Store a octa, tetra, wyde, or byte.  First expression is the
-   address, the second is the value.
+   address, the second or third is the value.  If the middle
+   expression is present, it gives an offset.
 
  # Expressions
 
@@ -69,47 +73,55 @@
    function or data definition, the value is the address of the object
    in memory.
 
-   - (if EXPR EXPR EXPR)
-
-   Conditional expression.
-
    - (and EXPR...)
    - (or EXPR...)
+   - (not EXPR)
 
-   Short circuit logical operators.  The value of the whole expression
-   is the value of the last EXPR that has been evaluated.
+   Boolean operators.  All expressions are evaluated.
 
-   - (OP EXPR...)
+   - (+ EXPR...)
+   - (- EXPR...)
+   - (* EXPR...)
+   - (/ EXPR...)
+   - (% EXPR...)
 
-   Arithmetic on signed integers, where OP is one of +, -, * /, %.
+   Arithmetic on signed integers.
 
-   - (dOP EXPR...)
-
-   Arithmetic on double precision floats.
-
-   - (uOP EXPR...)
+   - (u+ EXPR...)
+   - (u- EXPR...)
+   - (u* EXPR...)
+   - (u/ EXPR...)
+   - (u% EXPR...)
 
    Arithmetic on unsigned integers.
+
+   - (f+ EXPR...)
+   - (f- EXPR...)
+   - (f* EXPR...)
+   - (f/ EXPR...)
+   - (fmod EXPR...)
+   - (frem EXPR...)
+
+   Arithmetic on double precision floats.
 
    - (& SYMBOL)
 
    Address of SYMBOL, which must refer to a variable.
 
-   - (o@ EXPR)
-   - (t@ EXPR)
-   - (w@ EXPR)
-   - (b@ EXPR)
+   - (@ EXPR [EXPR])
+   - (t@ EXPR [EXPR])
+   - (w@ EXPR [EXPR])
+   - (b@ EXPR [EXPR])
 
    Read the octa, tetra, wyde, or byte at the given address as a
-   signed value.
+   signed value.  The second expression, if present, gives an offset.
 
-   - (uo@ EXPR)
-   - (ut@ EXPR)
-   - (uw@ EXPR)
-   - (ub@ EXPR)
+   - (ut@ EXPR [EXPR])
+   - (uw@ EXPR [EXPR])
+   - (ub@ EXPR [EXPR])
 
-   Read the octa, tetra, wyde, or byte at the given address as a
-   unsigned value.
+   Read the tetra, wyde, or byte at the given address as a unsigned
+   value.
 
    - (syscall ...)
 
@@ -120,16 +132,6 @@
    Function call.  The first expression is the address of the function
    to call, the rest are the arguments.
 
- # Run time environment
-
- There really isn't much.
-
- The state of a program is a program counter and a stack pointer.  The
- stack grows down and is used by the compiler for function calls,
- local variables and also when evaluating expressions.
-
- A program is started by calling a function called main without any
- arguments.  It can use memory from address 0 to 1 GiB.
 */
 
 #include <stdio.h>
