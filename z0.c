@@ -488,6 +488,16 @@ emit_jne_a ()
 }
 
 uint64_t
+emit_jmp ()
+{
+  uint64_t off;
+  emit_8 (0xe9);
+  off = code_offset;
+  emit_32 (0);
+  return off;
+}
+
+uint64_t
 emit_call ()
 {
   uint64_t off;
@@ -1067,7 +1077,7 @@ resolve_global_funcs ()
       if (d->kind != global_func)
         continue;
       if (!d->defined)
-        exitf (1, "function %s is not defined", sym_name (d->name));
+        exitf (1, "function '%s' is not defined", sym_name (d->name));
       for (funcref *r = d->refs; r; r = r->next)
         {
           if (r->absolute)
@@ -1113,6 +1123,41 @@ is_form (exp *e, const char *sym)
 {
   return (is_pair (e) &&
           is_sym (first (e)) && strcmp (sym_name (first (e)), sym) == 0);
+}
+
+void
+parse_form (exp *e, int mandatory, int optional, ...)
+{
+  va_list ap;
+  va_start (ap, optional);
+
+  exp *args = rest (e);
+  while (mandatory > 0 || optional > 0)
+    {
+      exp **argp = va_arg (ap, exp **);
+      if (!is_pair (args))
+        {
+          if (mandatory > 0)
+            error (e, "syntax");
+          else
+            {
+              *argp = NULL;
+              optional--;
+            }
+        }
+      else
+        {
+          if (mandatory > 0)
+            mandatory--;
+          else
+            optional--;
+          *argp = first (args);
+          args = rest (args);
+        }
+    }
+
+  if (is_pair (args))
+    error (e, "syntax");
 }
 
 // Compiling an expression leaves the result in %rax.
@@ -1211,39 +1256,44 @@ compile_exp (exp *e)
 bool
 compile_statement (exp *e)
 {
+  exp *label, *cond;
+
   if (is_sym (e))
     {
       define_local_lab (e);
     }
   else if (is_form (e, "="))
     {
-      if (len (e) != 3)
-        error (e, "'=' needs two arguments");
-      decl *d = find_decl (second (e));
+      exp *var, *val;
+      parse_form (e, 2, 0, &var, &val);
+      decl *d = find_decl (var);
       if (d->kind != local_var)
         error (e, "can only assign to variables");
-      compile_exp (third (e));
+      compile_exp (val);
       emit_store_a (stack_offset - d->offset);
     }
   else if (is_form (e, "goto"))
     {
-      if (len (e) != 3)
-        error (e, "goto needs two arguments");
-      exp *lab = second (e);
-      exp *cond = third (e);
-      compile_exp (cond);
-      uint64_t offset = emit_jne_a ();
-      reference_local_lab (lab, offset);
+      exp *label, *cond;
+      uint64_t offset;
+      parse_form (e, 1, 1, &label, &cond);
+      if (cond)
+        {
+          compile_exp (cond);
+          offset = emit_jne_a ();
+        }
+      else
+        offset = emit_jmp ();
+      reference_local_lab (label, offset);
     }
   else if (is_form (e, "return"))
     {
-      if (len (e) == 2)
-        compile_exp (second (e));
-      else if (len (e) == 1)
-        emit_set (0);
+      exp *val;
+      parse_form (e, 0, 1, &val);
+      if (val)
+        compile_exp (val);
       else
-        error (e, "return needs 0 or 1 argument");
-
+        emit_set (0);
       emit_pops (stack_offset);
       emit_ret ();
       return true;
