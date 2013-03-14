@@ -24,6 +24,10 @@
 
    Data definition.
 
+   - (const SYM EXPR)
+
+   Constant definition.
+
  # Local definitions
 
    - (var SYMBOL EXPR)
@@ -176,16 +180,44 @@ uint8_t *code_ptr;
 uint8_t *code_end;
 uint64_t code_offset;
 
+struct obstack symtab_obs;
+struct obstack strtab_obs;
+
 struct file {
   Elf64_Ehdr h;
   Elf64_Phdr ph[2];
   Elf64_Shdr sh[4];
-  Elf64_Sym symtab[3];
-  char strtab[5*16];
 };
 
 #define CODE_VADDR 0x40000000
 uint64_t code_start = CODE_VADDR + sizeof(struct file);
+
+uint64_t
+strtab_add (const char *str)
+{
+  uint64_t offset = obstack_object_size (&strtab_obs);
+  obstack_grow0 (&strtab_obs, str, strlen (str));
+  return offset;
+}
+
+void
+symtab_add_raw (Elf64_Sym *sym)
+{
+  obstack_grow (&symtab_obs, sym, sizeof (Elf64_Sym));
+}
+
+void
+symtab_add (const char *name, uint64_t offset)
+{
+  Elf64_Sym sym;
+  sym.st_name = strtab_add (name);
+  sym.st_info = ELF64_ST_INFO (STB_GLOBAL, STT_NOTYPE);
+  sym.st_other = STV_DEFAULT;
+  sym.st_shndx = 1;
+  sym.st_value = code_start + offset;
+  sym.st_size = 0;
+  symtab_add_raw (&sym);
+}
 
 void
 init_code()
@@ -194,16 +226,49 @@ init_code()
   code_ptr = code;
   code_end = code + 1024*1024;
   code_offset = 0;
+
+  obstack_init (&symtab_obs);
+  obstack_init (&strtab_obs);
+
+  strtab_add ("");
+  Elf64_Sym sym;
+  sym.st_name = 0;
+  sym.st_info = 0;
+  sym.st_other = 0;
+  sym.st_shndx = 0;
+  sym.st_value = 0;
+  sym.st_size = 0;
+  symtab_add_raw (&sym);
+
+  sym.st_name = 0;
+  sym.st_info = ELF64_ST_INFO (STB_LOCAL, STT_SECTION);
+  sym.st_other = STV_DEFAULT;
+  sym.st_shndx = 1;
+  sym.st_value = code_start;
+  sym.st_size = 0;
+  symtab_add_raw (&sym);
 }
 
 void
 dump_code()
 {
+  uint64_t str_text = strtab_add (".text");
+  uint64_t str_strtab = strtab_add (".strtab");
+  uint64_t str_symtab = strtab_add (".symtab");
+
   uint64_t code_size = code_offset;
 
-  struct file f;
+  uint64_t symtab_offset = sizeof (struct file) + code_size;
+  uint64_t symtab_size = obstack_object_size (&symtab_obs);
+  char *symtab = obstack_finish (&symtab_obs);
+
+  uint64_t strtab_offset = symtab_offset + symtab_size;
+  uint64_t strtab_size = obstack_object_size (&strtab_obs);
+  char *strtab = obstack_finish (&strtab_obs);
 
   uint64_t vaddr = CODE_VADDR;
+
+  struct file f;
 
   memset (f.h.e_ident, 0, sizeof (f.h.e_ident));
   f.h.e_ident[EI_MAG0] = ELFMAG0;
@@ -258,7 +323,7 @@ dump_code()
   f.sh[0].sh_addralign = 0;
   f.sh[0].sh_entsize = 0;
 
-  f.sh[1].sh_name = 1*16;
+  f.sh[1].sh_name = str_text;
   f.sh[1].sh_type = SHT_PROGBITS;
   f.sh[1].sh_flags = SHF_ALLOC | SHF_EXECINSTR;
   f.sh[1].sh_addr = vaddr + sizeof (f);
@@ -269,60 +334,37 @@ dump_code()
   f.sh[1].sh_addralign = 4;
   f.sh[1].sh_entsize = 0;
 
-  f.sh[2].sh_name = 2*16;
+  f.sh[2].sh_name = str_strtab;
   f.sh[2].sh_type = SHT_STRTAB;
   f.sh[2].sh_flags = 0;
   f.sh[2].sh_addr = 0;
-  f.sh[2].sh_offset = offsetof (struct file, strtab);
-  f.sh[2].sh_size = sizeof (f.strtab);
+  f.sh[2].sh_offset = strtab_offset;
+  f.sh[2].sh_size = strtab_size;
   f.sh[2].sh_link = 0;
   f.sh[2].sh_info = 0;
   f.sh[2].sh_addralign = 1;
   f.sh[2].sh_entsize = 0;
 
-  f.sh[3].sh_name = 3*16;
+  f.sh[3].sh_name = str_symtab;
   f.sh[3].sh_type = SHT_SYMTAB;
   f.sh[3].sh_flags = 0;
   f.sh[3].sh_addr = 0;
-  f.sh[3].sh_offset = offsetof (struct file, symtab);
-  f.sh[3].sh_size = sizeof (f.symtab);
+  f.sh[3].sh_offset = symtab_offset;
+  f.sh[3].sh_size = symtab_size;
   f.sh[3].sh_link = 2;
   f.sh[3].sh_info = 2;
   f.sh[3].sh_addralign = 8;
-  f.sh[3].sh_entsize = sizeof (f.symtab[0]);
-
-  f.symtab[0].st_name = 0;
-  f.symtab[0].st_info = 0;
-  f.symtab[0].st_other = 0;
-  f.symtab[0].st_shndx = 0;
-  f.symtab[0].st_value = 0;
-  f.symtab[0].st_size = 0;
-
-  f.symtab[1].st_name = 0;
-  f.symtab[1].st_info = ELF64_ST_INFO (STB_LOCAL, STT_SECTION);
-  f.symtab[1].st_other = STV_DEFAULT;
-  f.symtab[1].st_shndx = 1;
-  f.symtab[1].st_value = vaddr + sizeof(f);
-  f.symtab[1].st_size = 0;
-
-  f.symtab[2].st_name = 4*16;
-  f.symtab[2].st_info = ELF64_ST_INFO (STB_GLOBAL, STT_NOTYPE);
-  f.symtab[2].st_other = STV_DEFAULT;
-  f.symtab[2].st_shndx = 1;
-  f.symtab[2].st_value = vaddr + sizeof(f);
-  f.symtab[2].st_size = 0;
-
-  strcpy (f.strtab, "");
-  strcpy (f.strtab+1*16, ".text");
-  strcpy (f.strtab+2*16, ".strtab");
-  strcpy (f.strtab+3*16, ".symtab");
-  strcpy (f.strtab+4*16, "_start");
+  f.sh[3].sh_entsize = sizeof (Elf64_Sym);
 
   if (write (1, &f, sizeof(f)) != sizeof(f)
-      || write (1, code, code_size) != code_size)
+      || write (1, code, code_size) != code_size
+      || write (1, symtab, symtab_size) != symtab_size
+      || write (1, strtab, strtab_size) != strtab_size)
     exitf(1, "Can't write code: %m");
 
   free (code);
+  obstack_free (&symtab_obs, NULL);
+  obstack_free (&strtab_obs, NULL);
 }
 
 void
@@ -1080,6 +1122,8 @@ define_global_func (exp *sym)
   decl *d = find_decl (sym);
   if (d->kind != global_func)
     error (sym, "not a function");
+  if (d->defined)
+    error (sym, "redefined");
   d->offset = code_offset;
   d->defined = true;
 }
@@ -1113,6 +1157,7 @@ resolve_global_funcs ()
         continue;
       if (!d->defined)
         exitf (1, "function '%s' is not defined", sym_name (d->name));
+      symtab_add (sym_name (d->name), d->offset);
       for (funcref *r = d->refs; r; r = r->next)
         {
           if (r->absolute)
@@ -1127,6 +1172,8 @@ void
 define_local_lab (exp *sym)
 {
   labdef *l = get_labdef (sym);
+  if (l->defined)
+    error (sym, "redefined");
   l->offset = code_offset;
   l->defined = true;
 }
@@ -1476,6 +1523,7 @@ void
 compile_start ()
 {
   exp *e = cons (sym ("syscall"), cons (inum (60), cons (cons (sym ("main"), nil ()), nil ())));
+  symtab_add ("start", code_offset);
   compile_exp (e);
 }
 
