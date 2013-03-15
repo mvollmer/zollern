@@ -3,6 +3,10 @@
 (const newline 0x0A)
 
 (const mem:start 4096)
+(const mem:strbuf mem:start)
+(const mem:intbuf (+ mem:strbuf 512))
+
+(const N 10000000)
 
 (fun (write buf len)
   (return (syscall syscall_write stdout buf len)))
@@ -16,17 +20,60 @@ again
 done
   (return l))
 
-(fun (int-to-str buf i)
+(fun (strint buf i)
   (var p buf)
+  (var b buf)
+  (var t)
 next-digit
   (b@= p (+ (% i 10) 48))
   (= p (+ p 1))
   (= i (/ i 10))
   (goto next-digit i)
-  (b@= p 0))
+  (b@= p 0)
+reverse-next
+  (= p (- p 1))
+  (= t (b@ b))
+  (b@= b (b@ p))
+  (b@= p t)
+  (= b (+ b 1))
+  (goto reverse-next (> p b)))
+
+(fun (init-intbuf)
+  (var i 0)
+again
+  (goto done (> i N))
+  (b@= mem:intbuf i 0)
+  (= i (+ i 1))
+  (goto again)
+done)
+
+(fun (set-intbuf f)
+  (var i 0)
+again
+  (goto done (> i N))
+  (b@= mem:intbuf i 1)
+  (= i (+ i f))
+  (goto again)
+done)
+
+(fun (sieve-intbuf)
+  (var p 2)
+again
+  (goto done (> p N))
+  (goto skip (b@ mem:intbuf p))
+  (strint mem:strbuf p)
+  (write mem:strbuf (strlen mem:strbuf))
+  (write str:newline 1)
+  (set-intbuf p)
+skip
+  (= p (+ p 1))
+  (goto again)
+done)
 
 (fun (main)
-  (int-to-str mem:start 12)
-  (write mem:start (strlen mem:start)))
+  (write str:primes (strlen str:primes))
+  (init-intbuf)
+  (sieve-intbuf))
 
-(data hello (s 'Hello World') (b newline 0))
+(data str:primes (s 'Prime numbers:') (b newline 0))
+(data str:newline (b newline 0))

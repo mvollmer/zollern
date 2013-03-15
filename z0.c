@@ -654,6 +654,27 @@ emit_pop_rem ()
 }
 
 void
+emit_pop_gt ()
+{
+  emit_pop_b ();
+
+  // cmp %rbx, %rax
+  emit_8 (0x48);
+  emit_8 (0x39);
+  emit_8 (0xD8);
+
+  // setg %al
+  emit_8 (0x0F);
+  emit_8 (0x9F);
+  emit_8 (0xC0);
+
+  // movzbl %al,%eax
+  emit_8 (0x0F);
+  emit_8 (0xB6);
+  emit_8 (0xC0);
+}
+
+void
 emit_neg ()
 {
   // neg %rax
@@ -1380,6 +1401,17 @@ compile_multi_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
 }
 
 void
+compile_binary_op (exp *e, void (*emit_op)(void))
+{
+  exp *a, *b;
+  parse_form (e, 2, 0, &a, &b);
+  compile_exp (b);
+  emit_push_a ();
+  compile_exp (a);
+  emit_op ();
+}
+
+void
 compile_unary_op (exp *e, void (*emit_op)(void))
 {
   exp *val;
@@ -1415,7 +1447,9 @@ compile_exp (exp *e)
   else if (is_form (e, "/"))
     compile_multi_op (e, emit_pop_div, NULL);
   else if (is_form (e, "%"))
-    compile_multi_op (e, emit_pop_rem, NULL);
+    compile_binary_op (e, emit_pop_rem);
+  else if (is_form (e, ">"))
+    compile_binary_op (e, emit_pop_gt);
   else if (is_form (e, "not"))
     compile_unary_op (e, emit_not);
   else if (is_form (e, "b@"))
