@@ -56,10 +56,10 @@
 
    Assignment.  SYMBOL must refer to a variable.
 
-   - (@ EXPR [EXPR] EXPR)
-   - (t@ EXPR [EXPR] EXPR)
-   - (w@ EXPR [EXPR] EXPR)
-   - (b@ EXPR [EXPR] EXPR)
+   - (@= EXPR [EXPR] EXPR)
+   - (t@= EXPR [EXPR] EXPR)
+   - (w@= EXPR [EXPR] EXPR)
+   - (b@= EXPR [EXPR] EXPR)
 
    Store a octa, tetra, wyde, or byte.  First expression is the
    address, the second or third is the value.  If the middle
@@ -605,6 +605,55 @@ emit_pop_sub ()
 }
 
 void
+emit_pop_div ()
+{
+  emit_pop_b ();
+
+  // mov %rax,%rdx
+  emit_8 (0x48);
+  emit_8 (0x89);
+  emit_8 (0xC2);
+
+  // sar $0x3f,%rdx
+  emit_8 (0x48);
+  emit_8 (0xC1);
+  emit_8 (0xFA);
+  emit_8 (0x3F);
+
+  // idiv %rbx
+  emit_8 (0x48);
+  emit_8 (0xF7);
+  emit_8 (0xFB);
+}
+
+void
+emit_pop_rem ()
+{
+  emit_pop_b ();
+
+  // mov %rax,%rdx
+  emit_8 (0x48);
+  emit_8 (0x89);
+  emit_8 (0xC2);
+
+  // sar $0x3f,%rdx
+  emit_8 (0x48);
+  emit_8 (0xC1);
+  emit_8 (0xFA);
+  emit_8 (0x3F);
+
+  // idiv %rbx
+  emit_8 (0x48);
+  emit_8 (0xF7);
+  emit_8 (0xFB);
+
+  // mov %rdx,%rax
+  emit_8 (0x48);
+  emit_8 (0x89);
+  emit_8 (0xD0);
+}
+
+void
 emit_neg ()
 {
   // neg %rax
@@ -639,6 +688,16 @@ emit_ref_byte ()
   emit_8 (0x0f);
   emit_8 (0xbe);
   emit_8 (0x00);
+}
+
+void
+emit_pop_store_byte ()
+{
+  emit_pop_b ();
+
+  // mov %bl,(%rax)
+  emit_8 (0x88);
+  emit_8 (0x18);
 }
 
 /* Lists */
@@ -939,7 +998,8 @@ read_token ()
       int i = 0;
       token_kind = inum_tok;
       token[i++] = c;
-      while (isdigit (c = getchar ()) || c == '.')
+      while (isdigit (c = getchar ()) || c == '.' || c == 'x' ||
+             (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
         {
           token[i++] = c;
           if (c == '.')
@@ -968,7 +1028,7 @@ read_exp_1 ()
   if (token_kind == eof_tok)
     return end_of_file ();
   else if (token_kind == inum_tok)
-    return inum (strtol (token, NULL, 10));
+    return inum (strtol (token, NULL, 0));
   else if (token_kind == dnum_tok)
     return dnum (strtod (token, NULL));
   else if (token_kind == sym_tok)
@@ -1013,10 +1073,12 @@ typedef struct decl {
   struct decl *next;
   enum {
     global_func,
+    global_const,
     local_var
   } kind;
   exp *name;
   int offset;
+  int64_t value;
   bool defined;
   struct funcref *refs;
 } decl;
@@ -1112,17 +1174,27 @@ get_labdef (exp *sym)
   labdef *l = obstack_alloc (&local_decl_obs, sizeof(labdef));
   l->name = sym;
   l->defined = false;
+  l->refs = NULL;
   l->next = labdefs;
   labdefs = l;
+}
+
+void
+define_global_const (exp *sym, int64_t value)
+{
+  decl *d = find_decl (sym);
+  if (d->kind == local_var || d->defined)
+    error (sym, "redefined");
+  d->kind = global_const;
+  d->value = value;
+  d->defined = true;
 }
 
 void
 define_global_func (exp *sym)
 {
   decl *d = find_decl (sym);
-  if (d->kind != global_func)
-    error (sym, "not a function");
-  if (d->defined)
+  if (d->kind != global_func || d->defined)
     error (sym, "redefined");
   d->offset = code_offset;
   d->defined = true;
@@ -1291,6 +1363,8 @@ compile_multi_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
     error (e, "syntax");
   else if (l == 2)
     {
+      if (emit_single == NULL)
+        error (e, "syntax");
       compile_exp (second (e));
       emit_single ();
     }
@@ -1306,7 +1380,7 @@ compile_multi_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
 }
 
 void
-compile_single_op (exp *e, void (*emit_op)(void))
+compile_unary_op (exp *e, void (*emit_op)(void))
 {
   exp *val;
   parse_form (e, 1, 0, &val);
@@ -1329,6 +1403,8 @@ compile_exp (exp *e)
           uint64_t offset = emit_set (0);
           reference_global_func_abs (d, offset);
         }
+      else if (d->kind == global_const)
+        emit_set (d->value);
       else
         error (e, "internal error");
     }
@@ -1336,8 +1412,12 @@ compile_exp (exp *e)
     compile_multi_op (e, emit_pop_add, emit_null);
   else if (is_form (e, "-"))
     compile_multi_op (e, emit_pop_sub, emit_neg);
+  else if (is_form (e, "/"))
+    compile_multi_op (e, emit_pop_div, NULL);
+  else if (is_form (e, "%"))
+    compile_multi_op (e, emit_pop_rem, NULL);
   else if (is_form (e, "not"))
-    compile_single_op (e, emit_not);
+    compile_unary_op (e, emit_not);
   else if (is_form (e, "b@"))
     {
       exp *ptr, *off;
@@ -1382,6 +1462,31 @@ compile_statement (exp *e)
         error (e, "can only assign to variables");
       compile_exp (val);
       emit_store_a (stack_offset - d->offset);
+    }
+  else if (is_form (e, "b@="))
+    {
+      exp *ptr, *off, *val;
+      parse_form (e, 2, 1, &ptr, &off, &val);
+      if (val == NULL)
+        {
+          val = off;
+          off = NULL;
+        }
+      compile_exp (val);
+      emit_push_a ();
+      if (off)
+        {
+          compile_exp (off);
+          emit_push_a ();
+          compile_exp (ptr);
+          emit_pop_add ();
+          emit_pop_store_byte ();
+        }
+      else
+        {
+          compile_exp (ptr);
+          emit_pop_store_byte ();
+        }
     }
   else if (is_form (e, "goto"))
     {
@@ -1466,10 +1571,47 @@ compile_function (exp *e)
   if (!did_return)
     {
       emit_set (0);
+      emit_pops (stack_offset);
       emit_ret ();
     }
 
   resolve_local_labs ();
+}
+
+int64_t
+eval_const (exp *e)
+{
+  if (is_inum (e))
+    return inum_val (e);
+  else if (is_sym (e))
+    {
+      decl *d = find_decl (e);
+      if (d->kind == global_const)
+        return d->value;
+      else
+        error (e, "not a constant");
+    }
+  else if (is_form (e, "+"))
+    {
+      int64_t val = 0;
+      for (exp *a = rest (e); is_pair (a); a = rest (a))
+        val += eval_const (first (a));
+      return val;
+    }
+  else if (is_form (e, "-"))
+    {
+      int64_t val = 0;
+      exp *a = rest (e);
+      if (is_pair (a))
+        {
+          val = eval_const (first (a));
+          for (a = rest (e); is_pair (a); a = rest (a))
+            val -= eval_const (first (a));
+        }
+      return val;
+    }
+  else
+    error (e, "syntax");
 }
 
 void
@@ -1485,27 +1627,43 @@ compile_data (exp *e)
   e = rest (rest (e));
   while (is_pair (e))
     {
-      if (is_form (first (e), "b"))
+      exp *d = first (e);
+      if (is_form (d, "s"))
         {
-          exp *b = rest (first (e));
-          while (is_pair (b))
+          exp *s = rest (d);
+          while (is_pair (s))
             {
-              if (is_sym (first (b)))
+              if (is_sym (first (s)))
                 {
-                  for (const char *bytes = sym_name (first (b)); *bytes; bytes++)
+                  for (const char *bytes = sym_name (first (s)); *bytes; bytes++)
                     emit_8 (*bytes);
                 }
-              else if (is_inum (first (b)))
-                emit_8 (inum_val (first (b)));
               else
-                error (b, "syntax");
+                error (s, "syntax");
+              s = rest (s);
+            }
+        }
+      else if (is_form (d, "b"))
+        {
+          exp *b = rest (d);
+          while (is_pair (b))
+            {
+              emit_8 (eval_const (first (b)));
               b = rest (b);
             }
         }
       else
-        error (e, "sorry");
+        error (d, "sorry");
       e = rest (e);
     }
+}
+
+void
+compile_const (exp *e)
+{
+  exp *sym, *val;
+  parse_form (e, 2, 0, &sym, &val);
+  define_global_const (sym, eval_const (val));
 }
 
 void
@@ -1515,6 +1673,8 @@ compile_global (exp *e)
     compile_function (e);
   else if (is_form (e, "data"))
     compile_data (e);
+  else if (is_form (e, "const"))
+    compile_const (e);
   else
     error (e, "syntax error");
 }
