@@ -1,14 +1,16 @@
-all: z1
+all: sieve
 
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c
 
-z1: z0 z1.z
-	./z0 <z1.z >z1 && chmod a+x z1
-	objdump -d z1
+sieve-c: sieve.c
+	gcc -std=c99 -o sieve-c sieve.c
 
-t.o: t.c
-	cc -o t.o -c t.c
+sieve: sieve.z0 z0
+	./z0 <sieve.z0 >sieve && chmod a+x sieve
+
+t.o: t.c Makefile
+	cc -O6 -g -o t.o -c t.c
 	objdump -d t.o
 
 exit.o:	exit.s

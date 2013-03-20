@@ -1,3 +1,7 @@
+;; -*- z0 -*-
+
+;;; Sieve of Eratosthenes
+
 (const syscall_write 1)
 (const stdout 1)
 (const newline 0x0A)
@@ -6,7 +10,7 @@
 (const mem:strbuf mem:start)
 (const mem:intbuf (+ mem:strbuf 512))
 
-(const N 10000000)
+(const N 1000)
 
 (fun (write buf len)
   (return (syscall syscall_write stdout buf len)))
@@ -47,8 +51,21 @@ again
   (goto again)
 done)
 
+(fun (print-intbuf)
+  (var i 2)
+again
+  (goto done (> i N))
+  (goto skip (b@ mem:intbuf i))
+  (strint mem:strbuf i)
+  (write mem:strbuf (strlen mem:strbuf))
+  (write str:newline 1)
+skip
+  (= i (+ i 1))
+  (goto again)
+done)
+
 (fun (set-intbuf f)
-  (var i 0)
+  (var i (+ f f))
 again
   (goto done (> i N))
   (b@= mem:intbuf i 1)
@@ -59,11 +76,8 @@ done)
 (fun (sieve-intbuf)
   (var p 2)
 again
-  (goto done (> p N))
+  (goto done (> (* p p) N))
   (goto skip (b@ mem:intbuf p))
-  (strint mem:strbuf p)
-  (write mem:strbuf (strlen mem:strbuf))
-  (write str:newline 1)
   (set-intbuf p)
 skip
   (= p (+ p 1))
@@ -73,7 +87,8 @@ done)
 (fun (main)
   (write str:primes (strlen str:primes))
   (init-intbuf)
-  (sieve-intbuf))
+  (sieve-intbuf)
+  (print-intbuf))
 
 (data str:primes (s 'Prime numbers:') (b newline 0))
 (data str:newline (b newline 0))

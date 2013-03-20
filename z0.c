@@ -605,6 +605,18 @@ emit_pop_sub ()
 }
 
 void
+emit_pop_mul ()
+{
+  emit_pop_b ();
+
+  // imul %rbx,%rax
+  emit_8 (0x48);
+  emit_8(0x0F);
+  emit_8(0xAF);
+  emit_8(0xC3);
+}
+
+void
 emit_pop_div ()
 {
   emit_pop_b ();
@@ -987,11 +999,20 @@ read_token ()
   token[0] = '\0';
 
   int c;
+ again:
   while (isspace (c = getchar ()))
     {
       if (c == '\n')
         lineno++;
     }
+
+  if (c == ';')
+    {
+      while (c = getchar () != '\n')
+        ;
+      goto again;
+    }
+
   if (c == '(' || c == ')')
     {
       token[0] = c;
@@ -1444,6 +1465,8 @@ compile_exp (exp *e)
     compile_multi_op (e, emit_pop_add, emit_null);
   else if (is_form (e, "-"))
     compile_multi_op (e, emit_pop_sub, emit_neg);
+  else if (is_form (e, "*"))
+    compile_multi_op (e, emit_pop_mul, NULL);
   else if (is_form (e, "/"))
     compile_multi_op (e, emit_pop_div, NULL);
   else if (is_form (e, "%"))
