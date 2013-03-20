@@ -1,5 +1,3 @@
-;; -*- z0 -*-
-
 ;;; Sieve of Eratosthenes
 
 (const syscall_write 1)
