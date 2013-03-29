@@ -43,23 +43,30 @@ init_intbuf ()
 }
 
 void
+print_intbuf ()
+{
+  for (long i = 0; i < N; i += 1)
+    if (!intbuf[i])
+      {
+        strint (strbuf, i);
+        write (1, strbuf, my_strlen (strbuf));
+        write (1, "\n", 1);
+      }
+}
+
+void
 set_intbuf (int f)
 {
-  for (long i = 0; i < N; i += f)
+  for (long i = f+f; i < N; i += f)
     intbuf[i] = 1;
 }
 
 void
 sieve_intbuf ()
 {
-  for (long p = 2; p < N; p++)
+  for (long p = 2; p*p < N; p++)
     if (intbuf[p] == 0)
-      {
-        strint (strbuf, p);
-        write (1, strbuf, my_strlen (strbuf));
-        write (1, "\n", 1);
-        set_intbuf (p);
-      }
+      set_intbuf (p);
 }
 
 void
@@ -67,4 +74,5 @@ main ()
 {
   init_intbuf ();
   sieve_intbuf ();
+  print_intbuf ();
 }
