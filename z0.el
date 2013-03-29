@@ -1,6 +1,6 @@
 ;; Emacs bits for editing Z0 code
 
-(setq auto-mode-alist (cons '("\\.z0\\'" . z0-mode) auto-mode-alist))q
+(setq auto-mode-alist (cons '("\\.z0\\'" . z0-mode) auto-mode-alist))
 
 (defconst z0-font-lock-keywords
   '(("^(\\(fun\\)\\>[ \t]*(?\\(\\sw+\\)?"
