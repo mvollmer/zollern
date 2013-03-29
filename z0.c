@@ -146,6 +146,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <fcntl.h>
 
 #include <elf.h>
 #include <obstack.h>
@@ -189,8 +190,15 @@ struct file {
   Elf64_Shdr sh[4];
 };
 
-#define CODE_VADDR 0x40000000
-uint64_t code_start = CODE_VADDR + sizeof(struct file);
+uint64_t code_vaddr;
+uint64_t code_start;
+
+void
+set_code_start (uint64_t start)
+{
+  code_vaddr = start;
+  code_start = code_vaddr + sizeof(struct file);
+}
 
 uint64_t
 strtab_add (const char *str)
@@ -222,6 +230,9 @@ symtab_add (const char *name, uint64_t offset)
 void
 init_code()
 {
+  if (code_start == 0)
+    set_code_start (0x40000000);
+
   code = xmalloc (1024*1024);
   code_ptr = code;
   code_end = code + 1024*1024;
@@ -250,7 +261,7 @@ init_code()
 }
 
 void
-dump_code()
+dump_code(const char *out_name)
 {
   uint64_t str_text = strtab_add (".text");
   uint64_t str_strtab = strtab_add (".strtab");
@@ -265,8 +276,6 @@ dump_code()
   uint64_t strtab_offset = symtab_offset + symtab_size;
   uint64_t strtab_size = obstack_object_size (&strtab_obs);
   char *strtab = obstack_finish (&strtab_obs);
-
-  uint64_t vaddr = CODE_VADDR;
 
   struct file f;
 
@@ -283,7 +292,7 @@ dump_code()
   f.h.e_type = ET_EXEC;
   f.h.e_machine = EM_X86_64;
   f.h.e_version = EV_CURRENT;
-  f.h.e_entry = vaddr + sizeof (f);
+  f.h.e_entry = code_vaddr + sizeof (f);
   f.h.e_phoff = offsetof (struct file, ph[0]);
   f.h.e_shoff = offsetof (struct file, sh[0]);
   f.h.e_flags = 0;
@@ -300,14 +309,14 @@ dump_code()
   f.ph[0].p_vaddr = 0x1000;
   f.ph[0].p_paddr = 0x1000;
   f.ph[0].p_filesz = 0;
-  f.ph[0].p_memsz = vaddr - 0x1000;
+  f.ph[0].p_memsz = code_vaddr - 0x1000;
   f.ph[0].p_align = 0;
 
   f.ph[1].p_type = PT_LOAD;
   f.ph[1].p_flags = PF_X | PF_R;
   f.ph[1].p_offset = 0;
-  f.ph[1].p_vaddr = vaddr;
-  f.ph[1].p_paddr = vaddr;
+  f.ph[1].p_vaddr = code_vaddr;
+  f.ph[1].p_paddr = code_vaddr;
   f.ph[1].p_filesz = sizeof(f) + code_size;
   f.ph[1].p_memsz = sizeof(f) + code_size;
   f.ph[1].p_align = 0;
@@ -326,7 +335,7 @@ dump_code()
   f.sh[1].sh_name = str_text;
   f.sh[1].sh_type = SHT_PROGBITS;
   f.sh[1].sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-  f.sh[1].sh_addr = vaddr + sizeof (f);
+  f.sh[1].sh_addr = code_vaddr + sizeof (f);
   f.sh[1].sh_offset = sizeof (f);
   f.sh[1].sh_size = code_size;
   f.sh[1].sh_link = 0;
@@ -356,11 +365,15 @@ dump_code()
   f.sh[3].sh_addralign = 8;
   f.sh[3].sh_entsize = sizeof (Elf64_Sym);
 
-  if (write (1, &f, sizeof(f)) != sizeof(f)
-      || write (1, code, code_size) != code_size
-      || write (1, symtab, symtab_size) != symtab_size
-      || write (1, strtab, strtab_size) != strtab_size)
-    exitf(1, "Can't write code: %m");
+  int fd = creat (out_name, 0777);
+
+  if (fd < 0
+      || write (fd, &f, sizeof(f)) != sizeof(f)
+      || write (fd, code, code_size) != code_size
+      || write (fd, symtab, symtab_size) != symtab_size
+      || write (fd, strtab, strtab_size) != strtab_size
+      || close (fd) < 0)
+    exitf(1, "%s: %m", out_name);
 
   free (code);
   obstack_free (&symtab_obs, NULL);
@@ -987,6 +1000,17 @@ write_exp (FILE *f, exp *e)
     fprintf (f, "<???>");
 }
 
+const char *in_name;
+FILE *in_file;
+
+void
+read_open (const char *in_name)
+{
+  in_file = fopen (in_name, "r");
+  if (in_file == NULL)
+    exitf (1, "%s: %m", in_name);
+}
+
 #define token_size 1024
 char token[token_size];
 enum { punct_tok, sym_tok, inum_tok, dnum_tok, eof_tok } token_kind;
@@ -1000,7 +1024,7 @@ read_token ()
 
   int c;
  again:
-  while (isspace (c = getchar ()))
+  while (isspace (c = fgetc (in_file)))
     {
       if (c == '\n')
         lineno++;
@@ -1008,7 +1032,7 @@ read_token ()
 
   if (c == ';')
     {
-      while (c = getchar () != '\n')
+      while (c = fgetc (in_file) != '\n')
         ;
       goto again;
     }
@@ -1023,7 +1047,7 @@ read_token ()
     {
       bool escape_next = false;
       int i = 0;
-      while ((c = getchar ()) != EOF && c != '\'' && !escape_next)
+      while ((c = fgetc (in_file)) != EOF && c != '\'' && !escape_next)
         {
           if (c == '\n')
             lineno++;
@@ -1040,7 +1064,7 @@ read_token ()
       int i = 0;
       token_kind = inum_tok;
       token[i++] = c;
-      while (isdigit (c = getchar ()) || c == '.' || c == 'x' ||
+      while (isdigit (c = fgetc (in_file)) || c == '.' || c == 'x' ||
              (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
         {
           token[i++] = c;
@@ -1048,17 +1072,18 @@ read_token ()
             token_kind = dnum_tok;
         }
       token[i] = '\0';
-      ungetc (c, stdin);
+      ungetc (c, in_file);
     }
   else if (c != EOF)
     {
       int i = 0;
       token_kind = sym_tok;
       token[i++] = c;
-      while ((c = getchar ()) != EOF && !isspace (c) && c != '(' && c != ')')
+      while ((c = fgetc (in_file)) != EOF
+             && !isspace (c) && c != '(' && c != ')')
         token[i++] = c;
       token[i] = '\0';
-      ungetc (c, stdin);
+      ungetc (c, in_file);
     }
   else
     token_kind = eof_tok;
@@ -1102,7 +1127,7 @@ read_exp ()
 void
 error (exp *form, const char *msg)
 {
-  fprintf (stderr, "%d: ", lineno);
+  fprintf (stderr, "%s:%d: ", in_name, lineno);
   write_exp (stderr, form);
   fprintf (stderr, "\n");
   exitf (1, "error: %s", msg);
@@ -1747,13 +1772,44 @@ compile_start ()
 /* Main */
 
 void
-main ()
+usage ()
 {
+  exitf (1, "Usage: z0 [--start VADDR] IN OUT");
+}
+
+void
+main (int argc, char **argv)
+{
+  const char *in;
+  const char *out;
+
+  argv++;
+  while (*argv && *argv[0] == '-')
+    {
+      if (strcmp (*argv, "--start") && *(argv+1) != NULL)
+        {
+          set_code_start (strtol (*(argv+1), NULL, 0));
+          argv += 2;
+        }
+      else
+        usage ();
+    }
+
+  if (*argv && *(argv+1))
+    {
+      in = *argv;
+      out = *(argv+1);
+    }
+  else
+    usage ();
+
   init_exp();
   init_code ();
   init_decls ();
 
   compile_start ();
+
+  read_open (in);
 
   exp *e;
   while (!is_end_of_file (e = read_exp ()))
@@ -1761,6 +1817,6 @@ main ()
 
   resolve_global_funcs ();
 
-  dump_code ();
+  dump_code (out);
   exit (0);
 }
