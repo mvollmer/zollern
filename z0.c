@@ -1059,7 +1059,7 @@ read_token ()
       token[i] = '\0';
       token_kind = sym_tok;
     }
-  else if (isdigit (c))
+  else if (isdigit (c) || c == '-')
     {
       int i = 0;
       token_kind = inum_tok;
@@ -1073,6 +1073,8 @@ read_token ()
         }
       token[i] = '\0';
       ungetc (c, in_file);
+      if (strcmp (token, "-") == 0)
+        token_kind = sym_tok;
     }
   else if (c != EOF)
     {
