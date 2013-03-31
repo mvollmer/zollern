@@ -4,11 +4,25 @@
 (const stdout 1)
 (const newline 0x0A)
 
-(const mem:start 4096)
-(const mem:strbuf mem:start)
-(const mem:intbuf (+ mem:strbuf 512))
+(fun (getmem start size)
+  (goto error (< (syscall 9 start size 7 0x32 -1 0) 0))
+  (return)
+error
+  (syscall 1 2 str:memerror (- str:memerror-end str:memerror))
+  (syscall 60 1))
+
+(data str:memerror (s 'Can\'t get memory') (b newline))
+(data str:memerror-end)
 
 (const N 1000)
+
+(const mem:start 4096)
+(const mem:strbuf mem:start)
+(const mem:strbuf-size 512)
+(const mem:intbuf (+ mem:strbuf mem:strbuf-size))
+(const mem:intbuf-size (* 8 N))
+(const mem:end (+ mem:intbuf mem:intbuf-size))
+(const mem:size (- mem:end mem:start))
 
 (fun (write buf len)
   (return (syscall syscall_write stdout buf len)))
@@ -83,6 +97,7 @@ skip
 done)
 
 (fun (main)
+  (getmem mem:start mem:size)
   (write str:primes (strlen str:primes))
   (init-intbuf)
   (sieve-intbuf)

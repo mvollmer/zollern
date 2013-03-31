@@ -186,7 +186,7 @@ struct obstack strtab_obs;
 
 struct file {
   Elf64_Ehdr h;
-  Elf64_Phdr ph[2];
+  Elf64_Phdr ph[1];
   Elf64_Shdr sh[4];
 };
 
@@ -304,22 +304,13 @@ dump_code(const char *out_name)
   f.h.e_shstrndx = 2;
 
   f.ph[0].p_type = PT_LOAD;
-  f.ph[0].p_flags = PF_X | PF_W | PF_R;
+  f.ph[0].p_flags = PF_X | PF_R;
   f.ph[0].p_offset = 0;
-  f.ph[0].p_vaddr = 0x1000;
-  f.ph[0].p_paddr = 0x1000;
-  f.ph[0].p_filesz = 0;
-  f.ph[0].p_memsz = code_vaddr - 0x1000;
+  f.ph[0].p_vaddr = code_vaddr;
+  f.ph[0].p_paddr = code_vaddr;
+  f.ph[0].p_filesz = sizeof(f) + code_size;
+  f.ph[0].p_memsz = sizeof(f) + code_size;
   f.ph[0].p_align = 0;
-
-  f.ph[1].p_type = PT_LOAD;
-  f.ph[1].p_flags = PF_X | PF_R;
-  f.ph[1].p_offset = 0;
-  f.ph[1].p_vaddr = code_vaddr;
-  f.ph[1].p_paddr = code_vaddr;
-  f.ph[1].p_filesz = sizeof(f) + code_size;
-  f.ph[1].p_memsz = sizeof(f) + code_size;
-  f.ph[1].p_align = 0;
 
   f.sh[0].sh_name = 0;
   f.sh[0].sh_type = SHT_NULL;
@@ -700,6 +691,27 @@ emit_pop_gt ()
 }
 
 void
+emit_pop_lt ()
+{
+  emit_pop_b ();
+
+  // cmp %rbx, %rax
+  emit_8 (0x48);
+  emit_8 (0x39);
+  emit_8 (0xD8);
+
+  // setg %al
+  emit_8 (0x0F);
+  emit_8 (0x9C);
+  emit_8 (0xC0);
+
+  // movzbl %al,%eax
+  emit_8 (0x0F);
+  emit_8 (0xB6);
+  emit_8 (0xC0);
+}
+
+void
 emit_neg ()
 {
   // neg %rax
@@ -1004,8 +1016,9 @@ const char *in_name;
 FILE *in_file;
 
 void
-read_open (const char *in_name)
+read_open (const char *name)
 {
+  in_name = name;
   in_file = fopen (in_name, "r");
   if (in_file == NULL)
     exitf (1, "%s: %m", in_name);
@@ -1047,14 +1060,17 @@ read_token ()
     {
       bool escape_next = false;
       int i = 0;
-      while ((c = fgetc (in_file)) != EOF && c != '\'' && !escape_next)
+      while ((c = fgetc (in_file)) != EOF && (c != '\'' || escape_next))
         {
           if (c == '\n')
             lineno++;
           if (c == '\\' && !escape_next)
             escape_next = true;
           else
-            token[i++] = c;
+            {
+              token[i++] = c;
+              escape_next = false;
+            }
         }
       token[i] = '\0';
       token_kind = sym_tok;
@@ -1257,6 +1273,7 @@ define_global_const (exp *sym, int64_t value)
   d->kind = global_const;
   d->value = value;
   d->defined = true;
+  fprintf (stderr, "%s: %ld\n", sym_name (sym), value);
 }
 
 void
@@ -1500,6 +1517,8 @@ compile_exp (exp *e)
     compile_binary_op (e, emit_pop_rem);
   else if (is_form (e, ">"))
     compile_binary_op (e, emit_pop_gt);
+  else if (is_form (e, "<"))
+    compile_binary_op (e, emit_pop_lt);
   else if (is_form (e, "not"))
     compile_unary_op (e, emit_not);
   else if (is_form (e, "b@"))
@@ -1689,9 +1708,16 @@ eval_const (exp *e)
       if (is_pair (a))
         {
           val = eval_const (first (a));
-          for (a = rest (e); is_pair (a); a = rest (a))
+          for (a = rest (a); is_pair (a); a = rest (a))
             val -= eval_const (first (a));
         }
+      return val;
+    }
+  else if (is_form (e, "*"))
+    {
+      int64_t val = 1;
+      for (exp *a = rest (e); is_pair (a); a = rest (a))
+        val *= eval_const (first (a));
       return val;
     }
   else
