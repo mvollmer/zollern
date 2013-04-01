@@ -1273,7 +1273,6 @@ define_global_const (exp *sym, int64_t value)
   d->kind = global_const;
   d->value = value;
   d->defined = true;
-  fprintf (stderr, "%s: %ld\n", sym_name (sym), value);
 }
 
 void
