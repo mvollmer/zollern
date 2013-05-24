@@ -26,6 +26,10 @@
 
    Constant definition.
 
+   - (mem SYM EXPR)
+
+   Memory reservation.
+
  # Local definitions
 
    - (var SYMBOL EXPR)
@@ -184,7 +188,7 @@ struct obstack strtab_obs;
 
 struct file {
   Elf64_Ehdr h;
-  Elf64_Phdr ph[1];
+  Elf64_Phdr ph[2];
   Elf64_Shdr sh[4];
 };
 
@@ -213,14 +217,14 @@ symtab_add_raw (Elf64_Sym *sym)
 }
 
 void
-symtab_add (const char *name, uint64_t offset)
+symtab_add (const char *name, uint64_t value)
 {
   Elf64_Sym sym;
   sym.st_name = strtab_add (name);
   sym.st_info = ELF64_ST_INFO (STB_GLOBAL, STT_NOTYPE);
   sym.st_other = STV_DEFAULT;
   sym.st_shndx = 1;
-  sym.st_value = code_start + offset;
+  sym.st_value = value;
   sym.st_size = 0;
   symtab_add_raw (&sym);
 }
@@ -258,14 +262,33 @@ init_code()
   symtab_add_raw (&sym);
 }
 
+uint64_t data_start;
+uint64_t data_offset;
+
 void
-dump_code(const char *out_name)
+start_data ()
+{
+  data_start = (code_start + code_offset + 0xFFF) & ~0xFFF;
+  data_offset = 0;
+}
+
+void
+grow_data (uint64_t size)
+{
+  data_offset += size;
+  data_offset = (data_offset + 7) & ~7;
+}
+
+void
+dump (const char *out_name)
 {
   uint64_t str_text = strtab_add (".text");
+  uint64_t str_data = strtab_add (".data");
   uint64_t str_strtab = strtab_add (".strtab");
   uint64_t str_symtab = strtab_add (".symtab");
 
   uint64_t code_size = code_offset;
+  uint64_t data_size = data_offset;
 
   uint64_t symtab_offset = sizeof (struct file) + code_size;
   uint64_t symtab_size = obstack_object_size (&symtab_obs);
@@ -290,7 +313,7 @@ dump_code(const char *out_name)
   f.h.e_type = ET_EXEC;
   f.h.e_machine = EM_X86_64;
   f.h.e_version = EV_CURRENT;
-  f.h.e_entry = code_vaddr + sizeof (f);
+  f.h.e_entry = code_start;
   f.h.e_phoff = offsetof (struct file, ph[0]);
   f.h.e_shoff = offsetof (struct file, sh[0]);
   f.h.e_flags = 0;
@@ -309,6 +332,15 @@ dump_code(const char *out_name)
   f.ph[0].p_filesz = sizeof(f) + code_size;
   f.ph[0].p_memsz = sizeof(f) + code_size;
   f.ph[0].p_align = 0;
+
+  f.ph[1].p_type = PT_LOAD;
+  f.ph[1].p_flags = PF_R | PF_W;
+  f.ph[1].p_offset = 0;
+  f.ph[1].p_vaddr = data_start;
+  f.ph[1].p_paddr = data_start;
+  f.ph[1].p_filesz = 0;
+  f.ph[1].p_memsz = data_size;
+  f.ph[1].p_align = 0;
 
   f.sh[0].sh_name = 0;
   f.sh[0].sh_type = SHT_NULL;
@@ -1157,20 +1189,22 @@ typedef struct decl {
   enum {
     global_func,
     global_const,
+    global_mem,
     local_var
   } kind;
   exp *name;
   int offset;
   int64_t value;
+  uint64_t size;
   bool defined;
-  struct funcref *refs;
+  struct declref *refs;
 } decl;
 
-typedef struct funcref {
-  struct funcref *next;
+typedef struct declref {
+  struct declref *next;
   uint64_t offset;
   bool absolute;
-} funcref;
+} declref;
 
 typedef struct labdef {
   struct labdef *next;
@@ -1298,26 +1332,56 @@ define_global_func (exp *sym)
 }
 
 void
-reference_global_func (decl *d, uint64_t offset)
+define_global_mem (exp *sym, uint64_t size)
 {
-  funcref *r = obstack_alloc (&global_decl_obs, sizeof(funcref));
+  decl *d = new_global_decl (sym, global_mem);
+  d->size = size;
+  d->defined = true;
+}
+
+void
+reference_global_decl (decl *d, uint64_t offset)
+{
+  declref *r = obstack_alloc (&global_decl_obs, sizeof(declref));
   r->offset = offset;
   r->next = d->refs;
   d->refs = r;
 }
 
 void
-resolve_global_funcs ()
+allocate_mems ()
+{
+  start_data ();
+
+  for (decl *d = global_decls; d; d = d->next)
+    {
+      if (d->kind == global_mem)
+        {
+          d->offset = data_offset;
+          grow_data (d->size);
+        }
+    }
+}
+
+void
+resolve_global_decls ()
 {
   for (decl *d = global_decls; d; d = d->next)
     {
-      if (d->kind != global_func)
+      if (d->refs == NULL)
         continue;
       if (!d->defined)
         exitf (1, "function '%s' is not defined", sym_name (d->name));
-      symtab_add (sym_name (d->name), d->offset);
-      for (funcref *r = d->refs; r; r = r->next)
-        *(uint32_t *)(code + r->offset) = code_start + d->offset;
+
+      uint64_t value = d->offset;
+      if (d->kind == global_func)
+        value += code_start;
+      else if (d->kind == global_mem)
+        value += data_start;
+
+      symtab_add (sym_name (d->name), value);
+      for (declref *r = d->refs; r; r = r->next)
+        *(uint32_t *)(code + r->offset) = value;
     }
 }
 
@@ -1490,10 +1554,11 @@ compile_exp (exp *e)
       decl *d = find_decl (e);
       if (d->kind == local_var)
         emit_fetch_a (stack_offset - d->offset);
-      else if (d->kind == global_func)
+      else if (d->kind == global_func
+               || d->kind == global_mem)
         {
           uint64_t offset = emit_set (0);
-          reference_global_func (d, offset);
+          reference_global_decl (d, offset);
         }
       else if (d->kind == global_const)
         emit_set (d->value);
@@ -1772,6 +1837,14 @@ compile_const (exp *e)
 }
 
 void
+compile_mem (exp *e)
+{
+  exp *sym, *size;
+  parse_form (e, 2, 0, &sym, &size);
+  define_global_mem (sym, eval_const (size));
+}
+
+void
 compile_global (exp *e)
 {
   if (is_form (e, "fun"))
@@ -1780,6 +1853,8 @@ compile_global (exp *e)
     compile_data (e);
   else if (is_form (e, "const"))
     compile_const (e);
+  else if (is_form (e, "mem"))
+    compile_mem (e);
   else
     error (e, "syntax error");
 }
@@ -1788,7 +1863,7 @@ void
 compile_start ()
 {
   exp *e = cons (sym ("syscall"), cons (inum (60), cons (cons (sym ("main"), nil ()), nil ())));
-  symtab_add ("start", code_offset);
+  symtab_add ("start", code_start + code_offset);
   compile_exp (e);
 }
 
@@ -1838,8 +1913,9 @@ main (int argc, char **argv)
   while (!is_end_of_file (e = read_exp ()))
     compile_global (e);
 
-  resolve_global_funcs ();
+  allocate_mems ();
+  resolve_global_decls ();
 
-  dump_code (out);
+  dump (out);
   exit (0);
 }

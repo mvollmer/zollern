@@ -9,7 +9,7 @@
     ("(\\(var\\)\\>[ \t]*\\(\\sw+\\)?"
      (1 font-lock-keyword-face)
      (2 font-lock-variable-name-face))
-    ("^(\\(const\\|data\\)\\>[ \t]*(?\\(\\sw+\\)?"
+    ("^(\\(const\\|data\\|mem\\)\\>[ \t]*(?\\(\\sw+\\)?"
      (1 font-lock-keyword-face)
      (2 font-lock-constant-face))
     ("^\\sw+" . font-lock-reference-face)))

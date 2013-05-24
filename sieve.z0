@@ -4,25 +4,10 @@
 (const stdout 1)
 (const newline 0x0A)
 
-(fun (getmem start size)
-  (goto error (< (syscall 9 start size 7 0x32 -1 0) 0))
-  (return)
-error
-  (syscall 1 2 str:memerror (- str:memerror-end str:memerror))
-  (syscall 60 1))
-
-(data str:memerror (s 'Can\'t get memory') (b newline))
-(data str:memerror-end)
-
 (const N 1000)
 
-(const mem:start 4096)
-(const mem:strbuf mem:start)
-(const mem:strbuf-size 512)
-(const mem:intbuf (+ mem:strbuf mem:strbuf-size))
-(const mem:intbuf-size (* 8 N))
-(const mem:end (+ mem:intbuf mem:intbuf-size))
-(const mem:size (- mem:end mem:start))
+(mem strbuf 512)
+(mem intbuf (* 8 N))
 
 (fun (write buf len)
   (return (syscall syscall_write stdout buf len)))
@@ -58,7 +43,7 @@ reverse-next
   (var i 0)
 again
   (goto done (> i N))
-  (b@= mem:intbuf i 0)
+  (b@= intbuf i 0)
   (= i (+ i 1))
   (goto again)
 done)
@@ -67,9 +52,9 @@ done)
   (var i 2)
 again
   (goto done (> i N))
-  (goto skip (b@ mem:intbuf i))
-  (strint mem:strbuf i)
-  (write mem:strbuf (strlen mem:strbuf))
+  (goto skip (b@ intbuf i))
+  (strint strbuf i)
+  (write strbuf (strlen strbuf))
   (write str:newline 1)
 skip
   (= i (+ i 1))
@@ -80,7 +65,7 @@ done)
   (var i (+ f f))
 again
   (goto done (> i N))
-  (b@= mem:intbuf i 1)
+  (b@= intbuf i 1)
   (= i (+ i f))
   (goto again)
 done)
@@ -89,7 +74,7 @@ done)
   (var p 2)
 again
   (goto done (> (* p p) N))
-  (goto skip (b@ mem:intbuf p))
+  (goto skip (b@ intbuf p))
   (set-intbuf p)
 skip
   (= p (+ p 1))
@@ -97,7 +82,6 @@ skip
 done)
 
 (fun (main)
-  (getmem mem:start mem:size)
   (write str:primes (strlen str:primes))
   (init-intbuf)
   (sieve-intbuf)
