@@ -5,10 +5,8 @@
    management, and only primitive control structures.  It is compiled
    to machine code by this program.
 
-   This language is only used to write one program: A bad compiler for
-   a better language (which is then used to compile a good compiler
-   written in the better language for the better language, which is
-   then used to compile itself).  As such, many low hanging fruits are
+   This language is only used to write one program: A programming
+   system for a better language.  As such, many low hanging fruits are
    left rotting.
 
  # Global definitions
@@ -1241,8 +1239,27 @@ find_decl (exp *sym)
   d->kind = global_func;
   d->name = sym;
   d->defined = false;
+  d->refs = NULL;
   d->next = global_decls;
   global_decls = d;
+  return d;
+}
+
+decl *
+new_global_decl (exp *sym, int kind)
+{
+  decl *d = find_decl (sym);
+  if (kind != global_func)
+    {
+      if (d->kind != global_func || d->refs)
+        error (sym, "redefined");
+    }
+  else
+    {
+      if (d->kind != global_func || d->defined)
+        error (sym, "redefined");
+    }
+  d->kind = kind;
   return d;
 }
 
@@ -1267,10 +1284,7 @@ get_labdef (exp *sym)
 void
 define_global_const (exp *sym, int64_t value)
 {
-  decl *d = find_decl (sym);
-  if (d->kind == local_var || d->defined)
-    error (sym, "redefined");
-  d->kind = global_const;
+  decl *d = new_global_decl (sym, global_const);
   d->value = value;
   d->defined = true;
 }
@@ -1278,9 +1292,7 @@ define_global_const (exp *sym, int64_t value)
 void
 define_global_func (exp *sym)
 {
-  decl *d = find_decl (sym);
-  if (d->kind != global_func || d->defined)
-    error (sym, "redefined");
+  decl *d = new_global_decl (sym, global_func);
   d->offset = code_offset;
   d->defined = true;
 }
@@ -1290,17 +1302,6 @@ reference_global_func (decl *d, uint64_t offset)
 {
   funcref *r = obstack_alloc (&global_decl_obs, sizeof(funcref));
   r->offset = offset;
-  r->absolute = false;
-  r->next = d->refs;
-  d->refs = r;
-}
-
-void
-reference_global_func_abs (decl *d, uint64_t offset)
-{
-  funcref *r = obstack_alloc (&global_decl_obs, sizeof(funcref));
-  r->offset = offset;
-  r->absolute = true;
   r->next = d->refs;
   d->refs = r;
 }
@@ -1316,12 +1317,7 @@ resolve_global_funcs ()
         exitf (1, "function '%s' is not defined", sym_name (d->name));
       symtab_add (sym_name (d->name), d->offset);
       for (funcref *r = d->refs; r; r = r->next)
-        {
-          if (r->absolute)
-            *(uint32_t *)(code + r->offset) = code_start + d->offset;
-          else
-            *(uint32_t *)(code + r->offset) = d->offset - r->offset - 4;
-        }
+        *(uint32_t *)(code + r->offset) = code_start + d->offset;
     }
 }
 
@@ -1497,7 +1493,7 @@ compile_exp (exp *e)
       else if (d->kind == global_func)
         {
           uint64_t offset = emit_set (0);
-          reference_global_func_abs (d, offset);
+          reference_global_func (d, offset);
         }
       else if (d->kind == global_const)
         emit_set (d->value);
