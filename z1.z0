@@ -1,5 +1,8 @@
 ;;
 ;; Z1 -- bootstrap compiler
 ;;
-;; This is a bad compiler for the Zollern language and part of its
-;; run-time support, written in the Z0 bootstrap language.
+;; This is a bad compiler for the Zollern core language and part of
+;; its run-time support, written in the Z0 bootstrap language.
+
+;; The Zollern core language is very small but has powerful extension
+;; mechanisms.
