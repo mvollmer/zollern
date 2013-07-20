@@ -6,3 +6,79 @@
 
 ;; The Zollern core language is very small but has powerful extension
 ;; mechanisms.
+
+;;; Debug output
+
+(fun (dbg-chars buf len)
+  (syscall 1 2 buf len))
+
+(mem dbg-char-buf 1)
+
+(fun (dbg-char ch)
+  (b@= dbg-char-buf ch)
+  (dbg-chars dbg-char-buf 1))
+
+(fun (dbg-nibble n)
+  (goto hex (> n 9))
+  (dbg-char (+ n 48))
+  (return)
+hex
+  (dbg-char (+ n 65 -10)))
+
+(fun (dbg-byte b)
+  (var hi (/ b 16))
+  (var lo (- b (* hi 16)))
+  (dbg-nibble hi)
+  (dbg-nibble lo))
+
+;;; Aborting
+
+(fun (abort)
+  (syscall 60 1))
+
+(fun (abort-if-not cond)
+  (goto out cond)
+  (abort)
+out)
+
+;;; Input
+
+;; The bootstrap compiler only reads from stdin, with a simple buffer.
+
+(const input-bufsize 1024)
+(const input-eof -1)
+
+(mem input-buf input-bufsize)
+(var input-cur)
+(var input-end)
+
+(fun (input-fillbuf)
+  (var n (syscall 0 0 input-buf input-bufsize))
+  (abort-if-not (>= n 0))
+  (= input-cur input-buf)
+  (= input-end (+ input-buf n)))
+
+(fun (input)
+  (var r)
+  (goto non-empty (< input-cur input-end))
+  (input-fillbuf)
+  (goto non-empty (< input-cur input-end))
+  (return input-eof)
+non-empty
+  (= r (b@ input-cur))
+  (= input-cur (+ input-cur 1))
+  (return r))
+
+;;; Tokenization
+
+;;; Main
+
+(fun (main)
+  (var ch)
+again
+  (= ch (input))
+  (goto done (== ch input-eof))
+  (dbg-byte ch)
+  (dbg-char 10)
+  (goto again)
+done)

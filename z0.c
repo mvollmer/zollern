@@ -30,12 +30,16 @@
 
    Memory reservation.
 
+   - (var SYM)
+
+   Global variable definition.
+
  # Local definitions
 
    - (var SYMBOL EXPR)
    - (var SYMBOL)
 
-   Variable definition.
+   Local variable definition.
 
  # Statements
 
@@ -700,7 +704,7 @@ emit_pop_rem ()
 }
 
 void
-emit_pop_gt ()
+emit_pop_set_cmp (int op)
 {
   emit_pop_b ();
 
@@ -711,7 +715,7 @@ emit_pop_gt ()
 
   // setg %al
   emit_8 (0x0F);
-  emit_8 (0x9F);
+  emit_8 (op);
   emit_8 (0xC0);
 
   // movzbl %al,%eax
@@ -721,24 +725,45 @@ emit_pop_gt ()
 }
 
 void
+emit_pop_eq ()
+{
+  // sete %al
+  emit_pop_set_cmp (0x94);
+}
+
+void
+emit_pop_ne ()
+{
+  // sete %al
+  emit_pop_set_cmp (0x95);
+}
+
+void
+emit_pop_gt ()
+{
+  // setg %al
+  emit_pop_set_cmp (0x9F);
+}
+
+void
+emit_pop_ge ()
+{
+  // setge %al
+  emit_pop_set_cmp (0x9D);
+}
+
+void
 emit_pop_lt ()
 {
-  emit_pop_b ();
+  // setl %al
+  emit_pop_set_cmp (0x9C);
+}
 
-  // cmp %rbx, %rax
-  emit_8 (0x48);
-  emit_8 (0x39);
-  emit_8 (0xD8);
-
-  // setg %al
-  emit_8 (0x0F);
-  emit_8 (0x9C);
-  emit_8 (0xC0);
-
-  // movzbl %al,%eax
-  emit_8 (0x0F);
-  emit_8 (0xB6);
-  emit_8 (0xC0);
+void
+emit_pop_le ()
+{
+  // setle %al
+  emit_pop_set_cmp (0x9E);
 }
 
 void
@@ -770,12 +795,32 @@ emit_not ()
 }
 
 void
+emit_ref ()
+{
+  // mov (%rax),%rax
+  emit_8 (0x48);
+  emit_8 (0x8b);
+  emit_8 (0x00);
+}
+
+void
 emit_ref_byte ()
 {
   // movsbl (%rax),%eax
   emit_8 (0x0f);
   emit_8 (0xbe);
   emit_8 (0x00);
+}
+
+void
+emit_pop_store ()
+{
+  emit_pop_b ();
+
+  // mov %rbx,(%rax)
+  emit_8 (0x48);
+  emit_8 (0x89);
+  emit_8 (0x18);
 }
 
 void
@@ -1190,6 +1235,7 @@ typedef struct decl {
     global_func,
     global_const,
     global_mem,
+    global_var,
     local_var
   } kind;
   exp *name;
@@ -1340,6 +1386,14 @@ define_global_mem (exp *sym, uint64_t size)
 }
 
 void
+define_global_var (exp *sym)
+{
+  decl *d = new_global_decl (sym, global_var);
+  d->size = 8;
+  d->defined = true;
+}
+
+void
 reference_global_decl (decl *d, uint64_t offset)
 {
   declref *r = obstack_alloc (&global_decl_obs, sizeof(declref));
@@ -1355,7 +1409,7 @@ allocate_mems ()
 
   for (decl *d = global_decls; d; d = d->next)
     {
-      if (d->kind == global_mem)
+      if (d->kind == global_mem || d->kind == global_var)
         {
           d->offset = data_offset;
           grow_data (d->size);
@@ -1376,7 +1430,7 @@ resolve_global_decls ()
       uint64_t value = d->offset;
       if (d->kind == global_func)
         value += code_start;
-      else if (d->kind == global_mem)
+      else if (d->kind == global_mem || d->kind == global_var)
         value += data_start;
 
       symtab_add (sym_name (d->name), value);
@@ -1562,6 +1616,12 @@ compile_exp (exp *e)
         }
       else if (d->kind == global_const)
         emit_set (d->value);
+      else if (d->kind == global_var)
+        {
+          uint64_t offset = emit_set (0);
+          reference_global_decl (d, offset);
+          emit_ref ();
+        }
       else
         error (e, "internal error");
     }
@@ -1575,10 +1635,18 @@ compile_exp (exp *e)
     compile_multi_op (e, emit_pop_div, NULL);
   else if (is_form (e, "%"))
     compile_binary_op (e, emit_pop_rem);
+  else if (is_form (e, "=="))
+    compile_binary_op (e, emit_pop_eq);
+  else if (is_form (e, "!="))
+    compile_binary_op (e, emit_pop_ne);
   else if (is_form (e, ">"))
     compile_binary_op (e, emit_pop_gt);
+  else if (is_form (e, ">="))
+    compile_binary_op (e, emit_pop_ge);
   else if (is_form (e, "<"))
     compile_binary_op (e, emit_pop_lt);
+  else if (is_form (e, "<="))
+    compile_binary_op (e, emit_pop_le);
   else if (is_form (e, "not"))
     compile_unary_op (e, emit_not);
   else if (is_form (e, "b@"))
@@ -1621,10 +1689,21 @@ compile_statement (exp *e)
       exp *var, *val;
       parse_form (e, 2, 0, &var, &val);
       decl *d = find_decl (var);
-      if (d->kind != local_var)
+      if (d->kind == local_var)
+        {
+          compile_exp (val);
+          emit_store_a (stack_offset - d->offset);
+        }
+      else if (d->kind == global_var)
+        {
+          compile_exp (val);
+          emit_push_a ();
+          uint64_t offset = emit_set (0);
+          reference_global_decl (d, offset);
+          emit_pop_store ();
+        }
+      else
         error (e, "can only assign to variables");
-      compile_exp (val);
-      emit_store_a (stack_offset - d->offset);
     }
   else if (is_form (e, "b@="))
     {
@@ -1673,8 +1752,10 @@ compile_statement (exp *e)
         compile_exp (val);
       else
         emit_set (0);
+      int old_offset = stack_offset;
       emit_pops (stack_offset);
       emit_ret ();
+      stack_offset = old_offset;
       return true;
     }
   else
@@ -1845,6 +1926,14 @@ compile_mem (exp *e)
 }
 
 void
+compile_var (exp *e)
+{
+  exp *sym;
+  parse_form (e, 1, 0, &sym);
+  define_global_var (sym);
+}
+
+void
 compile_global (exp *e)
 {
   if (is_form (e, "fun"))
@@ -1855,6 +1944,8 @@ compile_global (exp *e)
     compile_const (e);
   else if (is_form (e, "mem"))
     compile_mem (e);
+  else if (is_form (e, "var"))
+    compile_var (e);
   else
     error (e, "syntax error");
 }
