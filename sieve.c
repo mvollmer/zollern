@@ -1,4 +1,4 @@
-#define N 10000000
+#define N 1000
 
 char strbuf[512];
 char intbuf[N];
@@ -45,7 +45,7 @@ init_intbuf ()
 void
 print_intbuf ()
 {
-  for (long i = 0; i < N; i += 1)
+  for (long i = 2; i < N; i += 1)
     if (!intbuf[i])
       {
         strint (strbuf, i);
