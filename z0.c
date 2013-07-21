@@ -77,6 +77,14 @@
 
    A literal.
 
+   - STRING
+
+   A string literal.
+
+   - (data (o EXPR...) (t EXPR...) (w EXPR...) (b EXPR...) ...)
+
+   Data literal.
+
    - SYMBOL
 
    Variable, constant, function, or argument reference.  For a
@@ -837,7 +845,7 @@ emit_pop_store_byte ()
 
 typedef struct exp {
   enum {
-    pair_exp, sym_exp, inum_exp, dnum_exp, singleton_exp
+    pair_exp, sym_exp, string_exp, inum_exp, dnum_exp, singleton_exp
   } type;
   union {
     struct {
@@ -850,6 +858,7 @@ typedef struct exp {
     };
     int64_t inum;
     double dnum;
+    char *string;
   };
 } exp;
 
@@ -876,10 +885,16 @@ reset_exp()
   obstack_init (&exp_obs);
 }
 
+void *
+alloc_exp_data (size_t n)
+{
+  return obstack_alloc (&exp_obs, n);
+}
+
 exp *
 alloc_exp ()
 {
-  return obstack_alloc (&exp_obs, sizeof(exp));
+  return alloc_exp_data (sizeof(exp));
 }
 
 exp *
@@ -1024,6 +1039,37 @@ sym_name (exp *e)
 }
 
 exp *
+gensym (char *tag)
+{
+  static int counter;
+  char name[80];
+  snprintf(name, 80, "%d-%s", counter++, tag? tag : "gensym");
+  return sym(name);
+}
+
+exp *
+string (char *str)
+{
+  exp *e = alloc_exp ();
+  e->type = string_exp;
+  e->string = alloc_exp_data (strlen (str) + 1);
+  strcpy (e->string, str);
+  return e;
+}
+
+bool
+is_string (exp *e)
+{
+  return e && e->type == string_exp;
+}
+
+char *
+string_chars (exp *e)
+{
+  return e->string;
+}
+
+exp *
 reverse (exp *e)
 {
   exp *r = nil ();
@@ -1059,6 +1105,11 @@ write_exp (FILE *f, exp *e)
       // XXX - escape things properly
       fprintf (f, "%s", sym_name (e));
     }
+  else if (is_string (e))
+    {
+      // XXX - escape things properly
+      fprintf (f, "\"%s\"", string_chars (e));
+    }
   else if (is_inum (e))
     {
       fprintf (f, "%lu", inum_val(e));
@@ -1084,7 +1135,7 @@ write_exp (FILE *f, exp *e)
   else if (is_end_of_file (e))
     fprintf (f, "<eof>");
   else
-    fprintf (f, "<???>");
+    fprintf (f, "<?>");
 }
 
 const char *in_name;
@@ -1101,7 +1152,7 @@ read_open (const char *name)
 
 #define token_size 1024
 char token[token_size];
-enum { punct_tok, sym_tok, inum_tok, dnum_tok, eof_tok } token_kind;
+enum { punct_tok, sym_tok, string_tok, inum_tok, dnum_tok, eof_tok } token_kind;
 
 int lineno = 1;
 
@@ -1131,15 +1182,16 @@ read_token ()
       token[1] = '\0';
       token_kind = punct_tok;
     }
-  else if (c == '\'')
+  else if (c == '\'' || c == '"')
     {
+      char quote = c;
       bool escape_next = false;
       int i = 0;
-      while ((c = fgetc (in_file)) != EOF && (c != '\'' || escape_next))
+      while ((c = fgetc (in_file)) != EOF && (c != quote || escape_next))
         {
           if (c == '\n')
             lineno++;
-          if (c == '\\' && !escape_next)
+          if (c == quote && !escape_next)
             escape_next = true;
           else
             {
@@ -1148,7 +1200,7 @@ read_token ()
             }
         }
       token[i] = '\0';
-      token_kind = sym_tok;
+      token_kind = (quote == '\''? sym_tok : string_tok);
     }
   else if (isdigit (c) || c == '-')
     {
@@ -1193,6 +1245,8 @@ read_exp_1 ()
     return dnum (strtod (token, NULL));
   else if (token_kind == sym_tok)
     return sym (token);
+  else if (token_kind == string_tok)
+    return string (token);
   else if (token_kind == punct_tok && token[0] == '(')
     {
       exp *e = nil ();
@@ -1471,6 +1525,14 @@ resolve_local_labs ()
     }
 }
 
+exp *deferred_globals;
+
+void
+defer_global (exp *e)
+{
+  deferred_globals = cons (e, deferred_globals);
+}
+
 bool
 is_form (exp *e, const char *sym)
 {
@@ -1624,6 +1686,19 @@ compile_exp (exp *e)
         }
       else
         error (e, "internal error");
+    }
+  else if (is_string (e))
+    {
+      exp *n = gensym ("string");
+      exp *d = cons (sym ("data"),
+                     cons (n,
+                           cons (e,
+                                 cons (cons (sym ("b"),
+                                             cons (inum (0),
+                                                   nil ())),
+                                       nil ()))));
+      compile_exp (n);
+      defer_global (d);
     }
   else if (is_form (e, "+"))
     compile_multi_op (e, emit_pop_add, emit_null);
@@ -1879,20 +1954,10 @@ compile_data (exp *e)
   while (is_pair (e))
     {
       exp *d = first (e);
-      if (is_form (d, "s"))
+      if (is_string (d))
         {
-          exp *s = rest (d);
-          while (is_pair (s))
-            {
-              if (is_sym (first (s)))
-                {
-                  for (const char *bytes = sym_name (first (s)); *bytes; bytes++)
-                    emit_8 (*bytes);
-                }
-              else
-                error (s, "syntax");
-              s = rest (s);
-            }
+          for (const char *bytes = string_chars (d); *bytes; bytes++)
+            emit_8 (*bytes);
         }
       else if (is_form (d, "b"))
         {
@@ -1934,7 +1999,7 @@ compile_var (exp *e)
 }
 
 void
-compile_global (exp *e)
+compile_global_1 (exp *e)
 {
   if (is_form (e, "fun"))
     compile_function (e);
@@ -1948,6 +2013,19 @@ compile_global (exp *e)
     compile_var (e);
   else
     error (e, "syntax error");
+}
+
+void
+compile_global (exp *e)
+{
+  compile_global_1 (e);
+
+  while (deferred_globals)
+    {
+      exp *e = deferred_globals;
+      deferred_globals = rest (deferred_globals);
+      compile_global_1 (first (e));
+    }
 }
 
 void

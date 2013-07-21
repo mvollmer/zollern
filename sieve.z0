@@ -87,5 +87,5 @@ done)
   (sieve-intbuf)
   (print-intbuf))
 
-(data str:primes (s 'Prime numbers:') (b newline 0))
+(data str:primes "Prime numbers:" (b newline 0))
 (data str:newline (b newline 0))
