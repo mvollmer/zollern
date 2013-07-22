@@ -9,8 +9,8 @@
 (mem strbuf 512)
 (mem intbuf (* 8 N))
 
-(fun (write buf len)
-  (return (syscall syscall_write stdout buf len)))
+(fun (write buf)
+  (return (syscall syscall_write stdout buf (strlen buf))))
 
 (fun (strlen str)
   (var l 0)
@@ -54,8 +54,8 @@ again
   (goto done (> i N))
   (goto skip (b@ intbuf i))
   (strint strbuf i)
-  (write strbuf (strlen strbuf))
-  (write str:newline 1)
+  (write strbuf)
+  (write "\n")
 skip
   (= i (+ i 1))
   (goto again)
@@ -82,10 +82,7 @@ skip
 done)
 
 (fun (main)
-  (write str:primes (strlen str:primes))
+  (write "Prime numbers:\n")
   (init-intbuf)
   (sieve-intbuf)
   (print-intbuf))
-
-(data str:primes "Prime numbers:" (b newline 0))
-(data str:newline (b newline 0))

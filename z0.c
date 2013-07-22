@@ -1191,10 +1191,22 @@ read_token ()
         {
           if (c == '\n')
             lineno++;
-          if (c == quote && !escape_next)
+          if (c == '\\' && !escape_next)
             escape_next = true;
           else
             {
+               if (escape_next)
+                 {
+                   switch (c) {
+                   case 'n':
+                     c = '\n';
+                     break;
+                   default:
+                     exitf (1, "unknown string escape '%c'", c);
+                     break;
+                   }
+                 }
+
               token[i++] = c;
               escape_next = false;
             }
