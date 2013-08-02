@@ -31,6 +31,19 @@ hex
   (dbg-nibble hi)
   (dbg-nibble lo))
 
+(fun (dbg-strlen s)
+  (var l 0)
+again
+  (goto done (not (b@ s l)))
+  (= l (+ l 1))
+  (goto again)
+done
+  (return l))
+
+(fun (dbg-str s)
+  (dbg-chars s (dbg-strlen s))
+  (dbg-char 10))
+
 ;;; Aborting
 
 (fun (abort)
@@ -69,16 +82,64 @@ non-empty
   (= input-cur (+ input-cur 1))
   (return r))
 
+(fun (input-undo)
+  (goto empty-buf (== input-cur input-buf))
+  (= input-cur (- input-cur 1))
+empty-buf)
+
 ;;; Tokenization
+
+(const token-max 512)
+(mem token token-max)
+
+(fun (skip-whitespace)
+  (var c)
+again
+  (= c (input))
+  (goto again (== c 32))
+  (goto again (== c 9))
+  (goto again (== c 10))
+  (goto comment (== c 59))
+  (input-undo)
+  (return)
+comment
+  (= c (input))
+  (goto again (== c 10))
+  (goto comment))
+
+(fun (read-token)
+  (var c)
+  (var t 0)
+  (skip-whitespace)
+  (= c (input))
+  (goto punct (== c 40))
+  (goto punct (== c 41))
+symbol
+  (goto done (== c input-eof))
+  (goto done (== c 32))
+  (goto done (== c 9))
+  (goto done (== c 10))
+  (goto done (== c 59))
+  (goto done (== c 40))
+  (goto done (== c 41))
+  (b@= token t c)
+  (= t (+ t 1))
+  (= c (input))
+  (goto symbol)
+done
+  (input-undo)
+  (b@= token t 0)
+  (return)
+punct
+  (b@= token t c)
+  (b@= token (+ t 1) 0))
 
 ;;; Main
 
 (fun (main)
-  (var ch)
 again
-  (= ch (input))
-  (goto done (== ch input-eof))
-  (dbg-byte ch)
-  (dbg-char 10)
+  (read-token)
+  (goto done (== (b@ token) 0))
+  (dbg-str token)
   (goto again)
 done)
