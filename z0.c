@@ -1266,6 +1266,8 @@ read_exp_1 ()
         read_token ();
         if (token_kind == punct_tok && token[0] == ')')
           break;
+        if (token_kind == eof_tok)
+          exitf (1, "unterminated list");
         e = cons (read_exp_1 (), e);
       }
       return reverse (e);

@@ -89,8 +89,16 @@ empty-buf)
 
 ;;; Tokenization
 
+(const token-eof -1)
+(const token-symbol 0)
+(const token-punct 1)
+(const token-inum 2)
+(const token-dnum 3)
+(const token-string 4)
+
 (const token-max 512)
 (mem token token-max)
+(var token-type)
 
 (fun (skip-whitespace)
   (var c)
@@ -112,34 +120,42 @@ comment
   (var t 0)
   (skip-whitespace)
   (= c (input))
+  (goto eof (== c input-eof))
   (goto punct (== c 40))
   (goto punct (== c 41))
+  (goto symbol)
+eof
+  (= token-type token-eof)
+  (return)
+punct
+  (b@= token t c)
+  (b@= token (+ t 1) 0)
+  (= token-type token-punct)
+  (return)
 symbol
-  (goto done (== c input-eof))
-  (goto done (== c 32))
-  (goto done (== c 9))
-  (goto done (== c 10))
-  (goto done (== c 59))
-  (goto done (== c 40))
-  (goto done (== c 41))
+  (goto symbol-done (== c input-eof))
+  (goto symbol-done (== c 32))
+  (goto symbol-done (== c 9))
+  (goto symbol-done (== c 10))
+  (goto symbol-done (== c 59))
+  (goto symbol-done (== c 40))
+  (goto symbol-done (== c 41))
   (b@= token t c)
   (= t (+ t 1))
   (= c (input))
   (goto symbol)
-done
+symbol-done
   (input-undo)
   (b@= token t 0)
-  (return)
-punct
-  (b@= token t c)
-  (b@= token (+ t 1) 0))
+  (= token-type token-symbol)
+  (return))
 
 ;;; Main
 
 (fun (main)
 again
   (read-token)
-  (goto done (== (b@ token) 0))
+  (goto done (== token-type token-eof))
   (dbg-str token)
   (goto again)
 done)
