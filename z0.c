@@ -629,6 +629,14 @@ emit_pop_b ()
 }
 
 void
+emit_pop_c ()
+{
+  // pop %rcx
+  emit_8 (0x59);
+  stack_offset -= 1;
+}
+
+void
 emit_pop_add ()
 {
   emit_pop_b ();
@@ -709,6 +717,17 @@ emit_pop_rem ()
   emit_8 (0x48);
   emit_8 (0x89);
   emit_8 (0xD0);
+}
+
+void
+emit_pop_slr ()
+{
+  emit_pop_c ();
+
+  // shr %cl,%rax
+  emit_8 (0x48);
+  emit_8 (0xd3);
+  emit_8 (0xe8);
 }
 
 void
@@ -1724,6 +1743,8 @@ compile_exp (exp *e)
     compile_multi_op (e, emit_pop_div, NULL);
   else if (is_form (e, "%"))
     compile_binary_op (e, emit_pop_rem);
+  else if (is_form (e, ">>"))
+    compile_binary_op (e, emit_pop_slr);
   else if (is_form (e, "=="))
     compile_binary_op (e, emit_pop_eq);
   else if (is_form (e, "!="))

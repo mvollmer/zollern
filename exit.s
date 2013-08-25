@@ -1,3 +1,4 @@
 .globl _start
 _start:
-        mov    0xFFFF(%rsp),%rax
+        pop %rcx
+        shr %cl,%rax

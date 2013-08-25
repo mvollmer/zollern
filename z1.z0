@@ -150,12 +150,38 @@ symbol-done
   (= token-type token-symbol)
   (return))
 
+;;; Emitting code
+
+(const code-size 1024)
+(mem code code-size)
+(var code-ptr)
+
+(fun (init-code)
+  (= code-ptr code))
+
+(fun (emit-8 b)
+  (abort-if-not (< code-ptr (+ code code-size)))
+  (b@= code-ptr b)
+  (= code-ptr (+ code-ptr 1)))
+
+(fun (emit-16 w)
+  (emit-8 w)
+  (emit-8 (>> w 8)))
+
+(fun (emit-32 q)
+  (emit-16 q)
+  (emit-16 (>> q 16)))
+
+(fun (emit-64 t)
+  (emit-32 t)
+  (emit-32 (>> t 32)))
+
+(fun (emit-ret)
+  (emit-8 0xC3))
+
 ;;; Main
 
 (fun (main)
-again
-  (read-token)
-  (goto done (== token-type token-eof))
-  (dbg-str token)
-  (goto again)
-done)
+  (init-code)
+  (emit-ret)
+  (code))

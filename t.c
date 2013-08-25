@@ -1,23 +1,6 @@
 #include <stdint.h>
 
-void foo (long a,
-          long b,
-          long c,
-          long d,
-          long e,
-          long f,
-          long g)
+unsigned xlong foo (unsigned long a, unsigned long b)
 {
-  c = -b;
-}
-
-void main()
-{
-  foo (0x1234567812345678,
-       0x1234567812345678,
-       0x1234567812345678,
-       0x1234567812345678,
-       0x1234567812345678,
-       0x1234567812345678,
-       0x1234567812345678);
+  return a >> b;
 }
