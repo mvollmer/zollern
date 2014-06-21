@@ -1171,7 +1171,7 @@ read_open (const char *name)
 
 #define token_size 1024
 char token[token_size];
-enum { punct_tok, sym_tok, string_tok, inum_tok, dnum_tok, eof_tok } token_kind;
+enum { punct_tok, sym_tok, string_tok, inum_tok, dnum_tok, char_tok, eof_tok } token_kind;
 
 int lineno = 1;
 
@@ -1250,6 +1250,13 @@ read_token ()
       if (strcmp (token, "-") == 0)
         token_kind = sym_tok;
     }
+  else if (c == '#')
+    {
+      c = fgetc (in_file);
+      token_kind = char_tok;
+      token[0] = c;
+      token[1] = '\0';
+    }
   else if (c != EOF)
     {
       int i = 0;
@@ -1272,6 +1279,8 @@ read_exp_1 ()
     return end_of_file ();
   else if (token_kind == inum_tok)
     return inum (strtol (token, NULL, 0));
+  else if (token_kind == char_tok)
+    return inum (token[0]);
   else if (token_kind == dnum_tok)
     return dnum (strtod (token, NULL));
   else if (token_kind == sym_tok)
@@ -1759,8 +1768,16 @@ compile_exp (exp *e)
     compile_binary_op (e, emit_pop_le);
   else if (is_form (e, "not"))
     compile_unary_op (e, emit_not);
-  else if (is_form (e, "b@"))
+  else if (is_form (e, "b@")
+           || is_form (e, "@"))
     {
+      void (*emit_ref_for_size)();
+
+      if (is_form(e, "b@"))
+        emit_ref_for_size = emit_ref_byte;
+      else
+        emit_ref_for_size = emit_ref;
+
       exp *ptr, *off;
       parse_form (e, 1, 1, &ptr, &off);
       if (off)
@@ -1769,12 +1786,12 @@ compile_exp (exp *e)
           emit_push_a ();
           compile_exp (ptr);
           emit_pop_add ();
-          emit_ref_byte ();
+          emit_ref_for_size ();
         }
       else
         {
           compile_exp (ptr);
-          emit_ref_byte ();
+          emit_ref_for_size ();
         }
     }
   else if (is_form (e, "syscall"))
@@ -1815,8 +1832,16 @@ compile_statement (exp *e)
       else
         error (e, "can only assign to variables");
     }
-  else if (is_form (e, "b@="))
+  else if (is_form (e, "b@=")
+           || is_form (e, "@="))
     {
+      void (*emit_pop_store_for_size)();
+
+      if (is_form (e, "b@="))
+        emit_pop_store_for_size = emit_pop_store_byte;
+      else
+        emit_pop_store_for_size = emit_pop_store;
+
       exp *ptr, *off, *val;
       parse_form (e, 2, 1, &ptr, &off, &val);
       if (val == NULL)
@@ -1832,12 +1857,12 @@ compile_statement (exp *e)
           emit_push_a ();
           compile_exp (ptr);
           emit_pop_add ();
-          emit_pop_store_byte ();
+          emit_pop_store_for_size ();
         }
       else
         {
           compile_exp (ptr);
-          emit_pop_store_byte ();
+          emit_pop_store_for_size ();
         }
     }
   else if (is_form (e, "goto"))

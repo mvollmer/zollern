@@ -1,29 +1,28 @@
 ;;
-;; Z1 -- bootstrap compiler
+;; Z1 -- bootstrapping
 ;;
-;; This is a bad compiler for the Zollern core language and part of
-;; its run-time support, written in the Z0 bootstrap language.
 
-;; The Zollern core language is very small but has powerful extension
-;; mechanisms.
+;; This program in the Z0 language implements a programming system
+;; that is nothing more than Z0 plus macros and a primitive
+;; read-eval-print loop.
 
 ;;; Debug output
 
 (fun (dbg-chars buf len)
   (syscall 1 2 buf len))
 
-(mem dbg-char-buf 1)
+(mem dbg-buf 40)
 
 (fun (dbg-char ch)
-  (b@= dbg-char-buf ch)
-  (dbg-chars dbg-char-buf 1))
+  (b@= dbg-buf ch)
+  (dbg-chars dbg-buf 1))
 
 (fun (dbg-nibble n)
   (goto hex (> n 9))
-  (dbg-char (+ n 48))
+  (dbg-char (+ n #0))
   (return)
 hex
-  (dbg-char (+ n 65 -10)))
+  (dbg-char (+ n #a -10)))
 
 (fun (dbg-byte b)
   (var hi (/ b 16))
@@ -41,8 +40,29 @@ done
   (return l))
 
 (fun (dbg-str s)
-  (dbg-chars s (dbg-strlen s))
+  (dbg-chars s (dbg-strlen s)))
+
+(fun (dbg-nl)
   (dbg-char 10))
+
+(fun (dbg-num i)
+  (var p dbg-buf)
+  (var b dbg-buf)
+  (var t)
+next-digit
+  (b@= p (+ (% i 10) 48))
+  (= p (+ p 1))
+  (= i (/ i 10))
+  (goto next-digit i)
+  (b@= p 0)
+reverse-next
+  (= p (- p 1))
+  (= t (b@ b))
+  (b@= b (b@ p))
+  (b@= p t)
+  (= b (+ b 1))
+  (goto reverse-next (> p b))
+  (dbg-str dbg-buf))
 
 ;;; Aborting
 
@@ -107,7 +127,7 @@ again
   (goto again (== c 32))
   (goto again (== c 9))
   (goto again (== c 10))
-  (goto comment (== c 59))
+  (goto comment (== c #;))
   (input-undo)
   (return)
 comment
@@ -121,8 +141,8 @@ comment
   (skip-whitespace)
   (= c (input))
   (goto eof (== c input-eof))
-  (goto punct (== c 40))
-  (goto punct (== c 41))
+  (goto punct (== c #())
+  (goto punct (== c #)))
   (goto symbol)
 eof
   (= token-type token-eof)
@@ -137,9 +157,9 @@ symbol
   (goto symbol-done (== c 32))
   (goto symbol-done (== c 9))
   (goto symbol-done (== c 10))
-  (goto symbol-done (== c 59))
-  (goto symbol-done (== c 40))
-  (goto symbol-done (== c 41))
+  (goto symbol-done (== c #;))
+  (goto symbol-done (== c #())
+  (goto symbol-done (== c #)))
   (b@= token t c)
   (= t (+ t 1))
   (= c (input))
@@ -149,6 +169,105 @@ symbol-done
   (b@= token t 0)
   (= token-type token-symbol)
   (return))
+
+;;; Lists, aka S-Expressions
+
+(const off-type 0)
+(const type-pair 0)
+(const type-sym  1)
+(const type-inum 2)
+(const type-str  3)
+(const type-spec 4)
+
+(const exp-size 4096)
+(mem exp-pool exp-size)
+(var exp-ptr)
+
+(var exp-nil-obj)
+
+(fun (init-exp)
+  (= exp-ptr exp-pool)
+  (= exp-nil-obj (exp-alloc 1))
+  (@= exp-nil-obj 0 type-spec))
+
+(fun (exp-alloc size)
+  (var res exp-ptr)
+  (= exp-ptr (+ exp-ptr (* size 8)))
+  (abort-if-not (< exp-ptr (+ exp-pool exp-size)))
+  (return res))
+
+(fun (exp-nil)
+  (return exp-nil-obj))
+
+(fun (exp-is-nil e)
+  (return (== e exp-nil-obj)))
+
+(const off-pair-first  8)
+(const off-pair-rest  16)
+(const size-pair      24)
+
+(fun (exp-pair first rest)
+  (var p (exp-alloc size-pair))
+  (@= p off-type type-pair)
+  (@= p off-pair-first first)
+  (@= p off-pair-rest rest)
+  (return p))
+
+(fun (exp-is-pair e)
+  (return (== (@ e off-type) type-pair)))
+
+(fun (exp-first e)
+  (return (@ e off-pair-first)))
+
+(fun (exp-rest e)
+  (return (@ e off-pair-rest)))
+
+(const off-inum-val  8)
+(const size-inum    16)
+
+(fun (exp-inum val)
+  (var p (exp-alloc size-inum))
+  (@= p off-type type-inum)
+  (@= p off-inum-val val)
+  (return p))
+
+(fun (exp-is-inum e)
+  (return (== (@ e off-type) type-inum)))
+
+(fun (exp-inum-val e)
+  (return (@ e off-inum-val)))
+
+(fun (exp-write e)
+  (var need-space 0)
+
+  (goto list (exp-is-pair e))
+  (goto not-list (not (exp-is-nil e)))
+
+list
+  (dbg-str "(")
+list-next
+  (goto list-end (not (exp-is-pair e)))
+  (goto list-no-space (not need-space))
+  (dbg-str " ")
+list-no-space
+  (exp-write (exp-first e))
+  (= need-space 1)
+  (= e (exp-rest e))
+  (goto list-next)
+list-end
+  (goto list-end-nil (exp-is-nil e))
+  (dbg-str " . ")
+  (exp-write e)
+list-end-nil
+  (dbg-str ")")
+  (return)
+
+not-list
+  (goto not-inum (not (exp-is-inum e)))
+  (dbg-num (exp-inum-val e))
+  (return)
+not-inum
+  (dbg-str "<???>"))
 
 ;;; Emitting code
 
@@ -182,6 +301,7 @@ symbol-done
 ;;; Main
 
 (fun (main)
-  (init-code)
-  (emit-ret)
-  (code))
+  (init-exp)
+  (exp-write (exp-pair (exp-inum 1)
+                       (exp-pair (exp-inum 2) (exp-nil))))
+  (dbg-nl))
