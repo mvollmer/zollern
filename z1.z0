@@ -2,35 +2,34 @@
 ;; Z1 -- bootstrapping
 ;;
 
-;; This program in the Z0 language implements a programming system
-;; that is nothing more than Z0 plus macros and a primitive
-;; read-eval-print loop.
+;; This program in the Z0 language implements a primitive programming
+;; system.
+;;
+;; (def (foo (a int32)
+;;           (b (ptr FooData))
+;;      int32
+;;   ..)
+;;
+;; (def x (array int32 100) 12)
+;;
+;; (struct FooData
+;;   (link (ptr FooData))
+;;   (val  float64))
 
-;;; Debug output
+;;; ASCII
 
-(fun (dbg-chars buf len)
-  (syscall 1 2 buf len))
+(const ascii-space       32)
+(const ascii-tab          9)
+(const ascii-lf          10)
+(const ascii-open-paren  40)
+(const ascii-close-paren 41)
+(const ascii-0           48)
+(const ascii-semicolon   59)
+(const ascii-a           97)
 
-(mem dbg-buf 40)
+;;; String utilities
 
-(fun (dbg-char ch)
-  (b@= dbg-buf ch)
-  (dbg-chars dbg-buf 1))
-
-(fun (dbg-nibble n)
-  (goto hex (> n 9))
-  (dbg-char (+ n #0))
-  (return)
-hex
-  (dbg-char (+ n #a -10)))
-
-(fun (dbg-byte b)
-  (var hi (/ b 16))
-  (var lo (- b (* hi 16)))
-  (dbg-nibble hi)
-  (dbg-nibble lo))
-
-(fun (dbg-strlen s)
+(fun (strlen s)
   (var l 0)
 again
   (goto done (not (b@ s l)))
@@ -39,15 +38,76 @@ again
 done
   (return l))
 
-(fun (dbg-str s)
-  (dbg-chars s (dbg-strlen s)))
+(fun (strcpy dst src)
+  (var b)
+again
+  (= b (b@ src))
+  (b@= dst b)
+  (= src (+ src 1))
+  (= dst (+ dst 1))
+  (goto again b))
 
-(fun (dbg-nl)
-  (dbg-char 10))
+(fun (strhash str)
+  (var h 0)
+  (var b)
+again
+  (= b (b@ str))
+  (goto done (not b))
+  (= h (^ (* h 33) b))
+  (= str (+ str 1))
+  (goto again)
+done
+  (return h))
 
-(fun (dbg-num i)
-  (var p dbg-buf)
-  (var b dbg-buf)
+(fun (strcmp a b)
+  (var aa)
+  (var bb)
+again
+  (= aa (b@ a))
+  (= bb (b@ b))
+  (goto done (not (== aa bb)))
+  (= a (+ a 1))
+  (= b (+ b 1))
+  (goto again aa)
+done
+  (return (- bb aa)))
+
+(fun (streq a b)
+  (return (== (strcmp a b) 0)))
+
+;;; Simple output
+
+(fun (out-chars buf len)
+  (syscall 1 2 buf len))
+
+(mem out-buf 40)
+
+(fun (out-char ch)
+  (b@= out-buf ch)
+  (out-chars out-buf 1))
+
+(fun (out-nibble n)
+  (goto hex (> n 9))
+  (out-char (+ n ascii-0))
+  (return)
+hex
+  (out-char (+ n ascii-a -10)))
+
+(fun (out-byte b)
+  (var hi (/ b 16))
+  (var lo (- b (* hi 16)))
+  (out-nibble hi)
+  (out-nibble lo))
+
+(fun (out-str s)
+  (out-chars s (strlen s)))
+
+(fun (out-nl)
+  (out-char 10))
+
+(fun (out-num i)
+  (var p out-buf)
+  (var b out-buf)
   (var t)
 next-digit
   (b@= p (+ (% i 10) 48))
@@ -62,7 +122,20 @@ reverse-next
   (b@= p t)
   (= b (+ b 1))
   (goto reverse-next (> p b))
-  (dbg-str dbg-buf))
+  (out-str out-buf))
+
+;;; Debugging
+
+(fun (pk-num label num)
+  (out-str label)
+  (out-str ": ")
+  (out-num num)
+  (out-nl)
+  (return num))
+
+(fun (pk label)
+  (out-str label)
+  (out-nl))
 
 ;;; Aborting
 
@@ -73,6 +146,176 @@ reverse-next
   (goto out cond)
   (abort)
 out)
+
+;;; Lists
+
+(const off-type 0)
+(const type-pair 0)
+(const type-sym  1)
+(const type-inum 2)
+(const type-str  3)
+(const type-spec 4)
+
+(const exp-size 4096)
+(mem exp-pool exp-size)
+(var exp-ptr)
+
+(var exp-nil-obj)
+(var exp-eof-obj)
+
+(fun (init-exp)
+  (= exp-ptr exp-pool)
+  (= exp-nil-obj (exp-spec))
+  (= exp-eof-obj (exp-spec)))
+
+(fun (exp-alloc size)
+  (var res exp-ptr)
+  (= exp-ptr (+ exp-ptr size))
+  (abort-if-not (< exp-ptr (+ exp-pool exp-size)))
+  (return res))
+
+(const size-spec 8)
+
+(fun (exp-spec)
+  (var p (exp-alloc size-spec))
+  (@= p off-type type-spec)
+  (return p))
+
+(fun (exp-nil)
+  (return exp-nil-obj))
+
+(fun (exp-is-nil e)
+  (return (== e exp-nil-obj)))
+
+(fun (exp-eof)
+  (return exp-eof-obj))
+
+(fun (exp-is-eof e)
+  (return (== e exp-eof-obj)))
+
+(const off-pair-first  8)
+(const off-pair-rest  16)
+(const size-pair      24)
+
+(fun (exp-pair first rest)
+  (var p (exp-alloc size-pair))
+  (@= p off-type type-pair)
+  (@= p off-pair-first first)
+  (@= p off-pair-rest rest)
+  (return p))
+
+(fun (exp-is-pair e)
+  (return (== (@ e off-type) type-pair)))
+
+(fun (exp-first e)
+  (return (@ e off-pair-first)))
+
+(fun (exp-rest e)
+  (return (@ e off-pair-rest)))
+
+(fun (set-exp-rest e r)
+  (@= e off-pair-rest r))
+
+(const off-inum-val  8)
+(const size-inum    16)
+
+(fun (exp-inum val)
+  (var p (exp-alloc size-inum))
+  (@= p off-type type-inum)
+  (@= p off-inum-val val)
+  (return p))
+
+(fun (exp-is-inum e)
+  (return (== (@ e off-type) type-inum)))
+
+(fun (exp-inum-val e)
+  (return (@ e off-inum-val)))
+
+(const exp-symtab-size 1021)
+(mem exp-symtab (* exp-symtab-size 8))
+
+(const off-sym-link 8)
+(const size-sym    16)
+
+(fun (exp-sym name)
+  (var h (% (strhash name) exp-symtab-size))
+  (var b (@ exp-symtab (* h 8)))
+  (var s b)
+again
+  (goto not-found (not s))
+  (goto found (streq name (exp-sym-name s)))
+  (= s (exp-sym-link s))
+  (goto again)
+not-found
+  (= s (exp-alloc (+ size-sym (strlen name) 1)))
+  (strcpy (+ s size-sym) name)
+  (@= s off-type type-sym)
+  (@= s off-sym-link b)
+  (@= exp-symtab (* h 8) s)
+found
+  (return s))
+
+(fun (exp-is-sym e)
+  (return (== (@ e off-type) type-sym)))
+
+(fun (exp-sym-name e)
+  (return (+ e size-sym)))
+
+(fun (exp-sym-link e)
+  (return (@ e off-sym-link)))
+
+(const size-string 8)
+
+(fun (exp-string str)
+  (var p (exp-alloc (+ size-string (strlen str) 1)))
+  (strcpy (+ p size-string) str)
+  (@= p off-type type-str)
+  (return p))
+
+(fun (exp-is-string e)
+  (return (== (@ e off-type) type-str)))
+
+(fun (exp-string-chars e)
+  (return (+ e size-string)))
+
+(fun (exp-write e)
+  (var need-space 0)
+  (goto list (exp-is-pair e))
+  (goto not-list (not (exp-is-nil e)))
+list
+  (out-str "(")
+list-next
+  (goto list-end (not (exp-is-pair e)))
+  (goto list-no-space (not need-space))
+  (out-str " ")
+list-no-space
+  (exp-write (exp-first e))
+  (= need-space 1)
+  (= e (exp-rest e))
+  (goto list-next)
+list-end
+  (goto list-end-nil (exp-is-nil e))
+  (out-str " . ")
+  (exp-write e)
+list-end-nil
+  (out-str ")")
+  (return)
+not-list
+  (goto not-inum (not (exp-is-inum e)))
+  (out-num (exp-inum-val e))
+  (return)
+not-inum
+  (goto not-string (not (exp-is-string e)))
+  (out-str "\"")
+  (out-str (exp-string-chars e))
+  (out-str "\"")
+  (return)
+not-string
+  (goto not-sym (not (exp-is-sym e)))
+  (out-str (exp-sym-name e))
+  (return)
+not-sym
+  (out-str "<???>"))
 
 ;;; Input
 
@@ -118,21 +361,21 @@ empty-buf)
 
 (const token-max 512)
 (mem token token-max)
-(var token-type)
+(var token-kind)
 
 (fun (skip-whitespace)
   (var c)
 again
   (= c (input))
-  (goto again (== c 32))
-  (goto again (== c 9))
-  (goto again (== c 10))
-  (goto comment (== c #;))
+  (goto again (== c ascii-space))
+  (goto again (== c ascii-tab))
+  (goto again (== c ascii-lf))
+  (goto comment (== c ascii-semicolon))
   (input-undo)
   (return)
 comment
   (= c (input))
-  (goto again (== c 10))
+  (goto again (== c ascii-lf))
   (goto comment))
 
 (fun (read-token)
@@ -141,25 +384,25 @@ comment
   (skip-whitespace)
   (= c (input))
   (goto eof (== c input-eof))
-  (goto punct (== c #())
-  (goto punct (== c #)))
+  (goto punct (== c ascii-open-paren))
+  (goto punct (== c ascii-close-paren))
   (goto symbol)
 eof
-  (= token-type token-eof)
+  (= token-kind token-eof)
   (return)
 punct
   (b@= token t c)
   (b@= token (+ t 1) 0)
-  (= token-type token-punct)
+  (= token-kind token-punct)
   (return)
 symbol
   (goto symbol-done (== c input-eof))
-  (goto symbol-done (== c 32))
-  (goto symbol-done (== c 9))
-  (goto symbol-done (== c 10))
-  (goto symbol-done (== c #;))
-  (goto symbol-done (== c #())
-  (goto symbol-done (== c #)))
+  (goto symbol-done (== c ascii-space))
+  (goto symbol-done (== c ascii-tab))
+  (goto symbol-done (== c ascii-lf))
+  (goto symbol-done (== c ascii-semicolon))
+  (goto symbol-done (== c ascii-open-paren))
+  (goto symbol-done (== c ascii-close-paren))
   (b@= token t c)
   (= t (+ t 1))
   (= c (input))
@@ -167,107 +410,55 @@ symbol
 symbol-done
   (input-undo)
   (b@= token t 0)
-  (= token-type token-symbol)
+  (= token-kind token-symbol)
   (return))
 
-;;; Lists, aka S-Expressions
+;;; Reading lists
 
-(const off-type 0)
-(const type-pair 0)
-(const type-sym  1)
-(const type-inum 2)
-(const type-str  3)
-(const type-spec 4)
+(fun (syntax-error)
+  (out-str "syntax error\n")
+  (abort))
 
-(const exp-size 4096)
-(mem exp-pool exp-size)
-(var exp-ptr)
+(fun (reverse e)
+  (var r (exp-nil))
+  (var n)
+again
+  (goto done (not (exp-is-pair e)))
+  (= n (exp-rest e))
+  (set-exp-rest e r)
+  (= r e)
+  (= e n)
+  (goto again)
+done
+  (return r))
 
-(var exp-nil-obj)
+(fun (exp-read-1)
+  (var e)
+  (goto not-eof (!= token-kind token-eof))
+  (return (exp-eof))
+not-eof
+  (goto not-sym (!= token-kind token-symbol))
+  (return (exp-sym token))
+not-sym
+  (goto not-punct (!= token-kind token-punct))
+  (goto not-punct (!= (b@ token) ascii-open-paren))
+  (= e (exp-nil))
+list-again
+  (read-token)
+  (goto syntax-error (== token-kind token-eof))
+  (goto list-append (!= token-kind token-punct))
+  (goto list-append (!= (b@ token) ascii-close-paren))
+  (return (reverse e))
+list-append
+  (= e (exp-pair (exp-read-1) e))
+  (goto list-again)
+not-punct
+syntax-error
+  (syntax-error))
 
-(fun (init-exp)
-  (= exp-ptr exp-pool)
-  (= exp-nil-obj (exp-alloc 1))
-  (@= exp-nil-obj 0 type-spec))
-
-(fun (exp-alloc size)
-  (var res exp-ptr)
-  (= exp-ptr (+ exp-ptr (* size 8)))
-  (abort-if-not (< exp-ptr (+ exp-pool exp-size)))
-  (return res))
-
-(fun (exp-nil)
-  (return exp-nil-obj))
-
-(fun (exp-is-nil e)
-  (return (== e exp-nil-obj)))
-
-(const off-pair-first  8)
-(const off-pair-rest  16)
-(const size-pair      24)
-
-(fun (exp-pair first rest)
-  (var p (exp-alloc size-pair))
-  (@= p off-type type-pair)
-  (@= p off-pair-first first)
-  (@= p off-pair-rest rest)
-  (return p))
-
-(fun (exp-is-pair e)
-  (return (== (@ e off-type) type-pair)))
-
-(fun (exp-first e)
-  (return (@ e off-pair-first)))
-
-(fun (exp-rest e)
-  (return (@ e off-pair-rest)))
-
-(const off-inum-val  8)
-(const size-inum    16)
-
-(fun (exp-inum val)
-  (var p (exp-alloc size-inum))
-  (@= p off-type type-inum)
-  (@= p off-inum-val val)
-  (return p))
-
-(fun (exp-is-inum e)
-  (return (== (@ e off-type) type-inum)))
-
-(fun (exp-inum-val e)
-  (return (@ e off-inum-val)))
-
-(fun (exp-write e)
-  (var need-space 0)
-
-  (goto list (exp-is-pair e))
-  (goto not-list (not (exp-is-nil e)))
-
-list
-  (dbg-str "(")
-list-next
-  (goto list-end (not (exp-is-pair e)))
-  (goto list-no-space (not need-space))
-  (dbg-str " ")
-list-no-space
-  (exp-write (exp-first e))
-  (= need-space 1)
-  (= e (exp-rest e))
-  (goto list-next)
-list-end
-  (goto list-end-nil (exp-is-nil e))
-  (dbg-str " . ")
-  (exp-write e)
-list-end-nil
-  (dbg-str ")")
-  (return)
-
-not-list
-  (goto not-inum (not (exp-is-inum e)))
-  (dbg-num (exp-inum-val e))
-  (return)
-not-inum
-  (dbg-str "<???>"))
+(fun (exp-read)
+  (read-token)
+  (return (exp-read-1)))
 
 ;;; Emitting code
 
@@ -301,7 +492,12 @@ not-inum
 ;;; Main
 
 (fun (main)
+  (var e)
   (init-exp)
-  (exp-write (exp-pair (exp-inum 1)
-                       (exp-pair (exp-inum 2) (exp-nil))))
-  (dbg-nl))
+again
+  (= e (exp-read))
+  (goto done (exp-is-eof e))
+  (exp-write e)
+  (out-nl)
+  (goto again)
+done)
