@@ -23,7 +23,9 @@
 (const ascii-lf          10)
 (const ascii-open-paren  40)
 (const ascii-close-paren 41)
+(const ascii-dash        45)
 (const ascii-0           48)
+(const ascii-9           57)
 (const ascii-semicolon   59)
 (const ascii-a           97)
 
@@ -75,6 +77,26 @@ done
 (fun (streq a b)
   (return (== (strcmp a b) 0)))
 
+(fun (strtoint str)
+  ;; XXX - most negative num
+  (var b)
+  (var i 0)
+  (var s 1)
+  (= b (b@ str))
+  (goto positive (!= b ascii-dash))
+  (= str (+ str 1))
+  (= b (b@ str))
+  (= s -1)
+positive
+again
+  (goto done (not b))
+  (= i (+ (* 10 i) (- b ascii-0)))
+  (= str (+ str 1))
+  (= b (b@ str))
+  (goto again)
+done
+  (return (* s i)))
+
 ;;; Simple output
 
 (fun (out-chars buf len)
@@ -106,9 +128,14 @@ hex
   (out-char 10))
 
 (fun (out-num i)
+  ;; XXX - most negative num
   (var p out-buf)
   (var b out-buf)
   (var t)
+  (goto positive (>= i 0))
+  (out-char ascii-dash)
+  (= i (- i))
+positive
 next-digit
   (b@= p (+ (% i 10) 48))
   (= p (+ p 1))
@@ -132,6 +159,13 @@ reverse-next
   (out-num num)
   (out-nl)
   (return num))
+
+(fun (pk-str label str)
+  (out-str label)
+  (out-str ": ")
+  (out-str str)
+  (out-nl)
+  (return str))
 
 (fun (pk label)
   (out-str label)
@@ -381,6 +415,7 @@ comment
 (fun (read-token)
   (var c)
   (var t 0)
+  (var symlike-kind token-inum)
   (skip-whitespace)
   (= c (input))
   (goto eof (== c input-eof))
@@ -403,6 +438,14 @@ symbol
   (goto symbol-done (== c ascii-semicolon))
   (goto symbol-done (== c ascii-open-paren))
   (goto symbol-done (== c ascii-close-paren))
+  (goto check-sign (< c ascii-0))
+  (goto is-number-char (<= c ascii-9))
+check-sign
+  (goto is-not-number-char (!= t 0))
+  (goto is-number-char (== c ascii-dash))
+is-not-number-char
+  (= symlike-kind token-symbol)
+is-number-char
   (b@= token t c)
   (= t (+ t 1))
   (= c (input))
@@ -410,7 +453,7 @@ symbol
 symbol-done
   (input-undo)
   (b@= token t 0)
-  (= token-kind token-symbol)
+  (= token-kind symlike-kind)
   (return))
 
 ;;; Reading lists
@@ -440,6 +483,9 @@ not-eof
   (goto not-sym (!= token-kind token-symbol))
   (return (exp-sym token))
 not-sym
+  (goto not-inum (!= token-kind token-inum))
+  (return (exp-inum (strtoint token)))
+not-inum
   (goto not-punct (!= token-kind token-punct))
   (goto not-punct (!= (b@ token) ascii-open-paren))
   (= e (exp-nil))
