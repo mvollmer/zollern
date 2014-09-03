@@ -1,0 +1,15 @@
+(def (set rdi ?val)
+  (1 0x48 0xc7 0xc7)
+  (4 ?val))
+
+(def (set rax ?val)
+  (1 0x48 0xc7 0xc0)
+  (4 ?val))
+
+(def (syscall)
+  (1 0x0F 0x05))
+
+(code
+  (set rdi 42)
+  (set rax 60)
+  (syscall))

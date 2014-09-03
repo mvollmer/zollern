@@ -1,0 +1,11 @@
+Welcome to Zollern.
+
+Zollern is a useless but fun programming environment.
+
+* Bootstrapping
+
+Z0 is a macro assembler written in C.  It outputs a ELF executable.
+Z1 is a primitive, interactive programming environment written in Z0.
+It has a bad compiler for a simple, but extensible langugae.  Z1 is
+then used to build up a nice environment, by adding a better compiler
+and extending the language.

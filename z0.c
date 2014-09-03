@@ -1,155 +1,5 @@
 /*
-   Z0 -- Bootstrap language.
-
-   The first language is very primitive: there are no types, no memory
-   management, and only primitive control structures.  It is compiled
-   to machine code by this program.
-
-   This language is only used to write one program: A programming
-   system for a better language.  As such, many low hanging fruits are
-   left rotting.
-
- # Global definitions
-
-   - (fun (SYMBOL SYMBOL...)
-       LOCAL-DEFINITION...
-       STATEMENT...)
-
-   Function definition.  The first symbol is the name of the function,
-   the rest are the names for the arguments.
-
-   - (data SYMBOL (o EXPR...) (t EXPR...) (w EXPR...) (b EXPR...) ...)
-
-   Data definition.
-
-   - (const SYM EXPR)
-
-   Constant definition.
-
-   - (mem SYM EXPR)
-
-   Memory reservation.
-
-   - (var SYM)
-
-   Global variable definition.
-
- # Local definitions
-
-   - (var SYMBOL EXPR)
-   - (var SYMBOL)
-
-   Local variable definition.
-
- # Statements
-
-   - SYMBOL
-
-   A label.  (Note that labels can not appear between definitions.)
-
-   - (goto SYMBOL [EXPR])
-
-   Transfer control to the named label if the given expression is
-   non-zero.  When the expression is omitted, control is transferred
-   unconditionally.
-
-   - (return EXPR)
-
-   Return the value of EXPR from the current function.  If the end of
-   a functions body is reached, the return value is 0.
-
-   - (= SYMBOL EXPR)
-
-   Assignment.  SYMBOL must refer to a variable.
-
-   - (@= EXPR [EXPR] EXPR)
-   - (t@= EXPR [EXPR] EXPR)
-   - (w@= EXPR [EXPR] EXPR)
-   - (b@= EXPR [EXPR] EXPR)
-
-   Store a octa, tetra, wyde, or byte.  First expression is the
-   address, the second or third is the value.  If the middle
-   expression is present, it gives an offset.
-
- # Expressions
-
-   - NUMBER
-
-   A literal.
-
-   - STRING
-
-   A string literal.
-
-   - (data (o EXPR...) (t EXPR...) (w EXPR...) (b EXPR...) ...)
-
-   Data literal.
-
-   - SYMBOL
-
-   Variable, constant, function, or argument reference.  For a
-   function or data definition, the value is the address of the object
-   in memory.
-
-   - (and EXPR...)
-   - (or EXPR...)
-   - (not EXPR)
-
-   Boolean operators.  All expressions are evaluated.
-
-   - (+ EXPR...)
-   - (- EXPR...)
-   - (* EXPR...)
-   - (/ EXPR...)
-   - (% EXPR...)
-
-   Arithmetic on signed integers.
-
-   - (u+ EXPR...)
-   - (u- EXPR...)
-   - (u* EXPR...)
-   - (u/ EXPR...)
-   - (u% EXPR...)
-
-   Arithmetic on unsigned integers.
-
-   - (f+ EXPR...)
-   - (f- EXPR...)
-   - (f* EXPR...)
-   - (f/ EXPR...)
-   - (fmod EXPR...)
-   - (frem EXPR...)
-
-   Arithmetic on double precision floats.
-
-   - (& SYMBOL)
-
-   Address of SYMBOL, which must refer to a variable.
-
-   - (@ EXPR [EXPR])
-   - (t@ EXPR [EXPR])
-   - (w@ EXPR [EXPR])
-   - (b@ EXPR [EXPR])
-
-   Read the octa, tetra, wyde, or byte at the given address as a
-   signed value.  The second expression, if present, gives an offset.
-
-   - (ut@ EXPR [EXPR])
-   - (uw@ EXPR [EXPR])
-   - (ub@ EXPR [EXPR])
-
-   Read the tetra, wyde, or byte at the given address as a unsigned
-   value.
-
-   - (syscall ...)
-
-   Call into the kernel.
-
-   - (EXPR EXPR...)
-
-   Function call.  The first expression is the address of the function
-   to call, the rest are the arguments.
-
+   Z0 -- Bootstrap assembler
 */
 
 #include <stdio.h>
@@ -188,7 +38,7 @@ xmalloc (size_t size)
 #define obstack_chunk_alloc xmalloc
 #define obstack_chunk_free free
 
-/* Machine code */
+/* Code */
 
 uint8_t *code;
 uint8_t *code_ptr;
@@ -274,6 +124,26 @@ init_code()
   symtab_add_raw (&sym);
 }
 
+void
+emit_code (int size, uint64_t val)
+{
+  if (code_ptr + size >= code_end)
+    exitf (1, "too large, congrats");
+
+  code_offset += size;
+  while (size > 0)
+    {
+      *code_ptr++ = val & 0xFF;
+      val >>= 8;
+      size -= 1;
+    }
+}
+
+/* Data
+
+   XXX - should work exactly like code
+*/
+
 uint64_t data_start;
 uint64_t data_offset;
 
@@ -284,12 +154,7 @@ start_data ()
   data_offset = 0;
 }
 
-void
-grow_data (uint64_t size)
-{
-  data_offset += size;
-  data_offset = (data_offset + 7) & ~7;
-}
+/* ELF output */
 
 void
 dump (const char *out_name)
@@ -411,464 +276,6 @@ dump (const char *out_name)
   free (code);
   obstack_free (&symtab_obs, NULL);
   obstack_free (&strtab_obs, NULL);
-}
-
-void
-emit_8 (uint8_t b)
-{
-  *code_ptr++ = b;
-  if (code_ptr >= code_end)
-    exitf (1, "too large, congrats");
-  code_offset += 1;
-}
-
-void
-emit_16 (uint16_t w)
-{
-  emit_8 (w & 0xFF);
-  emit_8 (w >> 8);
-}
-
-void
-emit_32 (uint32_t t)
-{
-  emit_16 (t & 0xFFFF);
-  emit_16 (t >> 16);
-}
-
-void
-emit_64 (uint64_t o)
-{
-  emit_32 (o & 0xFFFFFFFF);
-  emit_32 (o >> 32);
-}
-
-uint64_t
-emit_set (uint32_t t)
-{
-  emit_8 (0x48);
-  emit_8 (0xC7);
-  emit_8 (0xC0);
-  uint64_t off = code_offset;
-  emit_32 (t);
-  return off;
-}
-
-void
-emit_syscall ()
-{
-  emit_8 (0x0F);
-  emit_8 (0x05);
-}
-
-int stack_offset;
-
-void
-emit_pop_a ()
-{
-  // pop %rax
-  emit_8 (0x58);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_rdi ()
-{
-  // pop %rdi
-  emit_8 (0x5f);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_rsi ()
-{
-  // pop %rsi
-  emit_8 (0x5e);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_rdx ()
-{
-  // pop %rdx
-  emit_8 (0x5a);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_r10 ()
-{
-  // pop %r10
-  emit_8 (0x41);
-  emit_8 (0x5a);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_r8 ()
-{
-  // pop %r8
-  emit_8 (0x41);
-  emit_8 (0x58);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_r9 ()
-{
-  // pop %r9
-  emit_8 (0x41);
-  emit_8 (0x59);
-  stack_offset -= 1;
-}
-
-void
-emit_pops (int n)
-{
-  if (n != 0)
-    {
-      // add $8*N, %rsp
-      emit_8 (0x48);
-      emit_8 (0x81);
-      emit_8 (0xC4);
-      emit_32 (8*n);
-      stack_offset -= n;
-    }
-}
-
-void
-emit_push_a ()
-{
-  // push %rax
-  emit_8 (0x50);
-  stack_offset += 1;
-}
-
-void
-emit_fetch_a (int o)
-{
-  // mov 8*o(%rsp), %rax
-  emit_8 (0x48);
-  emit_8 (0x8B);
-  emit_8 (0x84);
-  emit_8 (0x24);
-  emit_32 (8*o);
-}
-
-void
-emit_store_a (int o)
-{
-  // mov %rax, 8*o(%rsp)
-  emit_8 (0x48);
-  emit_8 (0x89);
-  emit_8 (0x84);
-  emit_8 (0x24);
-  emit_32 (8*o);
-}
-
-uint64_t
-emit_jne_a ()
-{
-  // test %rax,%rax
-  emit_8 (0x48);
-  emit_8 (0x85);
-  emit_8 (0xC0);
-
-  // jne
-  emit_8 (0x0f);
-  emit_8 (0x85);
-  uint64_t off = code_offset;
-  emit_32 (0);
-  return off;
-}
-
-uint64_t
-emit_jmp ()
-{
-  uint64_t off;
-  emit_8 (0xe9);
-  off = code_offset;
-  emit_32 (0);
-  return off;
-}
-
-uint64_t
-emit_call ()
-{
-  uint64_t off;
-  emit_8 (0xe8);
-  off = code_offset;
-  emit_32 (0);
-  return off;
-}
-
-void
-emit_call_a ()
-{
-  emit_8 (0xFF);
-  emit_8 (0xD0);
-}
-
-void
-emit_ret ()
-{
-  emit_8 (0xc3);
-}
-
-void
-emit_null ()
-{
-}
-
-void
-emit_pop_b ()
-{
-  // pop %rbx
-  emit_8 (0x5B);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_c ()
-{
-  // pop %rcx
-  emit_8 (0x59);
-  stack_offset -= 1;
-}
-
-void
-emit_pop_add ()
-{
-  emit_pop_b ();
-
-  // add %rbx, %rax
-  emit_8 (0x48);
-  emit_8 (0x01);
-  emit_8 (0xd8);
-}
-
-void
-emit_pop_sub ()
-{
-  emit_pop_b ();
-
-  // sub %rbx, %rax
-  emit_8 (0x48);
-  emit_8 (0x29);
-  emit_8 (0xd8);
-}
-
-void
-emit_pop_mul ()
-{
-  emit_pop_b ();
-
-  // imul %rbx,%rax
-  emit_8 (0x48);
-  emit_8(0x0F);
-  emit_8(0xAF);
-  emit_8(0xC3);
-}
-
-void
-emit_pop_div ()
-{
-  emit_pop_b ();
-
-  // mov %rax,%rdx
-  emit_8 (0x48);
-  emit_8 (0x89);
-  emit_8 (0xC2);
-
-  // sar $0x3f,%rdx
-  emit_8 (0x48);
-  emit_8 (0xC1);
-  emit_8 (0xFA);
-  emit_8 (0x3F);
-
-  // idiv %rbx
-  emit_8 (0x48);
-  emit_8 (0xF7);
-  emit_8 (0xFB);
-}
-
-void
-emit_pop_rem ()
-{
-  emit_pop_b ();
-
-  // mov %rax,%rdx
-  emit_8 (0x48);
-  emit_8 (0x89);
-  emit_8 (0xC2);
-
-  // sar $0x3f,%rdx
-  emit_8 (0x48);
-  emit_8 (0xC1);
-  emit_8 (0xFA);
-  emit_8 (0x3F);
-
-  // idiv %rbx
-  emit_8 (0x48);
-  emit_8 (0xF7);
-  emit_8 (0xFB);
-
-  // mov %rdx,%rax
-  emit_8 (0x48);
-  emit_8 (0x89);
-  emit_8 (0xD0);
-}
-
-void
-emit_pop_slr ()
-{
-  emit_pop_c ();
-
-  // shr %cl,%rax
-  emit_8 (0x48);
-  emit_8 (0xd3);
-  emit_8 (0xe8);
-}
-
-void
-emit_pop_xor ()
-{
-  emit_pop_b ();
-
-  // xor %rbx,%rax
-  emit_8 (0x48);
-  emit_8 (0x31);
-  emit_8 (0xd8);
-}
-
-void
-emit_pop_set_cmp (int op)
-{
-  emit_pop_b ();
-
-  // cmp %rbx, %rax
-  emit_8 (0x48);
-  emit_8 (0x39);
-  emit_8 (0xD8);
-
-  // setg %al
-  emit_8 (0x0F);
-  emit_8 (op);
-  emit_8 (0xC0);
-
-  // movzbl %al,%eax
-  emit_8 (0x0F);
-  emit_8 (0xB6);
-  emit_8 (0xC0);
-}
-
-void
-emit_pop_eq ()
-{
-  // sete %al
-  emit_pop_set_cmp (0x94);
-}
-
-void
-emit_pop_ne ()
-{
-  // sete %al
-  emit_pop_set_cmp (0x95);
-}
-
-void
-emit_pop_gt ()
-{
-  // setg %al
-  emit_pop_set_cmp (0x9F);
-}
-
-void
-emit_pop_ge ()
-{
-  // setge %al
-  emit_pop_set_cmp (0x9D);
-}
-
-void
-emit_pop_lt ()
-{
-  // setl %al
-  emit_pop_set_cmp (0x9C);
-}
-
-void
-emit_pop_le ()
-{
-  // setle %al
-  emit_pop_set_cmp (0x9E);
-}
-
-void
-emit_neg ()
-{
-  // neg %rax
-  emit_8 (0x48);
-  emit_8 (0xf7);
-  emit_8 (0xd8);
-}
-
-void
-emit_not ()
-{
-  // test %rax,%rax
-  emit_8 (0x48);
-  emit_8 (0x85);
-  emit_8 (0xC0);
-
-  // sete %al
-  emit_8 (0x0F);
-  emit_8 (0x94);
-  emit_8 (0xC0);
-
-  // movzbl %al,%eax
-  emit_8 (0x0F);
-  emit_8 (0xB6);
-  emit_8 (0xC0);
-}
-
-void
-emit_ref ()
-{
-  // mov (%rax),%rax
-  emit_8 (0x48);
-  emit_8 (0x8b);
-  emit_8 (0x00);
-}
-
-void
-emit_ref_byte ()
-{
-  // movsbl (%rax),%eax
-  emit_8 (0x0f);
-  emit_8 (0xbe);
-  emit_8 (0x00);
-}
-
-void
-emit_pop_store ()
-{
-  emit_pop_b ();
-
-  // mov %rbx,(%rax)
-  emit_8 (0x48);
-  emit_8 (0x89);
-  emit_8 (0x18);
-}
-
-void
-emit_pop_store_byte ()
-{
-  emit_pop_b ();
-
-  // mov %bl,(%rax)
-  emit_8 (0x88);
-  emit_8 (0x18);
 }
 
 /* Lists */
@@ -1316,8 +723,6 @@ read_exp ()
   return read_exp_1 ();
 }
 
-/* Compiler */
-
 void
 error (exp *form, const char *msg)
 {
@@ -1327,258 +732,138 @@ error (exp *form, const char *msg)
   exitf (1, "error: %s", msg);
 }
 
-struct obstack global_decl_obs;
-struct obstack local_decl_obs;
+/* Macros */
 
-typedef struct decl {
-  struct decl *next;
-  enum {
-    global_func,
-    global_const,
-    global_mem,
-    global_var,
-    local_var
-  } kind;
-  exp *name;
-  int offset;
-  int64_t value;
-  uint64_t size;
-  bool defined;
-  struct declref *refs;
-} decl;
-
-typedef struct declref {
-  struct declref *next;
-  uint64_t offset;
-  bool absolute;
-} declref;
-
-typedef struct labdef {
-  struct labdef *next;
-  struct labref *refs;
-  exp *name;
-  uint64_t offset;
-  bool defined;
-} labdef;
-
-typedef struct labref {
-  struct labref *next;
-  uint64_t offset;
-} labref;
-
-decl *global_decls;
-decl *local_decls;
-labdef *labdefs;
+exp *macros;
 
 void
-init_decls ()
+init_macros ()
 {
-  obstack_init (&global_decl_obs);
-  global_decls = NULL;
-
-  obstack_init (&local_decl_obs);
-  local_decls = NULL;
-  labdefs = NULL;
+  macros = nil ();
 }
 
 void
-reset_locals ()
+define_macro (exp *pattern, exp *body)
 {
-  obstack_free (&local_decl_obs, NULL);
-  obstack_init (&local_decl_obs);
-  local_decls = NULL;
-  labdefs = NULL;
-  stack_offset = 0;
+  macros = cons (cons (pattern, body),
+                 macros);
 }
 
-void
-declare_local_var (exp *sym, int offset)
+bool
+is_var (exp *e)
 {
-  if (!is_sym (sym))
-    error (sym, "variable name must be symbol");
-
-  decl *d = obstack_alloc (&local_decl_obs, sizeof(decl));
-  d->kind = local_var;
-  d->name = sym;
-  d->offset = offset;
-  d->next = local_decls;
-  local_decls = d;
+  return is_sym (e) && sym_name(e)[0] == '?';
 }
 
-decl *
-find_decl (exp *sym)
+exp *
+lookup_var (exp *vars, exp *var)
 {
-  for (decl *d = local_decls; d; d = d->next)
-    if (d->name == sym)
-      return d;
-
-  for (decl *d = global_decls; d; d = d->next)
-    if (d->name == sym)
-      return d;
-
-  decl *d = obstack_alloc (&global_decl_obs, sizeof (decl));
-  d->kind = global_func;
-  d->name = sym;
-  d->defined = false;
-  d->refs = NULL;
-  d->next = global_decls;
-  global_decls = d;
-  return d;
-}
-
-decl *
-new_global_decl (exp *sym, int kind)
-{
-  decl *d = find_decl (sym);
-  if (kind != global_func)
+  while (is_pair (vars))
     {
-      if (d->kind != global_func || d->refs)
-        error (sym, "redefined");
+      if (first (first (vars)) == var)
+        return rest (first (vars));
+    }
+
+  return end_of_file ();
+}
+
+exp *
+define_var (exp *vars, exp *var, exp *val)
+{
+  return cons (cons (var, val), vars);
+}
+
+exp *
+match1 (exp *pattern, exp *vars, exp *e)
+{
+  if (is_var (pattern))
+    {
+      if (!is_end_of_file (lookup_var (vars, pattern)))
+        error (pattern, "redefinition");
+      vars = define_var (vars, pattern, e);
+    }
+  else if (is_sym (pattern))
+    {
+      if (pattern != e)
+        return end_of_file ();
+    }
+  else if (is_pair (pattern))
+    {
+      if (!is_pair (e))
+        return end_of_file ();
+
+      vars = match1 (first (pattern), vars, first (e));
+      if (is_end_of_file (vars))
+        return vars;
+
+      vars = match1 (rest (pattern), vars, rest (e));
+      if (is_end_of_file (vars))
+        return vars;
+    }
+  else if (is_nil (pattern))
+    {
+      if (!is_nil (e))
+        return end_of_file ();
     }
   else
+    return end_of_file ();
+
+  return vars;
+}
+
+exp *
+match (exp *pattern, exp *e)
+{
+  return match1 (pattern, nil (), e);
+}
+
+exp *
+subst (exp *body, exp *vars)
+{
+  if (is_var (body))
     {
-      if (d->kind != global_func || d->defined)
-        error (sym, "redefined");
+      exp *val = lookup_var (vars, body);
+      if (is_end_of_file (val))
+        error (body, "undefined");
+      return val;
     }
-  d->kind = kind;
-  return d;
-}
-
-labdef *
-get_labdef (exp *sym)
-{
-  if (!is_sym (sym))
-    error (sym, "label name must be symbol");
-
-  for (labdef *l = labdefs; l; l = l->next)
-    if (l->name == sym)
-      return l;
-
-  labdef *l = obstack_alloc (&local_decl_obs, sizeof(labdef));
-  l->name = sym;
-  l->defined = false;
-  l->refs = NULL;
-  l->next = labdefs;
-  labdefs = l;
-}
-
-void
-define_global_const (exp *sym, int64_t value)
-{
-  decl *d = new_global_decl (sym, global_const);
-  d->value = value;
-  d->defined = true;
-}
-
-void
-define_global_func (exp *sym)
-{
-  decl *d = new_global_decl (sym, global_func);
-  d->offset = code_offset;
-  d->defined = true;
-}
-
-void
-define_global_mem (exp *sym, uint64_t size)
-{
-  decl *d = new_global_decl (sym, global_mem);
-  d->size = size;
-  d->defined = true;
-}
-
-void
-define_global_var (exp *sym)
-{
-  decl *d = new_global_decl (sym, global_var);
-  d->size = 8;
-  d->defined = true;
-}
-
-void
-reference_global_decl (decl *d, uint64_t offset)
-{
-  declref *r = obstack_alloc (&global_decl_obs, sizeof(declref));
-  r->offset = offset;
-  r->next = d->refs;
-  d->refs = r;
-}
-
-void
-allocate_mems ()
-{
-  start_data ();
-
-  for (decl *d = global_decls; d; d = d->next)
+  else if (is_pair (body))
     {
-      if (d->kind == global_mem || d->kind == global_var)
+      return cons (subst (first (body), vars),
+                   subst (rest (body), vars));
+    }
+  else
+    return body;
+}
+
+exp *
+expand (exp *e)
+{
+  if (is_pair (e))
+    {
+      exp *x = nil ();
+      while (is_pair (e))
         {
-          d->offset = data_offset;
-          grow_data (d->size);
+          x = cons (expand (first (e)), x);
+          e = rest (e);
         }
+      e = reverse (x);
     }
-}
 
-void
-resolve_global_decls ()
-{
-  for (decl *d = global_decls; d; d = d->next)
+  for (exp *m = macros; is_pair (m); m = rest (m))
     {
-      if (d->refs == NULL)
-        continue;
-      if (!d->defined)
-        exitf (1, "function '%s' is not defined", sym_name (d->name));
+      exp *pattern = first (first (m));
+      exp *body = rest (first (m));
 
-      uint64_t value = d->offset;
-      if (d->kind == global_func)
-        value += code_start;
-      else if (d->kind == global_mem || d->kind == global_var)
-        value += data_start;
-
-      symtab_add (sym_name (d->name), value);
-      for (declref *r = d->refs; r; r = r->next)
-        *(uint32_t *)(code + r->offset) = value;
+      exp *vars = match (pattern, e);
+      if (!is_end_of_file (vars))
+        return subst (body, vars);
     }
+
+  return e;
 }
 
-void
-define_local_lab (exp *sym)
-{
-  labdef *l = get_labdef (sym);
-  if (l->defined)
-    error (sym, "redefined");
-  l->offset = code_offset;
-  l->defined = true;
-}
-
-void
-reference_local_lab (exp *sym, uint64_t offset)
-{
-  labdef *l = get_labdef (sym);
-  labref *r = obstack_alloc (&local_decl_obs, sizeof(labref));
-  r->offset = offset;
-  r->next = l->refs;
-  l->refs = r;
-}
-
-void
-resolve_local_labs ()
-{
-  for (labdef *l = labdefs; l; l = l->next)
-    {
-      if (!l->defined)
-        exitf (1, "label %s is not defined", sym_name (l->name));
-      for (labref *r = l->refs; r; r = r->next)
-        *(uint32_t *)(code + r->offset) = l->offset - r->offset - 4;
-    }
-}
-
-exp *deferred_globals;
-
-void
-defer_global (exp *e)
-{
-  deferred_globals = cons (e, deferred_globals);
-}
+/* Assembler */
 
 bool
 is_form (exp *e, const char *sym)
@@ -1622,485 +907,50 @@ parse_form (exp *e, int mandatory, int optional, ...)
     error (e, "syntax");
 }
 
-// Compiling an expression leaves the result in %rax.
-
-void compile_exp (exp *e);
+void compile_emitters (exp *e);
 
 void
-compile_exps (exp *e)
+compile_emitter (exp *e)
 {
-  if (is_pair (rest (e)))
-    {
-      compile_exps (rest (e));
-      emit_push_a ();
-    }
-  compile_exp (first (e));
-}
-
-void
-compile_call (exp *e)
-{
-  compile_exps (e);
-  emit_call_a ();
-  emit_pops (len(e)-1);
-}
-
-void
-compile_syscall (exp *e)
-{
-  int l = len (rest (e));
-  if (l < 1 || l > 7)
-    error (e, "only 1 to 7 arguments to syscall");
-
-  compile_exps (rest (e));
-  if (l > 1) emit_pop_rdi ();
-  if (l > 2) emit_pop_rsi ();
-  if (l > 3) emit_pop_rdx ();
-  if (l > 4) emit_pop_r10 ();
-  if (l > 5) emit_pop_r8 ();
-  if (l > 6) emit_pop_r9 ();
-  emit_syscall ();
-}
-
-void
-compile_multi_op (exp *e, void (*emit_op)(void), void (*emit_single)(void))
-{
-  int l = len (e);
-
-  if (l == 1)
-    error (e, "syntax");
-  else if (l == 2)
-    {
-      if (emit_single == NULL)
-        error (e, "syntax");
-      compile_exp (second (e));
-      emit_single ();
-    }
-  else
-    {
-      compile_exps (rest (e));
-      while (l > 2)
-        {
-          emit_op ();
-          l -= 1;
-        }
-    }
-}
-
-void
-compile_binary_op (exp *e, void (*emit_op)(void))
-{
-  exp *a, *b;
-  parse_form (e, 2, 0, &a, &b);
-  compile_exp (b);
-  emit_push_a ();
-  compile_exp (a);
-  emit_op ();
-}
-
-void
-compile_unary_op (exp *e, void (*emit_op)(void))
-{
-  exp *val;
-  parse_form (e, 1, 0, &val);
-  compile_exp (val);
-  emit_op ();
-}
-
-void
-compile_exp (exp *e)
-{
-  if (is_inum (e))
-    emit_set (inum_val (e));
+  if (is_form (e, "begin"))
+    compile_emitters (rest (e));
   else if (is_sym (e))
+    symtab_add (sym_name (e), code_start + code_offset);
+  else if (is_pair (e) && is_inum (first (e)))
     {
-      decl *d = find_decl (e);
-      if (d->kind == local_var)
-        emit_fetch_a (stack_offset - d->offset);
-      else if (d->kind == global_func
-               || d->kind == global_mem)
+      int size = inum_val (first (e));
+      exp *vals = rest (e);
+      while (is_pair (vals))
         {
-          uint64_t offset = emit_set (0);
-          reference_global_decl (d, offset);
+          if (!is_inum (first (vals)))
+            error (e, "syntax");
+          emit_code (size, inum_val (first (vals)));
+          vals = rest (vals);
         }
-      else if (d->kind == global_const)
-        emit_set (d->value);
-      else if (d->kind == global_var)
-        {
-          uint64_t offset = emit_set (0);
-          reference_global_decl (d, offset);
-          emit_ref ();
-        }
-      else
-        error (e, "internal error");
-    }
-  else if (is_string (e))
-    {
-      exp *n = gensym ("string");
-      exp *d = cons (sym ("data"),
-                     cons (n,
-                           cons (e,
-                                 cons (cons (sym ("b"),
-                                             cons (inum (0),
-                                                   nil ())),
-                                       nil ()))));
-      compile_exp (n);
-      defer_global (d);
-    }
-  else if (is_form (e, "+"))
-    compile_multi_op (e, emit_pop_add, emit_null);
-  else if (is_form (e, "-"))
-    compile_multi_op (e, emit_pop_sub, emit_neg);
-  else if (is_form (e, "*"))
-    compile_multi_op (e, emit_pop_mul, NULL);
-  else if (is_form (e, "/"))
-    compile_multi_op (e, emit_pop_div, NULL);
-  else if (is_form (e, "%"))
-    compile_binary_op (e, emit_pop_rem);
-  else if (is_form (e, ">>"))
-    compile_binary_op (e, emit_pop_slr);
-  else if (is_form (e, "^"))
-    compile_binary_op (e, emit_pop_xor);
-  else if (is_form (e, "=="))
-    compile_binary_op (e, emit_pop_eq);
-  else if (is_form (e, "!="))
-    compile_binary_op (e, emit_pop_ne);
-  else if (is_form (e, ">"))
-    compile_binary_op (e, emit_pop_gt);
-  else if (is_form (e, ">="))
-    compile_binary_op (e, emit_pop_ge);
-  else if (is_form (e, "<"))
-    compile_binary_op (e, emit_pop_lt);
-  else if (is_form (e, "<="))
-    compile_binary_op (e, emit_pop_le);
-  else if (is_form (e, "not"))
-    compile_unary_op (e, emit_not);
-  else if (is_form (e, "b@")
-           || is_form (e, "@"))
-    {
-      void (*emit_ref_for_size)();
-
-      if (is_form(e, "b@"))
-        emit_ref_for_size = emit_ref_byte;
-      else
-        emit_ref_for_size = emit_ref;
-
-      exp *ptr, *off;
-      parse_form (e, 1, 1, &ptr, &off);
-      if (off)
-        {
-          compile_exp (off);
-          emit_push_a ();
-          compile_exp (ptr);
-          emit_pop_add ();
-          emit_ref_for_size ();
-        }
-      else
-        {
-          compile_exp (ptr);
-          emit_ref_for_size ();
-        }
-    }
-  else if (is_form (e, "syscall"))
-    compile_syscall (e);
-  else if (is_pair (e))
-    compile_call (e);
-  else
-    error (e, "syntax");
-}
-
-bool
-compile_statement (exp *e)
-{
-  exp *label, *cond;
-
-  if (is_sym (e))
-    {
-      define_local_lab (e);
-    }
-  else if (is_form (e, "="))
-    {
-      exp *var, *val;
-      parse_form (e, 2, 0, &var, &val);
-      decl *d = find_decl (var);
-      if (d->kind == local_var)
-        {
-          compile_exp (val);
-          emit_store_a (stack_offset - d->offset);
-        }
-      else if (d->kind == global_var)
-        {
-          compile_exp (val);
-          emit_push_a ();
-          uint64_t offset = emit_set (0);
-          reference_global_decl (d, offset);
-          emit_pop_store ();
-        }
-      else
-        error (e, "can only assign to variables");
-    }
-  else if (is_form (e, "b@=")
-           || is_form (e, "@="))
-    {
-      void (*emit_pop_store_for_size)();
-
-      if (is_form (e, "b@="))
-        emit_pop_store_for_size = emit_pop_store_byte;
-      else
-        emit_pop_store_for_size = emit_pop_store;
-
-      exp *ptr, *off, *val;
-      parse_form (e, 2, 1, &ptr, &off, &val);
-      if (val == NULL)
-        {
-          val = off;
-          off = NULL;
-        }
-      compile_exp (val);
-      emit_push_a ();
-      if (off)
-        {
-          compile_exp (off);
-          emit_push_a ();
-          compile_exp (ptr);
-          emit_pop_add ();
-          emit_pop_store_for_size ();
-        }
-      else
-        {
-          compile_exp (ptr);
-          emit_pop_store_for_size ();
-        }
-    }
-  else if (is_form (e, "goto"))
-    {
-      exp *label, *cond;
-      uint64_t offset;
-      parse_form (e, 1, 1, &label, &cond);
-      if (cond)
-        {
-          compile_exp (cond);
-          offset = emit_jne_a ();
-        }
-      else
-        offset = emit_jmp ();
-      reference_local_lab (label, offset);
-    }
-  else if (is_form (e, "return"))
-    {
-      exp *val;
-      parse_form (e, 0, 1, &val);
-      if (val)
-        compile_exp (val);
-      else
-        emit_set (0);
-      int old_offset = stack_offset;
-      emit_pops (stack_offset);
-      emit_ret ();
-      stack_offset = old_offset;
-      return true;
-    }
-  else
-    compile_exp (e);
-
-  return false;
-}
-
-void
-compile_function (exp *e)
-{
-  if (len (e) < 2)
-    error (e, "syntax error");
-
-  exp *head = second (e);
-  exp *body = rest (rest (e));
-
-  if (len (head) < 1)
-    error (e, "syntax error");
-
-  reset_locals ();
-
-  define_global_func (first (head));
-  int off = -1;
-  for (exp *params = rest (head); is_pair (params); params = rest (params))
-    {
-      declare_local_var (first (params), off);
-      off -= 1;
-    }
-
-  bool in_decls = true;
-  bool did_return = false;
-  while (is_pair (body))
-    {
-      exp *s = first (body);
-      if (is_form (s, "var"))
-        {
-          if (!in_decls)
-            error (s, "variable declarations must be at start of body");
-          if (len (s) == 3)
-            compile_exp (third (s));
-          else if (len (s) == 2)
-            emit_set (0);
-          else
-            error (s, "variable declarations must have 1 or 2 arguments");
-          emit_push_a ();
-          declare_local_var (second (s), stack_offset);
-        }
-      else
-        {
-          in_decls = false;
-          did_return = compile_statement (s);
-        }
-      body = rest (body);
-    }
-
-  if (!did_return)
-    {
-      emit_set (0);
-      emit_pops (stack_offset);
-      emit_ret ();
-    }
-
-  resolve_local_labs ();
-}
-
-int64_t
-eval_const (exp *e)
-{
-  if (is_inum (e))
-    return inum_val (e);
-  else if (is_sym (e))
-    {
-      decl *d = find_decl (e);
-      if (d->kind == global_const)
-        return d->value;
-      else
-        error (e, "not a constant");
-    }
-  else if (is_form (e, "+"))
-    {
-      int64_t val = 0;
-      for (exp *a = rest (e); is_pair (a); a = rest (a))
-        val += eval_const (first (a));
-      return val;
-    }
-  else if (is_form (e, "-"))
-    {
-      int64_t val = 0;
-      exp *a = rest (e);
-      if (is_pair (a))
-        {
-          val = eval_const (first (a));
-          for (a = rest (a); is_pair (a); a = rest (a))
-            val -= eval_const (first (a));
-        }
-      return val;
-    }
-  else if (is_form (e, "*"))
-    {
-      int64_t val = 1;
-      for (exp *a = rest (e); is_pair (a); a = rest (a))
-        val *= eval_const (first (a));
-      return val;
     }
   else
     error (e, "syntax");
 }
 
 void
-compile_data (exp *e)
+compile_emitters (exp *e)
 {
-  if (len (e) < 2)
-    error (e, "syntax");
-
-  exp *sym = second (e);
-
-  define_global_func (sym);
-
-  e = rest (rest (e));
   while (is_pair (e))
     {
-      exp *d = first (e);
-      if (is_string (d))
-        {
-          for (const char *bytes = string_chars (d); *bytes; bytes++)
-            emit_8 (*bytes);
-        }
-      else if (is_form (d, "b"))
-        {
-          exp *b = rest (d);
-          while (is_pair (b))
-            {
-              emit_8 (eval_const (first (b)));
-              b = rest (b);
-            }
-        }
-      else
-        error (d, "sorry");
+      compile_emitter (first (e));
       e = rest (e);
     }
 }
 
 void
-compile_const (exp *e)
+compile_toplevel (exp *e)
 {
-  exp *sym, *val;
-  parse_form (e, 2, 0, &sym, &val);
-  define_global_const (sym, eval_const (val));
-}
-
-void
-compile_mem (exp *e)
-{
-  exp *sym, *size;
-  parse_form (e, 2, 0, &sym, &size);
-  define_global_mem (sym, eval_const (size));
-}
-
-void
-compile_var (exp *e)
-{
-  exp *sym;
-  parse_form (e, 1, 0, &sym);
-  define_global_var (sym);
-}
-
-void
-compile_global_1 (exp *e)
-{
-  if (is_form (e, "fun"))
-    compile_function (e);
-  else if (is_form (e, "data"))
-    compile_data (e);
-  else if (is_form (e, "const"))
-    compile_const (e);
-  else if (is_form (e, "mem"))
-    compile_mem (e);
-  else if (is_form (e, "var"))
-    compile_var (e);
+  if (is_form (e, "code"))
+    compile_emitters (rest (e));
+  else if (is_form (e, "def"))
+    define_macro (second (e), cons (sym ("begin"), rest (rest (e))));
   else
-    error (e, "syntax error");
-}
-
-void
-compile_global (exp *e)
-{
-  compile_global_1 (e);
-
-  while (deferred_globals)
-    {
-      exp *e = deferred_globals;
-      deferred_globals = rest (deferred_globals);
-      compile_global_1 (first (e));
-    }
-}
-
-void
-compile_start ()
-{
-  exp *e = cons (sym ("syscall"), cons (inum (60), cons (cons (sym ("main"), nil ()), nil ())));
-  symtab_add ("start", code_start + code_offset);
-  compile_exp (e);
+    error (e, "syntax");
 }
 
 /* Main */
@@ -2137,20 +987,15 @@ main (int argc, char **argv)
   else
     usage ();
 
-  init_exp();
   init_code ();
-  init_decls ();
-
-  compile_start ();
+  init_exp ();
+  init_macros ();
 
   read_open (in);
 
   exp *e;
   while (!is_end_of_file (e = read_exp ()))
-    compile_global (e);
-
-  allocate_mems ();
-  resolve_global_decls ();
+    compile_toplevel (expand (e));
 
   dump (out);
   exit (0);
