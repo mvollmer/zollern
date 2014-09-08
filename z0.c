@@ -732,139 +732,6 @@ error (exp *form, const char *msg)
   exitf (1, "error: %s", msg);
 }
 
-/* Macros */
-
-exp *macros;
-
-void
-init_macros ()
-{
-  macros = nil ();
-}
-
-void
-define_macro (exp *pattern, exp *body)
-{
-  macros = cons (cons (pattern, body),
-                 macros);
-}
-
-bool
-is_var (exp *e)
-{
-  return is_sym (e) && sym_name(e)[0] == '?';
-}
-
-exp *
-lookup_var (exp *vars, exp *var)
-{
-  while (is_pair (vars))
-    {
-      if (first (first (vars)) == var)
-        return rest (first (vars));
-    }
-
-  return end_of_file ();
-}
-
-exp *
-define_var (exp *vars, exp *var, exp *val)
-{
-  return cons (cons (var, val), vars);
-}
-
-exp *
-match1 (exp *pattern, exp *vars, exp *e)
-{
-  if (is_var (pattern))
-    {
-      if (!is_end_of_file (lookup_var (vars, pattern)))
-        error (pattern, "redefinition");
-      vars = define_var (vars, pattern, e);
-    }
-  else if (is_sym (pattern))
-    {
-      if (pattern != e)
-        return end_of_file ();
-    }
-  else if (is_pair (pattern))
-    {
-      if (!is_pair (e))
-        return end_of_file ();
-
-      vars = match1 (first (pattern), vars, first (e));
-      if (is_end_of_file (vars))
-        return vars;
-
-      vars = match1 (rest (pattern), vars, rest (e));
-      if (is_end_of_file (vars))
-        return vars;
-    }
-  else if (is_nil (pattern))
-    {
-      if (!is_nil (e))
-        return end_of_file ();
-    }
-  else
-    return end_of_file ();
-
-  return vars;
-}
-
-exp *
-match (exp *pattern, exp *e)
-{
-  return match1 (pattern, nil (), e);
-}
-
-exp *
-subst (exp *body, exp *vars)
-{
-  if (is_var (body))
-    {
-      exp *val = lookup_var (vars, body);
-      if (is_end_of_file (val))
-        error (body, "undefined");
-      return val;
-    }
-  else if (is_pair (body))
-    {
-      return cons (subst (first (body), vars),
-                   subst (rest (body), vars));
-    }
-  else
-    return body;
-}
-
-exp *
-expand (exp *e)
-{
-  if (is_pair (e))
-    {
-      exp *x = nil ();
-      while (is_pair (e))
-        {
-          x = cons (expand (first (e)), x);
-          e = rest (e);
-        }
-      e = reverse (x);
-    }
-
-  for (exp *m = macros; is_pair (m); m = rest (m))
-    {
-      exp *pattern = first (first (m));
-      exp *body = rest (first (m));
-
-      exp *vars = match (pattern, e);
-      if (!is_end_of_file (vars))
-        return subst (body, vars);
-    }
-
-  return e;
-}
-
-/* Assembler */
-
 bool
 is_form (exp *e, const char *sym)
 {
@@ -907,6 +774,184 @@ parse_form (exp *e, int mandatory, int optional, ...)
     error (e, "syntax");
 }
 
+/* Macros and builtins
+ */
+
+exp *expand (exp *e);
+
+exp *
+builtin_sum (exp *form)
+{
+  int lit_val = 0;
+  exp *non_lit = nil ();
+
+  exp *e = rest (form);
+  while (is_pair (e))
+    {
+      exp *v = expand (first (e));
+      if (is_inum (v))
+        lit_val += inum_val (v);
+      else
+        non_lit = cons (v, non_lit);
+      e = rest (e);
+    }
+
+  if (is_nil (non_lit))
+    return inum (lit_val);
+  else
+    return cons (sym ("+"),
+                 cons (inum (lit_val),
+                       reverse (non_lit)));
+}
+
+typedef struct {
+  const char *name;
+  exp *(*func)(exp *form);
+} builtin;
+
+builtin builtins[] = {
+  { "+", builtin_sum },
+  NULL
+};
+
+exp *macros;
+
+void
+init_macros ()
+{
+  macros = nil ();
+}
+
+void
+define_macro (exp *pattern, exp *body)
+{
+  macros = cons (cons (pattern, body),
+                 macros);
+}
+
+bool
+is_var (exp *e)
+{
+  return is_sym (e) && sym_name(e)[0] == '?';
+}
+
+exp *
+lookup_var (exp *vars, exp *var)
+{
+  while (is_pair (vars))
+    {
+      if (first (first (vars)) == var)
+        return rest (first (vars));
+      vars = rest (vars);
+    }
+
+  return end_of_file ();
+}
+
+exp *
+define_var (exp *vars, exp *var, exp *val)
+{
+  return cons (cons (var, val), vars);
+}
+
+exp *
+match1 (exp *pattern, exp *vars, exp *e)
+{
+  if (is_var (pattern))
+    {
+      if (!is_end_of_file (lookup_var (vars, pattern)))
+        error (pattern, "redefinition");
+      vars = define_var (vars, pattern, e);
+    }
+  else if (is_pair (pattern))
+    {
+      if (!is_pair (e))
+        return end_of_file ();
+
+      vars = match1 (first (pattern), vars, first (e));
+      if (is_end_of_file (vars))
+        return vars;
+
+      vars = match1 (rest (pattern), vars, rest (e));
+      if (is_end_of_file (vars))
+        return vars;
+    }
+  else if (is_nil (pattern))
+    {
+      if (!is_nil (e))
+        return end_of_file ();
+    }
+  else if (is_sym (pattern))
+    {
+      if (pattern != e)
+        return end_of_file ();
+    }
+  else if (is_inum (pattern))
+    {
+      if (!is_inum (e) || inum_val (pattern) != inum_val (e))
+        return end_of_file ();
+    }
+  else
+    return end_of_file ();
+
+  return vars;
+}
+
+exp *
+match (exp *pattern, exp *e)
+{
+  return match1 (pattern, nil (), e);
+}
+
+exp *
+subst (exp *body, exp *vars)
+{
+  if (is_var (body))
+    {
+      exp *val = lookup_var (vars, body);
+      if (is_end_of_file (val))
+        error (body, "undefined");
+      return val;
+    }
+  else if (is_pair (body))
+    {
+      return cons (subst (first (body), vars),
+                   subst (rest (body), vars));
+    }
+  else
+    return body;
+}
+
+exp *
+expand (exp *e)
+{
+  if (is_pair (e))
+    e = cons (expand (first (e)), rest (e));
+
+  for (exp *m = macros; is_pair (m); m = rest (m))
+    {
+      exp *pattern = first (first (m));
+      exp *body = rest (first (m));
+
+      exp *vars = match (pattern, e);
+      if (!is_end_of_file (vars))
+        return expand (subst (body, vars));
+    }
+
+  if (is_pair (e) && is_sym (first (e)))
+    {
+      for (builtin *b = builtins; b->name; b++)
+        {
+          if (strcmp (b->name, sym_name (first (e))) == 0)
+            return b->func (e);
+        }
+    }
+
+  return e;
+}
+
+/* Assembler */
+
 void compile_emitters (exp *e);
 
 void
@@ -922,9 +967,10 @@ compile_emitter (exp *e)
       exp *vals = rest (e);
       while (is_pair (vals))
         {
-          if (!is_inum (first (vals)))
-            error (e, "syntax");
-          emit_code (size, inum_val (first (vals)));
+          exp *v = expand (first (vals));
+          if (!is_inum (v))
+            error (v, "syntax");
+          emit_code (size, inum_val (v));
           vals = rest (vals);
         }
     }
@@ -937,7 +983,7 @@ compile_emitters (exp *e)
 {
   while (is_pair (e))
     {
-      compile_emitter (first (e));
+      compile_emitter (expand (first (e)));
       e = rest (e);
     }
 }
@@ -945,10 +991,18 @@ compile_emitters (exp *e)
 void
 compile_toplevel (exp *e)
 {
-  if (is_form (e, "code"))
+  if (is_form (e, "def"))
+    {
+      exp *head = first (rest (e));
+      exp *body = rest (rest (e));
+      if (is_pair (body) && !is_pair (rest (body)))
+        body = first (body);
+      else
+        body = cons (sym ("begin"), body);
+      define_macro (head, body);
+    }
+  else if (is_form (e, "code"))
     compile_emitters (rest (e));
-  else if (is_form (e, "def"))
-    define_macro (second (e), cons (sym ("begin"), rest (rest (e))));
   else
     error (e, "syntax");
 }
@@ -970,7 +1024,7 @@ main (int argc, char **argv)
   argv++;
   while (*argv && *argv[0] == '-')
     {
-      if (strcmp (*argv, "--start") && *(argv+1) != NULL)
+      if (strcmp (*argv, "--start") == 0 && *(argv+1) != NULL)
         {
           set_code_start (strtol (*(argv+1), NULL, 0));
           argv += 2;

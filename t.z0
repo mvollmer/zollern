@@ -1,9 +1,8 @@
-(def (set rdi ?val)
-  (1 0x48 0xc7 0xc7)
-  (4 ?val))
+(def rax 0)
+(def rdi 7)
 
-(def (set rax ?val)
-  (1 0x48 0xc7 0xc0)
+(def (set ?reg ?val)
+  (1 0x48 0xc7 (+ 0xc0 ?reg))
   (4 ?val))
 
 (def (syscall)
