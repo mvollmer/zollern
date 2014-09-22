@@ -533,9 +533,9 @@ string_chars (exp *e)
 }
 
 exp *
-reverse (exp *e)
+reverse_onto (exp *e, exp *tail)
 {
-  exp *r = nil ();
+  exp *r = tail;
   while (is_pair (e))
     {
       exp *n = e->rest;
@@ -544,6 +544,12 @@ reverse (exp *e)
       e = n;
     }
   return r;
+}
+
+exp *
+reverse (exp *e)
+{
+  return reverse_onto (e, nil ());
 }
 
 int
@@ -731,12 +737,20 @@ read_exp_1 ()
       while (true) {
         read_token ();
         if (token_kind == punct_tok && token[0] == ')')
-          break;
-        if (token_kind == eof_tok)
+          return reverse (e);
+        else if (token_kind == sym_tok && strcmp (token, ".") == 0)
+          {
+            read_token ();
+            e = reverse_onto (e, read_exp_1 ());
+            read_token ();
+            if (token_kind != punct_tok || token[0] != ')')
+              exitf(1, "junk after tail: %s", token);
+            return e;
+          }
+        else if (token_kind == eof_tok)
           exitf (1, "unterminated list");
         e = cons (read_exp_1 (), e);
       }
-      return reverse (e);
     }
   else
     exitf(1, "%d: unexpected token '%s'", lineno, token);
