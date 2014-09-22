@@ -43,9 +43,8 @@ xmalloc (size_t size)
 /* Code */
 
 uint8_t *code;
-uint8_t *code_ptr;
-uint8_t *code_end;
 uint64_t code_offset;
+uint64_t code_max;
 
 struct obstack symtab_obs;
 struct obstack strtab_obs;
@@ -100,9 +99,8 @@ init_code()
     set_code_start (0x40000000);
 
   code = xmalloc (1024*1024);
-  code_ptr = code;
-  code_end = code + 1024*1024;
   code_offset = 0;
+  code_max = 1024*1024;
 
   obstack_init (&symtab_obs);
   obstack_init (&strtab_obs);
@@ -127,18 +125,25 @@ init_code()
 }
 
 void
-emit_code (int size, uint64_t val)
+emit_code_at (uint64_t offset, int size, uint64_t val)
 {
-  if (code_ptr + size >= code_end)
-    exitf (1, "too large, congrats");
-
-  code_offset += size;
+  uint8_t *ptr = code + offset;
   while (size > 0)
     {
-      *code_ptr++ = val & 0xFF;
+      *ptr++ = val & 0xFF;
       val >>= 8;
       size -= 1;
     }
+}
+
+void
+emit_code (int size, uint64_t val)
+{
+  if (code_offset + size >= code_max)
+    exitf (1, "too large, congrats");
+
+  emit_code_at (code_offset, size, val);
+  code_offset += size;
 }
 
 /* Data
@@ -1026,6 +1031,26 @@ expand (exp *e)
 
 /* Assembler */
 
+typedef struct delayed_emitter {
+  struct delayed_emitter *link;
+  uint64_t offset;
+  int size;
+  exp *val;
+} delayed_emitter;
+
+delayed_emitter *delayed = NULL;
+
+void
+delay_emitter (uint64_t offset, int size, exp *val)
+{
+  delayed_emitter *d = xmalloc (sizeof (delayed_emitter));
+  d->offset = offset;
+  d->size = size;
+  d->val = val;
+  d->link = delayed;
+  delayed = d;
+}
+
 void compile_emitters (exp *e);
 
 void
@@ -1045,9 +1070,13 @@ compile_emitter (exp *e)
       while (is_pair (vals))
         {
           exp *v = first (vals);
-          if (!is_inum (v))
-            error (e, "syntax");
-          emit_code (size, inum_val (v));
+          if (is_inum (v))
+            emit_code (size, inum_val (v));
+          else
+            {
+              delay_emitter (code_offset, size, v);
+              emit_code (size, 0);
+            }
           vals = rest (vals);
         }
     }
@@ -1081,6 +1110,19 @@ compile_toplevel (exp *e)
     compile_emitters (rest (e));
   else
     error (e, "syntax");
+}
+
+void
+compile_delayeds ()
+{
+  for (delayed_emitter *d = delayed; d; d = d->link)
+    {
+      exp *v = expand (d->val);
+      if (is_inum (v))
+        emit_code_at (d->offset, d->size, inum_val (v));
+      else
+        error (v, "undefined");
+    }
 }
 
 /* Main */
@@ -1126,6 +1168,8 @@ main (int argc, char **argv)
   exp *e;
   while (!is_end_of_file (e = read_exp ()))
     compile_toplevel (expand (e));
+
+  compile_delayeds ();
 
   dump (out);
   exit (0);
