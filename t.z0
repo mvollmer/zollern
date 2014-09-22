@@ -1,4 +1,10 @@
 (def r0 (reg 0))
+(def r1 (reg 1))
+(def r2 (reg 2))
+(def r3 (reg 3))
+(def r4 (reg 4))
+(def r5 (reg 5))
+(def r6 (reg 6))
 (def r7 (reg 7))
 
 (def (set (reg ?reg) ?val)
@@ -6,22 +12,61 @@
   (4 ?val))
 
 (def syscall-reg-arg1 r7)
-(def syscall-reg-arg2 r6)  ;; ?
-(def syscall-reg-arg3 r5)  ;; ?
+(def syscall-reg-arg2 r6)
+(def syscall-reg-arg3 r2)
 (def syscall-reg-arg4 r10)
 (def syscall-reg-arg5 r8)
 (def syscall-reg-arg6 r9)
 (def syscall-reg-nr   r0)
 
 (def syscall-nr-exit  60)
+(def syscall-nr-write  1)
 
 (def (syscall)
   (1 0x0F 0x05))
 
+(def .spc 0x20)
+(def .nl  0x0A)
+
+(def .A 0x41)
+(def .B 0x42)
+(def .C 0x43)
+(def .D 0x44)
+(def .E 0x45)
+(def .F 0x46)
+(def .G 0x47)
+(def .H 0x48)
+(def .I 0x49)
+(def .J 0x4A)
+(def .K 0x4B)
+(def .L 0x4C)
+(def .M 0x4D)
+(def .N 0x4E)
+(def .O 0x4F)
+(def .P 0x50)
+(def .Q 0x50)
+(def .R 0x52)
+(def .S 0x53)
+(def .T 0x54)
+(def .U 0x55)
+(def .V 0x56)
+(def .W 0x57)
+(def .X 0x58)
+(def .Y 0x59)
+(def .Z 0x60)
+
 (code start
+  (set syscall-reg-arg1 0)
+  (set syscall-reg-arg2 message)
+  (set syscall-reg-arg3 (- message:end message))
+  (set syscall-reg-nr   syscall-nr-write)
+  (syscall)
+  (set syscall-reg-nr   syscall-nr-exit)
   (set syscall-reg-arg1 42)
   (set syscall-reg-nr   syscall-nr-exit)
   (syscall))
 
 (code
-  (set r0 start))
+message
+  (1 .H .E .L .L .O .spc  .W .O .R .L .D .nl)
+message:end)
