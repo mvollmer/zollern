@@ -282,6 +282,10 @@ dump (const char *out_name)
 
 /* Lists */
 
+typedef struct symdef {
+  uint64_t addr;
+} symdef;
+
 typedef struct exp {
   enum {
     pair_exp, sym_exp, string_exp, inum_exp, dnum_exp, singleton_exp
@@ -294,6 +298,7 @@ typedef struct exp {
     struct {
       char *sym;
       struct exp *link;
+      struct symdef *def;
     };
     int64_t inum;
     double dnum;
@@ -460,6 +465,7 @@ sym (char *sym)
   e->type = sym_exp;
   e->sym = obstack_copy0 (&symbol_obs, sym, strlen (sym));
   e->link = symbol_hash[hash];
+  e->def = NULL;
   symbol_hash[hash] = e;
 
   return e;
@@ -477,6 +483,12 @@ sym_name (exp *e)
   return e->sym;
 }
 
+symdef *
+sym_def (exp *e)
+{
+  return e->def;
+}
+
 exp *
 gensym (char *tag)
 {
@@ -484,6 +496,13 @@ gensym (char *tag)
   char name[80];
   snprintf(name, 80, "%d-%s", counter++, tag? tag : "gensym");
   return sym(name);
+}
+
+void
+sym_set_def (exp *e, uint64_t addr)
+{
+  e->def = alloc_exp_data (sizeof (symdef));
+  e->def->addr = addr;
 }
 
 exp *
@@ -961,6 +980,8 @@ expand1 (exp *e)
         }
       e = reverse (x);
     }
+  else if (is_sym (e) && sym_def (e))
+    return inum (sym_def (e)->addr);
 
   for (exp *m = macros; is_pair (m); m = rest (m))
     {
@@ -1013,7 +1034,10 @@ compile_emitter (exp *e)
   if (is_form (e, "begin"))
     compile_emitters (rest (e));
   else if (is_sym (e))
-    symtab_add (sym_name (e), code_start + code_offset);
+    {
+      sym_set_def (e, code_start + code_offset);
+      symtab_add (sym_name (e), code_start + code_offset);
+    }
   else if (is_pair (e) && is_inum (first (e)))
     {
       int size = inum_val (first (e));

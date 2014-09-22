@@ -22,3 +22,6 @@
   (set syscall-reg-arg1 42)
   (set syscall-reg-nr   syscall-nr-exit)
   (syscall))
+
+(code
+  (set r0 start))
