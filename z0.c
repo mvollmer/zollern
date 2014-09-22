@@ -15,6 +15,8 @@
 #include <elf.h>
 #include <obstack.h>
 
+bool verbose = false;
+
 void
 exitf (int code, char *fmt, ...)
 {
@@ -938,7 +940,7 @@ subst (exp *body, exp *vars)
 }
 
 exp *
-expand (exp *e)
+expand1 (exp *e)
 {
   if (is_pair (e) && is_sym (first (e)))
     {
@@ -973,6 +975,34 @@ expand (exp *e)
   return e;
 }
 
+char *
+blanks(int l)
+{
+  static char b[] = "                                                          ";
+  return b + (sizeof(b)-l-1);
+}
+
+exp *
+expand (exp *e)
+{
+  if (verbose)
+    {
+      static int l = 0;
+      printf ("%s", blanks(l));
+      write_exp (stdout, e);
+      printf ("\n");
+      l += 1;
+      exp *x = expand1 (e);
+      l -= 1;
+      printf ("%s-> ", blanks(l));
+      write_exp (stdout, x);
+      printf ("\n");
+      return x;
+    }
+  else
+    return expand1 (e);
+}
+
 /* Assembler */
 
 void compile_emitters (exp *e);
@@ -992,7 +1022,7 @@ compile_emitter (exp *e)
         {
           exp *v = first (vals);
           if (!is_inum (v))
-            error (v, "syntax");
+            error (e, "syntax");
           emit_code (size, inum_val (v));
           vals = rest (vals);
         }
