@@ -778,6 +778,20 @@ parse_form (exp *e, int mandatory, int optional, ...)
  */
 
 exp *expand (exp *e);
+void define_macro (exp *pattern, exp *body);
+
+exp *
+builtin_def (exp *form)
+{
+  exp *head = first (rest (form));
+  exp *body = rest (rest (form));
+  if (is_pair (body) && !is_pair (rest (body)))
+    body = first (body);
+  else
+    body = cons (sym ("begin"), body);
+  define_macro (head, body);
+  return cons (sym ("begin"), nil());
+}
 
 exp *
 builtin_sum (exp *form)
@@ -810,7 +824,8 @@ typedef struct {
 } builtin;
 
 builtin builtins[] = {
-  { "+", builtin_sum },
+  { "def", builtin_def },
+  { "+",   builtin_sum },
   NULL
 };
 
@@ -925,8 +940,25 @@ subst (exp *body, exp *vars)
 exp *
 expand (exp *e)
 {
+  if (is_pair (e) && is_sym (first (e)))
+    {
+      for (builtin *b = builtins; b->name; b++)
+        {
+          if (strcmp (b->name, sym_name (first (e))) == 0)
+            return b->func (e);
+        }
+    }
+
   if (is_pair (e))
-    e = cons (expand (first (e)), rest (e));
+    {
+      exp *x = nil ();
+      while (is_pair (e))
+        {
+          x = cons (expand (first (e)), x);
+          e = rest (e);
+        }
+      e = reverse (x);
+    }
 
   for (exp *m = macros; is_pair (m); m = rest (m))
     {
@@ -936,15 +968,6 @@ expand (exp *e)
       exp *vars = match (pattern, e);
       if (!is_end_of_file (vars))
         return expand (subst (body, vars));
-    }
-
-  if (is_pair (e) && is_sym (first (e)))
-    {
-      for (builtin *b = builtins; b->name; b++)
-        {
-          if (strcmp (b->name, sym_name (first (e))) == 0)
-            return b->func (e);
-        }
     }
 
   return e;
@@ -967,7 +990,7 @@ compile_emitter (exp *e)
       exp *vals = rest (e);
       while (is_pair (vals))
         {
-          exp *v = expand (first (vals));
+          exp *v = first (vals);
           if (!is_inum (v))
             error (v, "syntax");
           emit_code (size, inum_val (v));
@@ -983,7 +1006,7 @@ compile_emitters (exp *e)
 {
   while (is_pair (e))
     {
-      compile_emitter (expand (first (e)));
+      compile_emitter (first (e));
       e = rest (e);
     }
 }
@@ -991,15 +1014,14 @@ compile_emitters (exp *e)
 void
 compile_toplevel (exp *e)
 {
-  if (is_form (e, "def"))
+  if (is_form (e, "begin"))
     {
-      exp *head = first (rest (e));
-      exp *body = rest (rest (e));
-      if (is_pair (body) && !is_pair (rest (body)))
-        body = first (body);
-      else
-        body = cons (sym ("begin"), body);
-      define_macro (head, body);
+      e = rest (e);
+      while (is_pair (e))
+        {
+          compile_toplevel (e);
+          e = rest (e);
+        }
     }
   else if (is_form (e, "code"))
     compile_emitters (rest (e));

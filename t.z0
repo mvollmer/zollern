@@ -1,14 +1,24 @@
-(def rax 0)
-(def rdi 7)
+(def r0 (reg 0))
+(def r7 (reg 7))
 
-(def (set ?reg ?val)
+(def (set (reg ?reg) ?val)
   (1 0x48 0xc7 (+ 0xc0 ?reg))
   (4 ?val))
+
+(def syscall-reg-arg1 r7)
+(def syscall-reg-arg2 r6)  ;; ?
+(def syscall-reg-arg3 r5)  ;; ?
+(def syscall-reg-arg4 r10)
+(def syscall-reg-arg5 r8)
+(def syscall-reg-arg6 r9)
+(def syscall-reg-nr   r0)
+
+(def syscall-nr-exit  60)
 
 (def (syscall)
   (1 0x0F 0x05))
 
-(code
-  (set rdi 42)
-  (set rax 60)
+(code start
+  (set syscall-reg-arg1 42)
+  (set syscall-reg-nr   syscall-nr-exit)
   (syscall))
