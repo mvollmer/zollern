@@ -820,9 +820,10 @@ builtin_def (exp *form)
 }
 
 exp *
-builtin_sum (exp *form)
+builtin_inum_binop (exp *form, int (*combine)(int, int))
 {
-  int lit_val = 0;
+  int lit_val;
+  bool got_lit = false;
   exp *non_lit = nil ();
 
   exp *e = rest (form);
@@ -830,18 +831,42 @@ builtin_sum (exp *form)
     {
       exp *v = expand (first (e));
       if (is_inum (v))
-        lit_val += inum_val (v);
+        {
+          if (!got_lit)
+            {
+              lit_val = inum_val (v);
+              got_lit = true;
+            }
+          else
+            lit_val = combine (lit_val, inum_val (v));
+        }
       else
         non_lit = cons (v, non_lit);
       e = rest (e);
     }
 
-  if (is_nil (non_lit))
+  if (is_nil (non_lit) && got_lit)
     return inum (lit_val);
-  else
-    return cons (sym ("+"),
+  else if (got_lit)
+    return cons (first (form),
                  cons (inum (lit_val),
                        reverse (non_lit)));
+  else
+    return form;
+}
+
+exp *
+builtin_sum (exp *form)
+{
+  int plus (int a, int b) { return a + b; }
+  return builtin_inum_binop (form, plus);
+}
+
+exp *
+builtin_diff (exp *form)
+{
+  int minus (int a, int b) { return a - b; }
+  return builtin_inum_binop (form, minus);
 }
 
 typedef struct {
@@ -852,6 +877,7 @@ typedef struct {
 builtin builtins[] = {
   { "def", builtin_def },
   { "+",   builtin_sum },
+  { "-",   builtin_diff },
   NULL
 };
 
