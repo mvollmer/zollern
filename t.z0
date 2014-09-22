@@ -1,3 +1,13 @@
+;; Utilities
+
+(def (seq ?f ?start ?inc ?a)
+  (?f ?a ?start))
+
+(def (seq ?f ?start ?inc ?a ?b . ?rest)
+  (begin (?f ?a ?start) (seq ?f (+ ?start ?inc) ?inc ?b . ?rest)))
+
+;; Registers
+
 (def r0 (reg 0))
 (def r1 (reg 1))
 (def r2 (reg 2))
@@ -7,9 +17,32 @@
 (def r6 (reg 6))
 (def r7 (reg 7))
 
+;; Characters
+
+(def (defchars ?base . ?rest)
+  (seq def ?base 1 . ?rest))
+
+(def .nl  0x0A)
+(def .spc 0x20)
+
+(defchars 0x41
+  .A .B .C .D .E .F .G .H .I .J .K .L .M
+  .N .O .P .Q .R .S .T .U .V .W .X .Y .Z)
+
+(defchars 0x61
+  .a .b .c .d .e .f .g .h .i .j .k .l .m
+  .n .o .p .q .r .s .t .u .v .w .x .y .z)
+
+;; Instructions
+
 (def (set (reg ?reg) ?val)
   (1 0x48 0xc7 (+ 0xc0 ?reg))
   (4 ?val))
+
+(def (syscall)
+  (1 0x0F 0x05))
+
+;; Syscalls
 
 (def syscall-reg-arg1 r7)
 (def syscall-reg-arg2 r6)
@@ -21,39 +54,6 @@
 
 (def syscall-nr-exit  60)
 (def syscall-nr-write  1)
-
-(def (syscall)
-  (1 0x0F 0x05))
-
-(def .spc 0x20)
-(def .nl  0x0A)
-
-(def .A 0x41)
-(def .B 0x42)
-(def .C 0x43)
-(def .D 0x44)
-(def .E 0x45)
-(def .F 0x46)
-(def .G 0x47)
-(def .H 0x48)
-(def .I 0x49)
-(def .J 0x4A)
-(def .K 0x4B)
-(def .L 0x4C)
-(def .M 0x4D)
-(def .N 0x4E)
-(def .O 0x4F)
-(def .P 0x50)
-(def .Q 0x50)
-(def .R 0x52)
-(def .S 0x53)
-(def .T 0x54)
-(def .U 0x55)
-(def .V 0x56)
-(def .W 0x57)
-(def .X 0x58)
-(def .Y 0x59)
-(def .Z 0x60)
 
 (code start
   (set syscall-reg-arg1 0)
@@ -68,5 +68,5 @@
 
 (code
 message
-  (1 .H .E .L .L .O .spc  .W .O .R .L .D .nl)
+  (1 .H .e .l .l .o .spc  .W .o .r .l .d .nl)
 message:end)
