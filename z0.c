@@ -1128,7 +1128,7 @@ compile_toplevel (exp *e)
       e = rest (e);
       while (is_pair (e))
         {
-          compile_toplevel (e);
+          compile_toplevel (first (e));
           e = rest (e);
         }
     }
