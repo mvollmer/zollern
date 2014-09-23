@@ -1112,6 +1112,11 @@ compile_emitter (exp *e)
           exp *v = first (vals);
           if (is_inum (v))
             emit_code (size, inum_val (v));
+          else if (is_string (v))
+            {
+              for (char *c = string_chars (v); *c; c++)
+                emit_code (size, *c);
+            }
           else
             {
               delay_emitter (code_offset, size, v);

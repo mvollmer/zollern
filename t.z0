@@ -82,5 +82,5 @@
 
 (code
 message
-  (1 :H :e :l :l :o :spc  :W :o :r :l :d :nl)
+  (1 "Hello World" :nl)
 message:end)
