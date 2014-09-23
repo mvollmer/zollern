@@ -6,6 +6,9 @@
 (def (seq ?f ?start ?inc ?a ?b . ?rest)
   (begin (?f ?a ?start) (seq ?f (+ ?start ?inc) ?inc ?b . ?rest)))
 
+(def (defenum . ?rest)
+  (seq def 0 1 . ?rest))
+
 ;; Registers
 
 (def r0 (reg 0))
@@ -19,19 +22,30 @@
 
 ;; Characters
 
-(def (defchars ?base . ?rest)
-  (seq def ?base 1 . ?rest))
+(defenum
+  ;; 0x00
+  :nul :soh :stx :etx :eot :enq :ack :bel
+  :bs  :ht  :nl  :vt  :np  :cr  :so  :si
+  :dle :dc1 :dc2 :dc3 :dc4 :nak :syn :etb
+  :can :em  :sub :esc :fs  :gs  :rs  :us
 
-(def .nl  0x0A)
-(def .spc 0x20)
+  ;; 0x20
+  :spc :!   :dq  :#   :$   :%   :&   :sq
+  :lp  :rp  :*   :+   :,   :-   :.   :/
+  :0   :1   :2   :3   :4   :5   :6   :7
+  :8   :9   ::   :sc  :<   :=   :>   :?
 
-(defchars 0x41
-  .A .B .C .D .E .F .G .H .I .J .K .L .M
-  .N .O .P .Q .R .S .T .U .V .W .X .Y .Z)
+  ;; 0x40
+  :@   :A   :B   :C   :D   :E   :F   :G
+  :H   :I   :J   :K   :L   :M   :N   :O
+  :P   :Q   :R   :S   :T   :U   :V   :W
+  :X   :Y   :Z   :[   :bsl :]   :^   :_
 
-(defchars 0x61
-  .a .b .c .d .e .f .g .h .i .j .k .l .m
-  .n .o .p .q .r .s .t .u .v .w .x .y .z)
+  ;; 0x60
+  :bt  :a   :b   :c   :d   :e   :f   :g
+  :h   :i   :j   :k   :l   :m   :n   :o
+  :p   :q   :r   :s   :t   :u   :v   :w
+  :x   :y   :z   :{   :bar :}   :~   :del)
 
 ;; Instructions
 
@@ -68,5 +82,5 @@
 
 (code
 message
-  (1 .H .e .l .l .o .spc  .W .o .r .l .d .nl)
+  (1 :H :e :l :l :o :spc  :W :o :r :l :d :nl)
 message:end)
