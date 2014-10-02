@@ -128,6 +128,13 @@ void
 emit_code_at (uint64_t offset, int size, uint64_t val)
 {
   uint8_t *ptr = code + offset;
+
+  if (size < 0)
+    {
+      size = -size;
+      val -= code_start + offset + size;
+    }
+
   while (size > 0)
     {
       *ptr++ = val & 0xFF;
@@ -139,11 +146,11 @@ emit_code_at (uint64_t offset, int size, uint64_t val)
 void
 emit_code (int size, uint64_t val)
 {
-  if (code_offset + size >= code_max)
+  if (code_offset + abs (size) >= code_max)
     exitf (1, "too large, congrats");
 
   emit_code_at (code_offset, size, val);
-  code_offset += size;
+  code_offset += abs (size);
 }
 
 /* Data
