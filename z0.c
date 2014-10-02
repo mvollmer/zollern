@@ -287,9 +287,7 @@ dump (const char *out_name)
 
 /* Lists */
 
-typedef struct symdef {
-  uint64_t addr;
-} symdef;
+typedef struct symdef symdef;
 
 typedef struct exp {
   enum {
@@ -310,6 +308,21 @@ typedef struct exp {
     char *string;
   };
 } exp;
+
+typedef exp *(*builtin_t)(exp *form);
+
+struct symdef {
+  enum {
+    label_symdef, builtin_symdef, macros_symdef
+  } type;
+  union {
+    uint64_t label;
+    builtin_t builtin;
+    exp *macros;
+  };
+};
+
+void error (exp *e, const char *msg);
 
 exp nil_obj, eof_obj;
 
@@ -453,11 +466,11 @@ dnum_val (exp *e)
 }
 
 exp *
-sym (char *sym)
+sym (const char *sym)
 {
   unsigned int hash = 5381;
 
-  char *p = sym;
+  const char *p = sym;
   while (*p)
     hash = (hash*33) ^ *p++;
   hash = hash % symbol_hash_size;
@@ -488,12 +501,6 @@ sym_name (exp *e)
   return e->sym;
 }
 
-symdef *
-sym_def (exp *e)
-{
-  return e->def;
-}
-
 exp *
 gensym (char *tag)
 {
@@ -504,10 +511,77 @@ gensym (char *tag)
 }
 
 void
-sym_set_def (exp *e, uint64_t addr)
+sym_def_builtin (exp *e, builtin_t builtin)
 {
-  e->def = alloc_exp_data (sizeof (symdef));
-  e->def->addr = addr;
+  if (e->def)
+    error (e, "redefined");
+  symdef *d = alloc_exp_data (sizeof (symdef));
+  d->type = builtin_symdef;
+  d->builtin = builtin;
+  e->def = d;
+}
+
+bool
+sym_is_builtin (exp *e)
+{
+  return e->def && e->def->type == builtin_symdef;
+}
+
+builtin_t
+sym_builtin (exp *e)
+{
+  return e->def->builtin;
+}
+
+void
+sym_def_label (exp *e, uint64_t label)
+{
+  if (e->def)
+    error (e, "redefined");
+  symdef *d = alloc_exp_data (sizeof (symdef));
+  d->type = label_symdef;
+  d->label = label;
+  e->def = d;
+}
+
+bool
+sym_is_label (exp *e)
+{
+  return e->def && e->def->type == label_symdef;
+}
+
+uint64_t
+sym_label (exp *e)
+{
+  return e->def->label;
+}
+
+void
+sym_def_add_macro (exp *e, exp *macro)
+{
+  if (e->def == NULL)
+    {
+      symdef *d = alloc_exp_data (sizeof (symdef));
+      d->type = macros_symdef;
+      d->macros = nil ();
+      e->def = d;
+    }
+  else if (e->def->type != macros_symdef)
+    error (e, "redefined");
+
+  e->def->macros = cons (macro, e->def->macros);
+}
+
+bool
+sym_is_macros (exp *e)
+{
+  return e->def && e->def->type == macros_symdef;
+}
+
+exp *
+sym_macros (exp *e)
+{
+  return e->def->macros;
 }
 
 exp *
@@ -818,18 +892,29 @@ parse_form (exp *e, int mandatory, int optional, ...)
  */
 
 exp *expand (exp *e);
-void define_macro (exp *pattern, exp *body);
 
 exp *
 builtin_def (exp *form)
 {
   exp *head = first (rest (form));
   exp *body = rest (rest (form));
+  exp *name;
+
+  if (is_pair (head))
+    name = first (head);
+  else
+    name = head;
+
   if (is_pair (body) && !is_pair (rest (body)))
     body = first (body);
   else
     body = cons (sym ("begin"), body);
-  define_macro (head, body);
+
+  if (!is_sym (name))
+    error (form, "syntax");
+
+  sym_def_add_macro (name, cons (head, body));
+
   return cons (sym ("begin"), nil());
 }
 
@@ -895,19 +980,14 @@ builtin builtins[] = {
   NULL
 };
 
-exp *macros;
-
 void
-init_macros ()
+init_builtins ()
 {
-  macros = nil ();
-}
-
-void
-define_macro (exp *pattern, exp *body)
-{
-  macros = cons (cons (pattern, body),
-                 macros);
+  for (builtin *b = builtins; b->name; b++)
+    {
+      exp *s = sym (b->name);
+      sym_def_builtin (s, b->func);
+    }
 }
 
 bool
@@ -1008,11 +1088,8 @@ expand1 (exp *e)
 {
   if (is_pair (e) && is_sym (first (e)))
     {
-      for (builtin *b = builtins; b->name; b++)
-        {
-          if (strcmp (b->name, sym_name (first (e))) == 0)
-            return b->func (e);
-        }
+      if (sym_is_builtin (first (e)))
+        return (sym_builtin (first (e))) (e);
     }
 
   if (is_pair (e))
@@ -1025,17 +1102,26 @@ expand1 (exp *e)
         }
       e = reverse (x);
     }
-  else if (is_sym (e) && sym_def (e))
-    return inum (sym_def (e)->addr);
+  else if (is_sym (e) && sym_is_label (e))
+    return inum (sym_label (e));
 
-  for (exp *m = macros; is_pair (m); m = rest (m))
+  exp *name;
+  if (is_pair (e))
+    name = first (e);
+  else
+    name = e;
+
+  if (is_sym (name) && sym_is_macros (name))
     {
-      exp *pattern = first (first (m));
-      exp *body = rest (first (m));
+      for (exp *m = sym_macros (name); is_pair (m); m = rest (m))
+        {
+          exp *pattern = first (first (m));
+          exp *body = rest (first (m));
 
-      exp *vars = match (pattern, e);
-      if (!is_end_of_file (vars))
-        return expand (subst (body, vars));
+          exp *vars = match (pattern, e);
+          if (!is_end_of_file (vars))
+            return expand (subst (body, vars));
+        }
     }
 
   return e;
@@ -1100,7 +1186,7 @@ compile_emitter (exp *e)
     compile_emitters (rest (e));
   else if (is_sym (e))
     {
-      sym_set_def (e, code_start + code_offset);
+      sym_def_label (e, code_start + code_offset);
       symtab_add (sym_name (e), code_start + code_offset);
     }
   else if (is_pair (e) && is_inum (first (e)))
@@ -1206,7 +1292,7 @@ main (int argc, char **argv)
 
   init_code ();
   init_exp ();
-  init_macros ();
+  init_builtins ();
 
   read_open (in);
 
