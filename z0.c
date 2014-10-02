@@ -975,6 +975,13 @@ builtin_diff (exp *form)
   return builtin_inum_binop (form, minus);
 }
 
+exp *
+builtin_prod (exp *form)
+{
+  int times (int a, int b) { return a * b; }
+  return builtin_inum_binop (form, times);
+}
+
 typedef struct {
   const char *name;
   exp *(*func)(exp *form);
@@ -984,6 +991,7 @@ builtin builtins[] = {
   { "def", builtin_def },
   { "+",   builtin_sum },
   { "-",   builtin_diff },
+  { "*",   builtin_prod },
   NULL
 };
 
