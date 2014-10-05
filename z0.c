@@ -982,6 +982,34 @@ builtin_prod (exp *form)
   return builtin_inum_binop (form, times);
 }
 
+exp *
+builtin_lsh (exp *form)
+{
+  int lsh (int a, int b) { return a << b; }
+  return builtin_inum_binop (form, lsh);
+}
+
+exp *
+builtin_rsh (exp *form)
+{
+  int rsh (int a, int b) { return a >> b; }
+  return builtin_inum_binop (form, rsh);
+}
+
+exp *
+builtin_and (exp *form)
+{
+  int and (int a, int b) { return a & b; }
+  return builtin_inum_binop (form, and);
+}
+
+exp *
+builtin_or (exp *form)
+{
+  int or (int a, int b) { return a | b; }
+  return builtin_inum_binop (form, or);
+}
+
 typedef struct {
   const char *name;
   exp *(*func)(exp *form);
@@ -992,6 +1020,10 @@ builtin builtins[] = {
   { "+",   builtin_sum },
   { "-",   builtin_diff },
   { "*",   builtin_prod },
+  { "<<",  builtin_lsh },
+  { ">>",  builtin_rsh },
+  { "and", builtin_and },
+  { "or",  builtin_or },
   NULL
 };
 

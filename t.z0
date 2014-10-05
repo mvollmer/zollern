@@ -9,16 +9,33 @@
 (def (defenum . ?rest)
   (seq def 0 1 . ?rest))
 
+(def (deftypedenum-accum ?accum ?type)
+  (begin))
+
+(def (deftypedenum-accum ?accum ?type ?member . ?rest)
+  (begin
+    (def ?member (?type ?accum))
+    (deftypedenum-accum (+ ?accum 1) ?type . ?rest)))
+
+(def (deftypedenum ?type . ?members)
+  (deftypedenum-accum 0 ?type . ?members))
+
+(def (<<<-accum ?accum)
+  ?accum)
+
+(def (<<<-accum ?accum ?val ?bits . ?rest)
+  (<<<-accum (or (<< ?accum ?bits)
+                 (and ?val (- (<< 1 ?bits) 1)))
+             . ?rest))
+
+(def (<<< . ?rest)
+  (<<<-accum 0 . ?rest))
+
 ;; Registers
 
-(def r0 (reg 0))
-(def r1 (reg 1))
-(def r2 (reg 2))
-(def r3 (reg 3))
-(def r4 (reg 4))
-(def r5 (reg 5))
-(def r6 (reg 6))
-(def r7 (reg 7))
+(deftypedenum reg
+  r0  r1  r2  r3  r4  r5  r6  r7
+  r8  r9 r10 r11 r12 r13 r14 r15)
 
 ;; Characters
 
@@ -49,12 +66,21 @@
 
 ;; Instructions
 
+(def (rex ?w ?r ?x ?b)
+  (<<< 4 4 ?w 1 ?r 1 ?x 1 ?b 1))
+
+(def (mod/rm ?mod ?r ?m)
+  (<<< ?mod 2 ?r 3 ?m 3))
+
+(def (op/rr ?op ?dst ?src)
+  (1 (rex 1 (>> ?src 3) 0 (>> ?dst 3)) ?op (mod/rm 3 ?src ?dst)))
+
 (def (set (reg ?dst) ?val)
-  (1 0x48 0xc7 (+ 0xc0 ?dst))
+  (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod/rm 3 0 ?dst))
   (4 ?val))
 
 (def (set (reg ?dst) (reg ?src))
-  (1 0x48 0x89 (+ 0xc0 ?dst (* ?src 8))))
+  (op/rr 0x89 ?dst ?src))
 
 (def (call ?addr)
   (1 0xe8)
