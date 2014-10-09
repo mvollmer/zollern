@@ -9,16 +9,16 @@
 (def (defenum . ?rest)
   (seq def 0 1 . ?rest))
 
-(def (deftypedenum-accum ?accum ?type)
+(def (deftypedenum-from ?start ?type)
   (begin))
 
-(def (deftypedenum-accum ?accum ?type ?member . ?rest)
+(def (deftypedenum-from ?start ?type ?member . ?rest)
   (begin
-    (def ?member (?type ?accum))
-    (deftypedenum-accum (+ ?accum 1) ?type . ?rest)))
+    (def ?member (?type ?start))
+    (deftypedenum-from (+ ?start 1) ?type . ?rest)))
 
 (def (deftypedenum ?type . ?members)
-  (deftypedenum-accum 0 ?type . ?members))
+  (deftypedenum-from 0 ?type . ?members))
 
 (def (<<<-accum ?accum)
   ?accum)
