@@ -11,5 +11,13 @@ z0: z0.c
 	./$* >$*.out
 	cmp $*.out $*.expected
 
-sieve-c: sieve.c
+sieve.dump: sieve.c Makefile
 	gcc -O6 -std=c99 -o sieve-c sieve.c
+	objdump -d sieve-c >sieve.dump
+
+sieve.s: sieve.c Makefile
+	gcc -O6 -std=c99 -S sieve.c
+
+tt.dump: tt.c Makefile
+	gcc -O6 -std=c99 -c tt.c
+	objdump -d tt.o
