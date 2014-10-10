@@ -69,11 +69,33 @@
 (def (rex ?w ?r ?x ?b)
   (<<< 4 4 ?w 1 ?r 1 ?x 1 ?b 1))
 
+(def (rex 0 0 0 0)
+  (begin))
+
 (def (mod/rm ?mod ?r ?m)
   (<<< ?mod 2 ?r 3 ?m 3))
 
+;; register to register
 (def (op/rr ?op ?dst ?src)
   (1 (rex 1 (>> ?src 3) 0 (>> ?dst 3)) ?op (mod/rm 3 ?src ?dst)))
+
+;; (register) to register, register 12 and 13 need to be special
+;; cased...
+
+(def (op/rm ?w ?op ?dst ?src)
+  (1 (rex ?w (>> ?dst 3) 0 (>> ?src 3)) ?op (mod/rm 0 ?dst ?src)))
+
+(def (op/rm ?w ?op ?dst 4)
+  (1 (rex ?w (>> ?dst 3) 0 (>> 4 3)) ?op (mod/rm 0 ?dst 4) 0x24))
+
+(def (op/rm ?w ?op ?dst 5)
+  (1 (rex ?w (>> ?dst 3) 0 (>> 5 3)) ?op (mod/rm 1 ?dst 5) 00))
+
+(def (op/rm ?w ?op ?dst 12)
+  (1 (rex ?w (>> ?dst 3) 0 (>> 12 3)) ?op (mod/rm 0 ?dst 12) 0x24))
+
+(def (op/rm ?w ?op ?dst 13)
+  (1 (rex ?w (>> ?dst 3) 0 (>> 13 3)) ?op (mod/rm 1 ?dst 13) 00))
 
 (def (set (reg ?dst) ?val)
   (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod/rm 3 0 ?dst))
@@ -81,6 +103,18 @@
 
 (def (set (reg ?dst) (reg ?src))
   (op/rr 0x89 ?dst ?src))
+
+(def (set (reg ?dst) (u8 (reg ?src)))
+  (op/rm 0 (begin 0x0F 0xB6) ?dst ?src))
+
+(def (set (reg ?dst) (u16 (reg ?src)))
+  (op/rm 0 (begin 0x0F 0xB7) ?dst ?src))
+
+(def (set (reg ?dst) (u32 (reg ?src)))
+  (op/rm 0 0x8B ?dst ?src))
+
+(def (set (reg ?dst) (u64 (reg ?src)))
+  (op/rm 1 0x8B ?dst ?src))
 
 (def (call ?addr)
   (1 0xe8)
