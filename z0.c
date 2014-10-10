@@ -1227,6 +1227,31 @@ delay_emitter (uint64_t offset, int size, exp *val)
 void compile_emitters (exp *e);
 
 void
+compile_emitter_elements (int size, exp *elts)
+{
+  while (is_pair (elts))
+    {
+      exp *v = first (elts);
+      if (is_inum (v))
+        emit_code (size, inum_val (v));
+      else if (is_string (v))
+        {
+          for (char *c = string_chars (v); *c; c++)
+            emit_code (size, *c);
+        }
+      else if (is_form (v, "begin"))
+        compile_emitter_elements (size, rest (v));
+      else
+        {
+          delay_emitter (code_offset, size, v);
+          emit_code (size, 0);
+        }
+      elts = rest (elts);
+    }
+}
+
+
+void
 compile_emitter (exp *e)
 {
   if (is_form (e, "begin"))
@@ -1237,27 +1262,7 @@ compile_emitter (exp *e)
       symtab_add (sym_name (e), code_start + code_offset);
     }
   else if (is_pair (e) && is_inum (first (e)))
-    {
-      int size = inum_val (first (e));
-      exp *vals = rest (e);
-      while (is_pair (vals))
-        {
-          exp *v = first (vals);
-          if (is_inum (v))
-            emit_code (size, inum_val (v));
-          else if (is_string (v))
-            {
-              for (char *c = string_chars (v); *c; c++)
-                emit_code (size, *c);
-            }
-          else
-            {
-              delay_emitter (code_offset, size, v);
-              emit_code (size, 0);
-            }
-          vals = rest (vals);
-        }
-    }
+    compile_emitter_elements (inum_val (first (e)), rest (e));
   else
     error (e, "syntax");
 }
