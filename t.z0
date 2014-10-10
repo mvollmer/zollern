@@ -75,30 +75,26 @@
 (def (mod/rm ?mod ?r ?m)
   (<<< ?mod 2 ?r 3 ?m 3))
 
-;; register to register
-(def (op/rr ?op ?dst ?src)
-  (1 (rex 1 (>> ?src 3) 0 (>> ?dst 3)) ?op (mod/rm 3 ?src ?dst)))
+(def (mod-00 ?r ?m)
+  (mod/rm 0 ?r ?m))
 
-;; (register) to register, register 12 and 13 need to be special
-;; cased...
+(def (mod-00 ?r 4)
+  (begin (mod/rm 0 ?r 4) 0x24))
+
+(def (mod-00 ?r 5)
+  (begin (mod/rm 1 ?r 5) 0x00))
+
+(def (mod-11 ?r ?m)
+  (mod/rm 3 ?r ?m))
+
+(def (op/rr ?op ?dst ?src)
+  (1 (rex 1 (>> ?src 3) 0 (>> ?dst 3)) ?op (mod-11 ?src ?dst)))
 
 (def (op/rm ?w ?op ?dst ?src)
-  (1 (rex ?w (>> ?dst 3) 0 (>> ?src 3)) ?op (mod/rm 0 ?dst ?src)))
-
-(def (op/rm ?w ?op ?dst 4)
-  (1 (rex ?w (>> ?dst 3) 0 (>> 4 3)) ?op (mod/rm 0 ?dst 4) 0x24))
-
-(def (op/rm ?w ?op ?dst 5)
-  (1 (rex ?w (>> ?dst 3) 0 (>> 5 3)) ?op (mod/rm 1 ?dst 5) 00))
-
-(def (op/rm ?w ?op ?dst 12)
-  (1 (rex ?w (>> ?dst 3) 0 (>> 12 3)) ?op (mod/rm 0 ?dst 12) 0x24))
-
-(def (op/rm ?w ?op ?dst 13)
-  (1 (rex ?w (>> ?dst 3) 0 (>> 13 3)) ?op (mod/rm 1 ?dst 13) 00))
+  (1 (rex ?w (>> ?dst 3) 0 (>> ?src 3)) ?op (mod-00 ?dst ?src)))
 
 (def (set (reg ?dst) ?val)
-  (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod/rm 3 0 ?dst))
+  (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod-11 0 ?dst))
   (4 ?val))
 
 (def (set (reg ?dst) (reg ?src))
