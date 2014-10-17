@@ -29,7 +29,7 @@
   (cond ((and (looking-at-p "[ \t\n]*\\(def\\|code\\|data\\)")
               (= (elt state 0) 1))
          (goto-char indent-point)
-         (if (looking-at-p "[ \t]*\\sw")
+         (if (looking-at-p "[ \t]*\\s_")
              0
            2))
         (t
