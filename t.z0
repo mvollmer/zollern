@@ -119,12 +119,27 @@
 (def (add (reg ?dst) (reg ?src))
   (op/rr 0x01 ?dst ?src))
 
+(def (sub (reg ?dst) ?val)
+  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 1 ?dst))
+  (4 ?val))
+
+(def (sub (reg ?dst) (reg ?src))
+  (op/rr 0x29 ?dst ?src))
+
 (def (cmp (reg ?reg) ?val)
   (1 (rex 1 0 0 (>> ?reg 3)) 0x81 (mod-11 7 ?reg))
   (4 ?val))
 
 (def (cmp (reg ?dst) (reg ?src))
   (op/rr 0x39 ?dst ?src))
+
+(def (jmp ?addr)
+  (1 0xe9)
+  (-4 ?addr))
+
+(def (jne ?addr)
+  (1 0x0F 0x85)
+  (-4 ?addr))
 
 (def (call ?addr)
   (1 0xe8)
@@ -144,16 +159,17 @@
 
 ;; Utilities
 
-;; (code strlen
-;;   (set r1 r0)
-;;   (jmp .test)
-;; .loop
-;;   (add r0 1)
-;; .test
-;;   (cmp (u8 r0) 0)
-;;   (bne .loop)
-;;   (sub r0 r1)
-;;   (ret))
+(code strlen
+  (set r1 r0)
+  (jmp .test)
+.loop
+  (add r0 1)
+.test
+  (set r2 (u8 r0))
+  (cmp r2 0)
+  (jne .loop)
+  (sub r0 r1)
+  (ret))
 
 ;; Syscalls
 
