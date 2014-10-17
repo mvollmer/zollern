@@ -133,6 +133,12 @@
 (def (cmp (reg ?dst) (reg ?src))
   (op/rr 0x39 ?dst ?src))
 
+(def (push (reg ?reg))
+  (1 (rex 0 0 0 (>> ?reg 3)) (<<< 10 5 ?reg 3)))
+
+(def (pop (reg ?reg))
+  (1 (rex 0 0 0 (>> ?reg 3)) (<<< 11 5 ?reg 3)))
+
 (def (jmp ?addr)
   (1 0xe9)
   (-4 ?addr))
@@ -186,15 +192,21 @@
 (defsyscall write  1)
 (defsyscall exit  60)
 
-(code main
+(code print
+  (push r0)
+  (call strlen)
+  (set r2 r0)
   (set r0 1)
-  (set r1 message)
-  (set r2 (- message:end message))
+  (pop r1)
   (call write)
+  (ret))
+
+(code main
+  (set r0 message)
+  (call print)
   (set r0 0)
   (ret))
 
 (code
 message
-  (1 "Hello World" :nl)
-message:end)
+  (1 "Hello World" :nl 0))
