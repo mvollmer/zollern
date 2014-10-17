@@ -496,6 +496,14 @@ sym (const char *sym)
   return e;
 }
 
+void
+sym_foreach (void (*func) (exp *sym))
+{
+  for (int i = 0; i < symbol_hash_size; i++)
+    for (exp *e = symbol_hash[i]; e; e = e->link)
+      func (e);
+}
+
 bool
 is_sym (exp *e)
 {
@@ -515,6 +523,12 @@ gensym (char *tag)
   char name[80];
   snprintf(name, 80, "%d-%s", counter++, tag? tag : "gensym");
   return sym(name);
+}
+
+void
+sym_undef (exp *e)
+{
+  e->def = NULL;
 }
 
 void
@@ -1204,6 +1218,20 @@ expand (exp *e)
 
 /* Assembler */
 
+void compile_delayeds ();
+
+void
+toss_local_definitions ()
+{
+  void toss_local (exp *e)
+  {
+    if (sym_name(e)[0] == '.')
+      sym_undef (e);
+  }
+
+  sym_foreach (toss_local);
+}
+
 typedef struct delayed_emitter {
   struct delayed_emitter *link;
   uint64_t offset;
@@ -1250,7 +1278,6 @@ compile_emitter_elements (int size, exp *elts)
     }
 }
 
-
 void
 compile_emitter (exp *e)
 {
@@ -1259,7 +1286,8 @@ compile_emitter (exp *e)
   else if (is_sym (e))
     {
       sym_def_label (e, code_start + code_offset);
-      symtab_add (sym_name (e), code_start + code_offset);
+      if (sym_name(e)[0] != '.')
+        symtab_add (sym_name (e), code_start + code_offset);
     }
   else if (is_pair (e) && is_inum (first (e)))
     compile_emitter_elements (inum_val (first (e)), rest (e));
@@ -1290,7 +1318,11 @@ compile_toplevel (exp *e)
         }
     }
   else if (is_form (e, "code"))
-    compile_emitters (rest (e));
+    {
+      compile_emitters (rest (e));
+      compile_delayeds ();
+      toss_local_definitions ();
+    }
   else
     error (e, "syntax");
 }
@@ -1298,14 +1330,26 @@ compile_toplevel (exp *e)
 void
 compile_delayeds ()
 {
-  for (delayed_emitter *d = delayed; d; d = d->link)
+  delayed_emitter **dd = &delayed;
+  while (*dd)
     {
+      delayed_emitter *d = *dd;
       exp *v = expand (d->val);
       if (is_inum (v))
-        emit_code_at (d->offset, d->size, inum_val (v));
+        {
+          emit_code_at (d->offset, d->size, inum_val (v));
+          *dd = d->link;
+        }
       else
-        error (v, "undefined");
+        dd = &(d->link);
     }
+}
+
+void
+check_delayeds ()
+{
+  if (delayed)
+    error (delayed->val, "undefined");
 }
 
 /* Main */
@@ -1352,7 +1396,7 @@ main (int argc, char **argv)
   while (!is_end_of_file (e = read_exp ()))
     compile_toplevel (expand (e));
 
-  compile_delayeds ();
+  check_delayeds ();
 
   dump (out);
   exit (0);
