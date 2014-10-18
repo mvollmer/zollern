@@ -940,6 +940,24 @@ builtin_def (exp *form)
 }
 
 exp *
+builtin_if (exp *form)
+{
+  exp *cond = expand (first (rest (form)));
+  if (!is_inum (cond))
+    return form;
+
+  if (inum_val (cond))
+    return expand (first (rest (rest (form))));
+  else
+    {
+      if (is_pair (rest (rest (rest (form)))))
+        return expand (first (rest (rest (rest (form)))));
+      else
+        return cons (sym ("begin"), nil ());
+    }
+}
+
+exp *
 builtin_inum_binop (exp *form, int (*combine)(int, int))
 {
   int lit_val;
@@ -991,6 +1009,13 @@ DEFBINOP(rsh, >>)
 DEFBINOP(and, &)
 DEFBINOP(or, |)
 
+DEFBINOP(eq, ==)
+DEFBINOP(ne, !=)
+DEFBINOP(lt, <)
+DEFBINOP(le, <=)
+DEFBINOP(gt, >)
+DEFBINOP(ge, >=)
+
 typedef struct {
   const char *name;
   exp *(*func)(exp *form);
@@ -998,6 +1023,7 @@ typedef struct {
 
 builtin builtins[] = {
   { "def", builtin_def },
+  { "if",  builtin_if },
   { "+",   builtin_sum },
   { "-",   builtin_diff },
   { "*",   builtin_prod },
@@ -1005,6 +1031,12 @@ builtin builtins[] = {
   { ">>",  builtin_rsh },
   { "and", builtin_and },
   { "or",  builtin_or },
+  { "==",  builtin_eq },
+  { "!=",  builtin_ne },
+  { "<",   builtin_lt },
+  { "<=",  builtin_le },
+  { ">",   builtin_gt },
+  { ">=",  builtin_ge },
   NULL
 };
 
