@@ -31,11 +31,15 @@
 (def (<<< . ?rest)
   (<<<-accum 0 . ?rest))
 
-;; Registers
+;; Registers and calling convention
+;;
+;; Registerd l0-l8 must be saved by caller.  Registers x0-x5 and sp
+;; must be saved by callee.  Arguments are passed in l0-l8.  Results
+;; are returned in l0-l8.  Register sp is the stack pointer.
 
 (deftypedenum reg
-  r0  r1  r2  r3  r4  r5  r6  r7
-  r8  r9 r10 r11 r12 r13 r14 r15)
+  l0  l1  l2  x0  sp  x1  l3  l4
+  l5  l6  l7  l8  x2  x3  x4  x5)
 
 ;; Characters
 
@@ -166,45 +170,51 @@
 ;; Utilities
 
 (code strlen
-  (set r1 r0)
+  (set l1 l0)
   (jmp .test)
 .loop
-  (add r0 1)
+  (add l0 1)
 .test
-  (set r2 (u8 r0))
-  (cmp r2 0)
+  (set l2 (u8 l0))
+  (cmp l2 0)
   (jne .loop)
-  (sub r0 r1)
+  (sub l0 l1)
   (ret))
 
 ;; Syscalls
 
-;; Args go to r7, r6, r2, r10, r8, r9, number to r0.
+;; Args go to rdi, rsi, rdx, r10, r8, r9, number to rax.
+;; Our names: l4,  l3,  l2,  l7,  l5, l6, number to l0.
+;; Args:      l0,  l1,  l2,  l3,  l4, l5
 
-(def (defsyscall ?func ?num)
+(def (defsyscall ?func ?nsys ?nargs)
   (code ?func
-    (set r7 r0)
-    (set r6 r1)
-    (set r0 ?num)
+    (set l7 l3)  ; r10
+    (set l4 l0)  ; rdi
+    (set l3 l1)  ; rsi
+    ;; (set rdx l2) rdx = l2
+    (set l6 l5)  ; r9
+    (set l5 l4)  ; r8
+    (set l0 ?nsys)
     (syscall)
     (ret)))
 
-(defsyscall write  1)
-(defsyscall exit  60)
+(defsyscall write  1  3)
+(defsyscall exit  60  1)
 
 (code print
-  (push r0)
+  (push l0)
   (call strlen)
-  (set r2 r0)
-  (set r0 1)
-  (pop r1)
+  (set l2 l0)
+  (set l0 1)
+  (pop l1)
   (call write)
   (ret))
 
 (code main
-  (set r0 message)
+  (set l0 message)
   (call print)
-  (set r0 0)
+  (set l0 0)
   (ret))
 
 (code
