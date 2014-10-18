@@ -975,54 +975,21 @@ builtin_inum_binop (exp *form, int (*combine)(int, int))
     return form;
 }
 
-exp *
-builtin_sum (exp *form)
-{
-  int plus (int a, int b) { return a + b; }
-  return builtin_inum_binop (form, plus);
-}
+#define DEFBINOP(NAME, OP)                         \
+  exp *                                            \
+  builtin_##NAME (exp *form)                       \
+  {                                                \
+    int NAME (int a, int b) { return a OP b; }     \
+    return builtin_inum_binop (form, NAME);        \
+  }
 
-exp *
-builtin_diff (exp *form)
-{
-  int minus (int a, int b) { return a - b; }
-  return builtin_inum_binop (form, minus);
-}
-
-exp *
-builtin_prod (exp *form)
-{
-  int times (int a, int b) { return a * b; }
-  return builtin_inum_binop (form, times);
-}
-
-exp *
-builtin_lsh (exp *form)
-{
-  int lsh (int a, int b) { return a << b; }
-  return builtin_inum_binop (form, lsh);
-}
-
-exp *
-builtin_rsh (exp *form)
-{
-  int rsh (int a, int b) { return a >> b; }
-  return builtin_inum_binop (form, rsh);
-}
-
-exp *
-builtin_and (exp *form)
-{
-  int and (int a, int b) { return a & b; }
-  return builtin_inum_binop (form, and);
-}
-
-exp *
-builtin_or (exp *form)
-{
-  int or (int a, int b) { return a | b; }
-  return builtin_inum_binop (form, or);
-}
+DEFBINOP(sum, +)
+DEFBINOP(diff, -)
+DEFBINOP(prod, *)
+DEFBINOP(lsh, <<)
+DEFBINOP(rsh, >>)
+DEFBINOP(and, &)
+DEFBINOP(or, |)
 
 typedef struct {
   const char *name;
