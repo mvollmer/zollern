@@ -213,8 +213,7 @@
   (set l2 l0)
   (set l0 1)
   (pop l1)
-  (call write)
-  (ret))
+  (jmp write))
 
 (code main
   (set l0 message)
@@ -222,6 +221,5 @@
   (set l0 0)
   (ret))
 
-(code
-message
+(code message
   (1 "Hello World" :nl 0))
