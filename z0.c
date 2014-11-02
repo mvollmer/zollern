@@ -704,12 +704,14 @@ write_exp (FILE *f, exp *e)
 
 const char *in_name;
 FILE *in_file;
+int lineno = 1;
 
 void
 read_open (const char *name)
 {
   in_name = name;
   in_file = fopen (in_name, "r");
+  lineno = 1;
   if (in_file == NULL)
     exitf (1, "%s: %m", in_name);
 }
@@ -723,8 +725,6 @@ read_close ()
 #define token_size 1024
 char token[token_size];
 enum { punct_tok, sym_tok, string_tok, inum_tok, dnum_tok, eof_tok } token_kind;
-
-int lineno = 1;
 
 void
 read_token ()
@@ -743,6 +743,7 @@ read_token ()
     {
       while (c = fgetc (in_file) != '\n')
         ;
+      lineno++;
       goto again;
     }
 
