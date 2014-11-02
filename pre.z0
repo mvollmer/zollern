@@ -162,3 +162,8 @@
 
 (def (syscall)
   (1 0x0F 0x05))
+
+;; Init
+
+(code start
+  (jmp main))
