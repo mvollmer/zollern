@@ -25,3 +25,8 @@ tt.dump: tt.c Makefile
 asm.dump: asm.s Makefile
 	gcc -O6 -std=c99 -c asm.s
 	objdump -d asm.o
+
+check: z0
+	./z0 pre.z0 testlib.z0 test.z0 test
+	objdump -d ./test
+	./test

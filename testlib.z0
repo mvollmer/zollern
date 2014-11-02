@@ -1,0 +1,9 @@
+(def (assert-eq (reg 0) ?val)
+  ;; movabs $?val,%x5
+  (1 0x49 0xbf) (8 ?val)
+  ;; cmp %l0, %x5
+  (1 0x49 0x39 0xc7)
+  ;; je ok
+  (1 0x74 01)
+  ;; int $3
+  (1 0xcc))

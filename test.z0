@@ -1,0 +1,58 @@
+(code main
+  (set l0 0)
+  (assert-eq l0 0)
+  (sub l0 1)
+  (assert-eq l0 -1)
+  (add l0 0x7FFFFFFF)
+  (assert-eq l0 0x7FFFFFFE)
+  (set l0 -1)
+  (add l0 1)
+  (assert-eq l0 0)
+
+  (set l1 13)
+  (set l0 12)
+  (add l0 l1)
+  (assert-eq l0 25)
+  (sub l0 l1)
+  (sub l0 l1)
+  (assert-eq l0 -1)
+
+  (set l1 data-inc)
+  (set l0 -1)
+  (set l0 (u8 l1))
+  (assert-eq l0 0x12)
+  (set l0 -1)
+  (set l0 (u16 l1))
+  (assert-eq l0 0x3412)
+  (set l0 -1)
+  (set l0 (u32 l1))
+  (assert-eq l0 0x78563412)
+  (set l0 -1)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x7856341278563412)
+
+  (set l1 data-all-ones)
+  (set l0 -1)
+  (set l0 (u8 l1))
+  (assert-eq l0 0xFF)
+  (set l0 -1)
+  (set l0 (u16 l1))
+  (assert-eq l0 0xFFFF)
+  (set l0 -1)
+  (set l0 (u32 l1))
+  (assert-eq l0 0xFFFFFFFF)
+  (set l0 -1)
+  (set l0 (u64 l1))
+  (add l0 1)
+  (assert-eq l0 0)
+
+  ;; PASS
+  (set l4 0)
+  (set l0 60)
+  (syscall))
+
+(code data-inc
+  (1 0x12 0x34 0x56 0x78 0x12 0x34 0x56 0x78))
+
+(code data-all-ones
+  (1 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF))

@@ -126,7 +126,7 @@
   (op/rr 0x01 ?dst ?src))
 
 (def (sub (reg ?dst) ?val)
-  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 1 ?dst))
+  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 5 ?dst))
   (4 ?val))
 
 (def (sub (reg ?dst) (reg ?src))
