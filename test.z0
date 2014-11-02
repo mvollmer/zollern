@@ -1,4 +1,5 @@
 (code main
+  ;; add/sub immediate
   (set l0 0)
   (assert-eq l0 0)
   (sub l0 1)
@@ -9,6 +10,7 @@
   (add l0 1)
   (assert-eq l0 0)
 
+  ;; add/sub reg
   (set l1 13)
   (set l0 12)
   (add l0 l1)
@@ -17,6 +19,7 @@
   (sub l0 l1)
   (assert-eq l0 -1)
 
+  ;; load unsigned
   (set l1 data-inc)
   (set l0 -1)
   (set l0 (u8 l1))
@@ -31,6 +34,7 @@
   (set l0 (u64 l1))
   (assert-eq l0 0x7856341278563412)
 
+  ;; load unsigned
   (set l1 data-all-ones)
   (set l0 -1)
   (set l0 (u8 l1))
@@ -46,10 +50,48 @@
   (add l0 1)
   (assert-eq l0 0)
 
+  ;; cmp/jne
+  (set l0 12)
+  (cmp l0 13)
+  (jne .ok1)
+  (assert-fail)
+.ok1
+  (set l1 13)
+  (cmp l0 l1)
+  (jne .ok2)
+  (assert-fail)
+.ok2
+
+  ;; push/pop
+  (set l1 14)
+  (set l0 0)
+  (push l1)
+  (pop l0)
+  (assert-eq l0 14)
+
+  ;; call/ret
+  (call sub-1234)
+  (assert-eq l0 1234)
+
+  ;; jmp
+  (jmp .ok4)
+  (assert-fail)
+.ok3
+  (jmp .ok5)
+  (assert-fail)
+.ok4
+  (jmp .ok3)
+  (assert-fail)
+.ok5
+
   ;; PASS
   (set l4 0)
   (set l0 60)
   (syscall))
+
+(code sub-1234
+  (set l0 1234)
+  (ret))
 
 (code data-inc
   (1 0x12 0x34 0x56 0x78 0x12 0x34 0x56 0x78))
