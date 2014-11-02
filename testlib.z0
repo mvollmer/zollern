@@ -3,10 +3,14 @@
   (1 0xcc))
 
 (def (assert-eq (reg 0) ?val)
+  ;; push %x5
+  (1 0x41 0x57)
   ;; movabs $?val,%x5
   (1 0x49 0xbf) (8 ?val)
   ;; cmp %l0, %x5
   (1 0x49 0x39 0xc7)
   ;; je ok
   (1 0x74 01)
-  (assert-fail))
+  (assert-fail)
+  ;; pop %x5
+  (1 0x41 0x5f))
