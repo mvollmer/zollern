@@ -3,8 +3,8 @@ all: sieve.test
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c
 
-%: %.z0 z0
-	./z0 $*.z0 $*
+%: pre.z0 %.z0 z0
+	./z0 pre.z0 $*.z0 $*
 	objdump -d $*
 
 %.test: %
@@ -21,3 +21,7 @@ sieve.s: sieve.c Makefile
 tt.dump: tt.c Makefile
 	gcc -O6 -std=c99 -c tt.c
 	objdump -d tt.o
+
+asm.dump: asm.s Makefile
+	gcc -O6 -std=c99 -c asm.s
+	objdump -d asm.o

@@ -1,0 +1,164 @@
+;; Utilities
+
+(def (seq ?f ?start ?inc)
+  (begin))
+
+(def (seq ?f ?start ?inc ?first . ?rest)
+  (begin
+    (?f ?first ?start)
+    (seq ?f (+ ?start ?inc) ?inc . ?rest)))
+
+(def (defenum . ?rest)
+  (seq def 0 1 . ?rest))
+
+(def (deftypedenum-from ?start ?type)
+  (begin))
+
+(def (deftypedenum-from ?start ?type ?member . ?rest)
+  (begin
+    (def ?member (?type ?start))
+    (deftypedenum-from (+ ?start 1) ?type . ?rest)))
+
+(def (deftypedenum ?type . ?members)
+  (deftypedenum-from 0 ?type . ?members))
+
+(def (<<<-accum ?accum)
+  ?accum)
+
+(def (<<<-accum ?accum ?val ?bits . ?rest)
+  (<<<-accum (or (<< ?accum ?bits)
+                 (and ?val (- (<< 1 ?bits) 1)))
+             . ?rest))
+
+(def (<<< . ?rest)
+  (<<<-accum 0 . ?rest))
+
+;; Registers and calling convention
+;;
+;; Registerd l0-l8 must be saved by caller.  Registers x0-x5 and sp
+;; must be saved by callee.  Arguments are passed in l0-l8.  Results
+;; are returned in l0-l8.  Register sp is the stack pointer.
+
+(deftypedenum reg
+  l0  l1  l2  x0  sp  x1  l3  l4
+  l5  l6  l7  l8  x2  x3  x4  x5)
+
+;; Characters
+
+(defenum
+  ;; 0x00
+  :nul :soh :stx :etx :eot :enq :ack :bel
+  :bs  :ht  :nl  :vt  :np  :cr  :so  :si
+  :dle :dc1 :dc2 :dc3 :dc4 :nak :syn :etb
+  :can :em  :sub :esc :fs  :gs  :rs  :us
+
+  ;; 0x20
+  :spc :!   :dq  :#   :$   :%   :&   :sq
+  :lp  :rp  :*   :+   :,   :-   :.   :/
+  :0   :1   :2   :3   :4   :5   :6   :7
+  :8   :9   ::   :sc  :<   :=   :>   :?
+
+  ;; 0x40
+  :@   :A   :B   :C   :D   :E   :F   :G
+  :H   :I   :J   :K   :L   :M   :N   :O
+  :P   :Q   :R   :S   :T   :U   :V   :W
+  :X   :Y   :Z   :[   :bsl :]   :^   :_
+
+  ;; 0x60
+  :bt  :a   :b   :c   :d   :e   :f   :g
+  :h   :i   :j   :k   :l   :m   :n   :o
+  :p   :q   :r   :s   :t   :u   :v   :w
+  :x   :y   :z   :{   :bar :}   :~   :del)
+
+;; Instructions
+
+(def (rex ?w ?r ?x ?b)
+  (<<< 4 4 ?w 1 ?r 1 ?x 1 ?b 1))
+
+(def (rex 0 0 0 0)
+  (begin))
+
+(def (mod/rm ?mod ?r ?m)
+  (<<< ?mod 2 ?r 3 ?m 3))
+
+(def (mod-00 ?r ?m)
+  (mod/rm 0 ?r ?m))
+
+(def (mod-00 ?r 4)
+  (begin (mod/rm 0 ?r 4) 0x24))
+
+(def (mod-00 ?r 5)
+  (begin (mod/rm 1 ?r 5) 0x00))
+
+(def (mod-11 ?r ?m)
+  (mod/rm 3 ?r ?m))
+
+(def (op/rr ?op ?dst ?src)
+  (1 (rex 1 (>> ?src 3) 0 (>> ?dst 3)) ?op (mod-11 ?src ?dst)))
+
+(def (op/rm ?w ?op ?dst ?src)
+  (1 (rex ?w (>> ?dst 3) 0 (>> ?src 3)) ?op (mod-00 ?dst ?src)))
+
+(def (set (reg ?dst) ?val)
+  (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod-11 0 ?dst))
+  (4 ?val))
+
+(def (set (reg ?dst) (reg ?src))
+  (op/rr 0x89 ?dst ?src))
+
+(def (set (reg ?dst) (u8 (reg ?src)))
+  (op/rm 0 (begin 0x0F 0xB6) ?dst ?src))
+
+(def (set (reg ?dst) (u16 (reg ?src)))
+  (op/rm 0 (begin 0x0F 0xB7) ?dst ?src))
+
+(def (set (reg ?dst) (u32 (reg ?src)))
+  (op/rm 0 0x8B ?dst ?src))
+
+(def (set (reg ?dst) (u64 (reg ?src)))
+  (op/rm 1 0x8B ?dst ?src))
+
+(def (add (reg ?dst) ?val)
+  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 0 ?dst))
+  (4 ?val))
+
+(def (add (reg ?dst) (reg ?src))
+  (op/rr 0x01 ?dst ?src))
+
+(def (sub (reg ?dst) ?val)
+  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 1 ?dst))
+  (4 ?val))
+
+(def (sub (reg ?dst) (reg ?src))
+  (op/rr 0x29 ?dst ?src))
+
+(def (cmp (reg ?reg) ?val)
+  (1 (rex 1 0 0 (>> ?reg 3)) 0x81 (mod-11 7 ?reg))
+  (4 ?val))
+
+(def (cmp (reg ?dst) (reg ?src))
+  (op/rr 0x39 ?dst ?src))
+
+(def (push (reg ?reg))
+  (1 (rex 0 0 0 (>> ?reg 3)) (<<< 10 5 ?reg 3)))
+
+(def (pop (reg ?reg))
+  (1 (rex 0 0 0 (>> ?reg 3)) (<<< 11 5 ?reg 3)))
+
+(def (jmp ?addr)
+  (1 0xe9)
+  (-4 ?addr))
+
+(def (jne ?addr)
+  (1 0x0F 0x85)
+  (-4 ?addr))
+
+(def (call ?addr)
+  (1 0xe8)
+  (-4 ?addr))
+
+(def (ret)
+  (1 0xc3))
+
+(def (syscall)
+  (1 0x0F 0x05))

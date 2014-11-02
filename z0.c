@@ -714,6 +714,12 @@ read_open (const char *name)
     exitf (1, "%s: %m", in_name);
 }
 
+void
+read_close ()
+{
+  fclose (in_file);
+}
+
 #define token_size 1024
 char token[token_size];
 enum { punct_tok, sym_tok, string_tok, inum_tok, dnum_tok, eof_tok } token_kind;
@@ -1356,15 +1362,24 @@ check_delayeds ()
 void
 usage ()
 {
-  exitf (1, "Usage: z0 [--start VADDR] IN OUT");
+  exitf (1, "Usage: z0 [--start VADDR] IN... OUT");
+}
+
+void
+process_file (const char *name)
+{
+  read_open (name);
+
+  exp *e;
+  while (!is_end_of_file (e = read_exp ()))
+    compile_toplevel (expand (e));
+
+  read_close ();
 }
 
 void
 main (int argc, char **argv)
 {
-  const char *in;
-  const char *out;
-
   argv++;
   while (*argv && *argv[0] == '-')
     {
@@ -1377,26 +1392,21 @@ main (int argc, char **argv)
         usage ();
     }
 
-  if (*argv && *(argv+1))
-    {
-      in = *argv;
-      out = *(argv+1);
-    }
-  else
+  if (*argv == NULL)
     usage ();
 
   init_code ();
   init_exp ();
   init_builtins ();
 
-  read_open (in);
-
-  exp *e;
-  while (!is_end_of_file (e = read_exp ()))
-    compile_toplevel (expand (e));
+  while (*argv && *(argv+1))
+    {
+      process_file (*argv);
+      argv += 1;
+    }
 
   check_delayeds ();
 
-  dump (out);
+  dump (*argv);
   exit (0);
 }
