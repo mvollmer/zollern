@@ -98,9 +98,9 @@ init_code()
   if (code_start == 0)
     set_code_start (0x40000000);
 
-  code = xmalloc (1024*1024);
+  code_max = 1024*1024 - (code_start - code_vaddr);
+  code = xmalloc (code_max);
   code_offset = 0;
-  code_max = 1024*1024;
 
   obstack_init (&symtab_obs);
   obstack_init (&strtab_obs);
@@ -154,18 +154,25 @@ emit_code (int size, uint64_t val)
 }
 
 /* Data
-
-   XXX - should work exactly like code
 */
 
 uint64_t data_start;
 uint64_t data_offset;
 
 void
-start_data ()
+init_data ()
 {
-  data_start = (code_start + code_offset + 0xFFF) & ~0xFFF;
+  if (data_start == 0)
+    data_start = (code_start + code_max + 0xFFF) & ~0xFFF;
+
   data_offset = 0;
+}
+
+void
+alloc_data (uint64_t size)
+{
+  data_offset += size;
+  data_offset = (data_offset + 7) & ~7;
 }
 
 /* ELF output */
@@ -1311,6 +1318,35 @@ compile_emitters (exp *e)
     }
 }
 
+void compile_allocators (exp *e);
+
+void
+compile_allocator (exp *e)
+{
+  if (is_form (e, "begin"))
+    compile_allocators (rest (e));
+  else if (is_sym (e))
+    {
+      sym_def_label (e, data_start + data_offset);
+      if (sym_name(e)[0] != '.')
+        symtab_add (sym_name (e), data_start + data_offset);
+    }
+  else if (is_inum (e))
+    alloc_data (inum_val (e));
+  else
+    error (e, "syntax");
+}
+
+void
+compile_allocators (exp *e)
+{
+  while (is_pair (e))
+    {
+      compile_allocator (first (e));
+      e = rest (e);
+    }
+}
+
 void
 compile_toplevel (exp *e)
 {
@@ -1326,6 +1362,12 @@ compile_toplevel (exp *e)
   else if (is_form (e, "code"))
     {
       compile_emitters (rest (e));
+      compile_delayeds ();
+      toss_local_definitions ();
+    }
+  else if (is_form (e, "data"))
+    {
+      compile_allocators (rest (e));
       compile_delayeds ();
       toss_local_definitions ();
     }
@@ -1363,7 +1405,7 @@ check_delayeds ()
 void
 usage ()
 {
-  exitf (1, "Usage: z0 [--start VADDR] IN... OUT");
+  exitf (1, "Usage: z0 IN... OUT");
 }
 
 void
@@ -1382,21 +1424,11 @@ void
 main (int argc, char **argv)
 {
   argv++;
-  while (*argv && *argv[0] == '-')
-    {
-      if (strcmp (*argv, "--start") == 0 && *(argv+1) != NULL)
-        {
-          set_code_start (strtol (*(argv+1), NULL, 0));
-          argv += 2;
-        }
-      else
-        usage ();
-    }
-
   if (*argv == NULL)
     usage ();
 
   init_code ();
+  init_data ();
   init_exp ();
   init_builtins ();
 
