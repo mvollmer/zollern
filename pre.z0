@@ -90,6 +90,12 @@
 (def (mod-00 ?r 5)
   (begin (mod/rm 1 ?r 5) 0x00))
 
+(def (mod-00 ?r 12)
+  (begin (mod/rm 0 ?r 4) 0x24))
+
+(def (mod-00 ?r 13)
+  (begin (mod/rm 1 ?r 5) 0x00))
+
 (def (mod-11 ?r ?m)
   (mod/rm 3 ?r ?m))
 
