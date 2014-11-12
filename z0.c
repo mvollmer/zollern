@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <unistd.h>
 #include <stddef.h>
 #include <string.h>
@@ -303,6 +304,8 @@ dump (const char *out_name)
 
 typedef struct symdef symdef;
 
+typedef __int128 inum_t;
+
 typedef struct exp {
   enum {
     pair_exp, sym_exp, string_exp, inum_exp, dnum_exp, singleton_exp
@@ -317,7 +320,7 @@ typedef struct exp {
       struct exp *link;
       struct symdef *def;
     };
-    int64_t inum;
+    inum_t inum;
     double dnum;
     char *string;
   };
@@ -438,7 +441,7 @@ third (exp *e)
 }
 
 exp *
-inum (uint64_t inum)
+inum (inum_t inum)
 {
   exp *e = alloc_exp ();
   e->type = inum_exp;
@@ -452,7 +455,7 @@ is_inum (exp *e)
   return e->type == inum_exp;
 }
 
-uint64_t
+inum_t
 inum_val (exp *e)
 {
   return e->inum;
@@ -683,7 +686,13 @@ write_exp (FILE *f, exp *e)
     }
   else if (is_inum (e))
     {
-      fprintf (f, "%lu", inum_val(e));
+      inum_t val = inum_val(e);
+      if (val >= LONG_MIN && val <= LONG_MAX)
+        fprintf (f, "%ld", (long)val);
+      else if (val >= 0 && val <= ULONG_MAX)
+        fprintf (f, "%lu", (unsigned long)val);
+      else
+        fprintf (f, "<out-of-range>");
     }
   else if (is_dnum (e))
     {
@@ -827,13 +836,53 @@ read_token ()
     token_kind = eof_tok;
 }
 
+inum_t
+strtoinum (const char *str)
+{
+  const char *ptr = str;
+  int base = 10;
+  int sign = 1;
+  inum_t val;
+
+  if (ptr[0] == '-')
+    {
+      sign = -1;
+      ptr += 1;
+    }
+
+  if (ptr[0] == '0' && ptr[1] == 'x')
+    {
+      base = 16;
+      ptr += 2;
+    }
+
+  val = 0;
+  while (*ptr)
+    {
+      int digit;
+      if (base == 16 && *ptr >= 'a' && *ptr <= 'f')
+        digit = 10 + *ptr - 'a';
+      else if (base == 16 && *ptr >= 'A' && *ptr <= 'F')
+        digit = 10 + *ptr - 'A';
+      else if (*ptr >= '0' && *ptr <= '9')
+        digit = *ptr - '0';
+      else
+        exitf(0, "invalid number %s", str);
+
+      val = val*base + digit;
+      ptr++;
+    }
+
+  return sign*val;
+}
+
 exp *
 read_exp_1 ()
 {
   if (token_kind == eof_tok)
     return end_of_file ();
   else if (token_kind == inum_tok)
-    return inum (strtol (token, NULL, 0));
+    return inum (strtoinum (token));
   else if (token_kind == dnum_tok)
     return dnum (strtod (token, NULL));
   else if (token_kind == sym_tok)
@@ -972,9 +1021,9 @@ builtin_if (exp *form)
 }
 
 exp *
-builtin_inum_binop (exp *form, int (*combine)(int, int))
+builtin_inum_binop (exp *form, inum_t (*combine)(inum_t, inum_t))
 {
-  int lit_val;
+  inum_t lit_val;
   bool got_lit = false;
   exp *non_lit = nil ();
 
@@ -1007,12 +1056,12 @@ builtin_inum_binop (exp *form, int (*combine)(int, int))
     return form;
 }
 
-#define DEFBINOP(NAME, OP)                         \
-  exp *                                            \
-  builtin_##NAME (exp *form)                       \
-  {                                                \
-    int NAME (int a, int b) { return a OP b; }     \
-    return builtin_inum_binop (form, NAME);        \
+#define DEFBINOP(NAME, OP)                               \
+  exp *                                                  \
+  builtin_##NAME (exp *form)                             \
+  {                                                      \
+    inum_t NAME (inum_t a, inum_t b) { return a OP b; }  \
+    return builtin_inum_binop (form, NAME);              \
   }
 
 DEFBINOP(sum, +)

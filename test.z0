@@ -45,10 +45,9 @@
   (set l0 -1)
   (set l0 (u32 l1))
   (assert-eq l0 0xFFFFFFFF)
-  (set l0 -1)
+  (set l0 0)
   (set l0 (u64 l1))
-  (add l0 1)
-  (assert-eq l0 0)
+  (assert-eq l0 0xFFFFFFFFFFFFFFFF)
 
   ;; funny encodings for sp (rsp), x1 (rbp), x2 (r12), and x3 (r13)
   (set x1 sp)
