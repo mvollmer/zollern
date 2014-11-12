@@ -17,6 +17,7 @@
 
 bool verbose = false;
 
+__attribute__ ((noreturn))
 void
 exitf (int code, char *fmt, ...)
 {
@@ -181,7 +182,6 @@ void
 dump (const char *out_name)
 {
   uint64_t str_text = strtab_add (".text");
-  uint64_t str_data = strtab_add (".data");
   uint64_t str_strtab = strtab_add (".strtab");
   uint64_t str_symtab = strtab_add (".symtab");
 
@@ -748,7 +748,7 @@ read_token ()
 
   if (c == ';')
     {
-      while (c = fgetc (in_file) != '\n')
+      while ((c = fgetc (in_file)) != '\n')
         ;
       lineno++;
       goto again;
@@ -1051,7 +1051,7 @@ builtin builtins[] = {
   { "<=",  builtin_le },
   { ">",   builtin_gt },
   { ">=",  builtin_ge },
-  NULL
+  { NULL }
 };
 
 void
@@ -1420,7 +1420,7 @@ process_file (const char *name)
   read_close ();
 }
 
-void
+int
 main (int argc, char **argv)
 {
   argv++;
@@ -1432,6 +1432,8 @@ main (int argc, char **argv)
   init_exp ();
   init_builtins ();
 
+  printf ("%d\n", sizeof(inum_t));
+
   while (*argv && *(argv+1))
     {
       process_file (*argv);
@@ -1441,5 +1443,5 @@ main (int argc, char **argv)
   check_delayeds ();
 
   dump (*argv);
-  exit (0);
+  return 0;
 }
