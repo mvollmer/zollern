@@ -26,8 +26,8 @@
   ?accum)
 
 (def (<<<-accum ?accum ?val ?bits . ?rest)
-  (<<<-accum (or (<< ?accum ?bits)
-                 (and ?val (- (<< 1 ?bits) 1)))
+  (<<<-accum (| (<< ?accum ?bits)
+                (& ?val (- (<< 1 ?bits) 1)))
              . ?rest))
 
 (def (<<< . ?rest)

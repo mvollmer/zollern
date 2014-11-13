@@ -1021,7 +1021,7 @@ builtin_if (exp *form)
 }
 
 exp *
-builtin_inum_binop (exp *form, inum_t (*combine)(inum_t, inum_t))
+builtin_inum_mulop (exp *form, inum_t (*combine)(inum_t, inum_t))
 {
   inum_t lit_val;
   bool got_lit = false;
@@ -1056,6 +1056,50 @@ builtin_inum_binop (exp *form, inum_t (*combine)(inum_t, inum_t))
     return form;
 }
 
+exp *
+builtin_inum_binop (exp *form, inum_t (*op)(inum_t, inum_t))
+{
+  if (!is_pair (form)
+      || !is_pair (rest (form))
+      || !is_pair (rest (rest (form)))
+      || !is_nil (rest (rest (rest (form)))))
+    error (form, "syntax");
+
+  exp *a = expand (first (rest (form)));
+  exp *b = expand (first (rest (rest (form))));
+
+  if (is_inum (a) && is_inum (b))
+    {
+      return inum (op (inum_val (a), inum_val (b)));
+    }
+  else
+    return form;
+}
+
+exp *
+builtin_inum_unaop (exp *form, inum_t (*op)(inum_t))
+{
+  if (!is_pair (form)
+      || !is_pair (rest (form))
+      || !is_nil (rest (rest (form))))
+    error (form, "syntax");
+
+  exp *a = expand (first (rest (form)));
+
+  if (is_inum (a))
+    return inum (op (inum_val (a)));
+  else
+    return form;
+}
+
+#define DEFMULOP(NAME, OP)                               \
+  exp *                                                  \
+  builtin_##NAME (exp *form)                             \
+  {                                                      \
+    inum_t NAME (inum_t a, inum_t b) { return a OP b; }  \
+    return builtin_inum_mulop (form, NAME);              \
+  }
+
 #define DEFBINOP(NAME, OP)                               \
   exp *                                                  \
   builtin_##NAME (exp *form)                             \
@@ -1064,13 +1108,26 @@ builtin_inum_binop (exp *form, inum_t (*combine)(inum_t, inum_t))
     return builtin_inum_binop (form, NAME);              \
   }
 
-DEFBINOP(sum, +)
-DEFBINOP(diff, -)
-DEFBINOP(prod, *)
+#define DEFUNAOP(NAME, OP)                               \
+  exp *                                                  \
+  builtin_##NAME (exp *form)                             \
+  {                                                      \
+    inum_t NAME (inum_t a) { return OP a; }              \
+    return builtin_inum_unaop (form, NAME);              \
+  }
+
+DEFMULOP(sum, +)
+DEFMULOP(diff, -)
+DEFMULOP(prod, *)
+DEFMULOP(bitand, &)
+DEFMULOP(bitor, |)
+DEFUNAOP(bitnot, ~)
 DEFBINOP(lsh, <<)
 DEFBINOP(rsh, >>)
-DEFBINOP(and, &)
-DEFBINOP(or, |)
+
+DEFMULOP(and, &&)
+DEFMULOP(or, ||)
+DEFUNAOP(not, !)
 
 DEFBINOP(eq, ==)
 DEFBINOP(ne, !=)
@@ -1092,8 +1149,12 @@ builtin builtins[] = {
   { "*",   builtin_prod },
   { "<<",  builtin_lsh },
   { ">>",  builtin_rsh },
-  { "and", builtin_and },
-  { "or",  builtin_or },
+  { "&",   builtin_bitand },
+  { "|",   builtin_bitor },
+  { "~",   builtin_bitnot },
+  { "&&",  builtin_and },
+  { "||",  builtin_or },
+  { "!",   builtin_not },
   { "==",  builtin_eq },
   { "!=",  builtin_ne },
   { "<",   builtin_lt },
