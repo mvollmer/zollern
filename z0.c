@@ -1019,6 +1019,22 @@ builtin_sel (exp *form)
 }
 
 exp *
+builtin_peek (exp *form)
+{
+  if (!is_pair (form)
+      || !is_pair (rest (form))
+      || !is_nil (rest (rest (form))))
+    error (form, "syntax");
+
+  exp *a = expand (first (rest (form)));
+  write_exp (stdout, first (rest (form)));
+  fprintf (stdout, " -> ");
+  write_exp (stdout, a);
+  fprintf (stdout, "\n");
+  return a;
+}
+
+exp *
 builtin_inum_mulop (exp *form, inum_t (*combine)(inum_t, inum_t))
 {
   inum_t lit_val;
@@ -1159,6 +1175,7 @@ builtin builtins[] = {
   { "<=",  builtin_le },
   { ">",   builtin_gt },
   { ">=",  builtin_ge },
+  { "peek", builtin_peek },
   { NULL }
 };
 
