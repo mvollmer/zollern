@@ -70,6 +70,35 @@
   :p   :q   :r   :s   :t   :u   :v   :w
   :x   :y   :z   :{   :bar :}   :~   :del)
 
+;; Limits
+
+(def (in-range? ?val ?min ?max)
+  (&& (<= ?min ?val) (<= ?val ?max)))
+
+(def (s8? ?val)
+  (in-range? ?val -0x80 0x7F))
+
+(def (u8? ?val)
+  (in-range? ?val 0 0xFF))
+
+(def (s16? ?val)
+  (in-range? ?val -0x8000 0x7FFF))
+
+(def (u16? ?val)
+  (in-range? ?val 0 0xFFFF))
+
+(def (s32? ?val)
+  (in-range? ?val -0x80000000 0x7FFFFFFF))
+
+(def (u32? ?val)
+  (in-range? ?val 0 0xFFFFFFFF))
+
+(def (s64? ?val)
+  (in-range? ?val -0x8000000000000000 0x7FFFFFFFFFFFFFFF))
+
+(def (u64? ?val)
+  (in-range? ?val 0 0xFFFFFFFFFFFFFFFF))
+
 ;; Instructions
 
 (def (rex ?w ?r ?x ?b)
@@ -106,8 +135,13 @@
   (1 (rex ?w (>> ?dst 3) 0 (>> ?src 3)) ?op (mod-00 ?dst ?src)))
 
 (def (set (reg ?dst) ?val)
-  (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod-11 0 ?dst))
-  (4 ?val))
+  (sel (! (s32? ?val))
+       (begin
+         (1 (rex 1 0 0 (>> ?dst 3)) (+ 0xb8 (& ?dst 7)))
+         (8 ?val))
+       (begin
+         (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod-11 0 ?dst))
+         (4 ?val))))
 
 (def (set (reg ?dst) (reg ?src))
   (op/rr 0x89 ?dst ?src))
