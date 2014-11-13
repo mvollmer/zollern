@@ -49,6 +49,42 @@
   (set l0 (u64 l1))
   (assert-eq l0 0xFFFFFFFFFFFFFFFF)
 
+  ;; store
+  (set l1 buf)
+  (set l2 0x7654341276543412)
+  (set l0 (u64 l1))
+  (assert-eq l0 0)
+  (set (u8 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x12)
+  (set (u16 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x3412)
+  (set (u32 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x76543412)
+  (set (u64 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x7654341276543412)
+
+  ;; store 'signed'
+  (set l1 buf)
+  (set l2 0x7654341276543412)
+  (set l0 0)
+  (set (u64 l1) l0)
+  (set (s8 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x12)
+  (set (s16 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x3412)
+  (set (s32 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x76543412)
+  (set (s64 l1) l2)
+  (set l0 (u64 l1))
+  (assert-eq l0 0x7654341276543412)
+
   ;; funny encodings for sp (rsp), x1 (rbp), x2 (r12), and x3 (r13)
   (set x1 sp)
   (set sp data-inc)
@@ -191,3 +227,5 @@
 
 (code data-all-ones
   (1 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF))
+
+(data buf 8)
