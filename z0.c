@@ -1003,13 +1003,11 @@ builtin_def (exp *form)
 }
 
 exp *
-builtin_if (exp *form)
+builtin_sel (exp *form)
 {
   exp *cond = expand (first (rest (form)));
-  if (!is_inum (cond))
-    return form;
 
-  if (inum_val (cond))
+  if (is_inum (cond) && inum_val (cond) != 0)
     return expand (first (rest (rest (form))));
   else
     {
@@ -1143,7 +1141,7 @@ typedef struct {
 
 builtin builtins[] = {
   { "def", builtin_def },
-  { "if",  builtin_if },
+  { "sel", builtin_sel },
   { "+",   builtin_sum },
   { "-",   builtin_diff },
   { "*",   builtin_prod },

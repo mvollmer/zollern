@@ -20,17 +20,17 @@
 
 (def (defsyscall ?func ?nsys ?nargs)
   (code ?func
-    (if (>= ?nargs 4)
-      (set l7 l3))  ; r10
-    (if (>= ?nargs 1)
-      (set l4 l0))  ; rdi
-    (if (>= ?nargs 2)
-      (set l3 l1))  ; rsi
+    (sel (>= ?nargs 4)
+         (set l7 l3))  ; r10
+    (sel (>= ?nargs 1)
+         (set l4 l0))  ; rdi
+    (sel (>= ?nargs 2)
+         (set l3 l1))  ; rsi
     ;; (set rdx l2) rdx = l2
-    (if (>= ?nargs 6)
-      (set l6 l5))  ; r9
-    (if (>= ?nargs 5)
-      (set l5 l4))  ; r8
+    (sel (>= ?nargs 6)
+         (set l6 l5))  ; r9
+    (sel (>= ?nargs 5)
+         (set l5 l4))  ; r8
     (set l0 ?nsys)
     (syscall)
     (ret)))
