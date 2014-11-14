@@ -1005,17 +1005,21 @@ builtin_def (exp *form)
 exp *
 builtin_sel (exp *form)
 {
-  exp *cond = expand (first (rest (form)));
+  exp *e = rest (form);
 
-  if (is_inum (cond) && inum_val (cond) != 0)
-    return expand (first (rest (rest (form))));
-  else
+  while (is_pair (e)
+         && is_pair (rest (e)))
     {
-      if (is_pair (rest (rest (rest (form)))))
-        return expand (first (rest (rest (rest (form)))));
-      else
-        return cons (sym ("begin"), nil ());
+      exp *cond = expand (first (e));
+      if (is_inum (cond) && inum_val (cond) != 0)
+        return expand (first (rest (e)));
+      e = rest (rest (e));
     }
+
+  if (is_pair (e))
+    return expand (first (e));
+
+  error (form, "unselected");
 }
 
 exp *
@@ -1556,8 +1560,6 @@ main (int argc, char **argv)
   init_data ();
   init_exp ();
   init_builtins ();
-
-  printf ("%d\n", sizeof(inum_t));
 
   while (*argv && *(argv+1))
     {
