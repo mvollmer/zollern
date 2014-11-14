@@ -156,7 +156,7 @@
   (set x2 x3)
   (set x1 x2)
   (set x0 x1)
-  (set l8 x1)
+  (set l8 x0)
   (set l7 l8)
   (set l6 l7)
   (set l5 l6)
