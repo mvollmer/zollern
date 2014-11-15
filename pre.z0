@@ -119,58 +119,17 @@
 (def (sib ?scale ?index ?base)
   (<<< ?scale 2 ?index 3 ?base 3))
 
-(def (addr-rr ?r ?m)
-  (1 (mod/rm 3 ?r ?m)))
-
-(def (addr-rb ?reg ?base)
-  (sel (== (& ?base 7) 4) (1 (mod/rm 0 ?reg 4) (sib 0 4 4))
-       (== (& ?base 7) 5) (1 (mod/rm 1 ?reg ?base) 0)
-                          (1 (mod/rm 0 ?reg ?base))))
-
-(def (addr-rbo8 ?reg ?base ?off)
-  (sel (== (& ?base 7) 4) (1 (mod/rm 1 ?reg 4) (sib 0 4 4) ?off)
-                          (1 (mod/rm 1 ?reg ?base) ?off)))
-
-(def (addr-rbo32 ?reg ?base ?off)
-  (sel (== (& ?base 7) 4) (begin
-                            (1 (mod/rm 2 ?reg 4) (sib 0 4 4))
-                            (4 ?off))
-                          (begin
-                            (1 (mod/rm 2 ?reg ?base))
-                            (4 ?off))))
-
 (def (log2 1) 0)
 (def (log2 2) 1)
 (def (log2 4) 2)
 (def (log2 8) 3)
-
-(def (addr-rbi ?reg ?base ?index ?scale)
-  (sel (== (& ?index 7) 4) (error "sp can't be index")
-       (== (& ?base 7) 5)  (1 (mod/rm 1 ?reg 4)
-                              (sib (log2 ?scale) ?index ?base)
-                              0)
-                           (1 (mod/rm 0 ?reg 4)
-                              (sib (log2 ?scale) ?index ?base))))
-
-(def (addr-rbio8 ?reg ?base ?index ?scale ?offset)
-  (sel (== (& ?index 7) 4) (error "sp can't be index")
-                           (1 (mod/rm 1 ?reg 4)
-                              (sib (log2 ?scale) ?index ?base)
-                              ?offset)))
-
-(def (addr-rbio32 ?reg ?base ?index ?scale ?offset)
-  (sel (== (& ?index 7) 4) (error "sp can't be index")
-                           (begin
-                             (1 (mod/rm 2 ?reg 4)
-                                (sib (log2 ?scale) ?index ?base))
-                             (4 ?offset))))
 
 ;; Instructions with both operands in a register.
 
 (def (inst-rr ?w ?op ?a ?b)
   (1 (rex ?w (>> ?a 3) 0 (>> ?b 3)))
   ?op
-  (addr-rr ?a ?b))
+  (1 (mod/rm 3 ?a ?b)))
 
 ;; Instructions with one operand in a register and the other in
 ;; memory.  This also defines the syntax for addresses:
@@ -200,15 +159,45 @@
   (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index) 0))
 
 (def (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index) ?offset)
+  (sel (== ?index 4) (error "sp can't be index")
+                     (begin))
+  (sel (== ?scale 0)
+       (sel (== (& ?base 7) 4)
+            (inst-rm.rbiso ?w ?op ?reg ?base 4 1 ?offset)
+            (inst-rm.rbo ?w ?op ?reg ?base ?offset))
+       (inst-rm.rbiso ?w ?op ?reg ?base ?index ?scale ?offset)))
+
+(def (inst-rm.rbo ?w ?op ?reg ?base ?offset)
+  (1 (rex ?w (>> ?reg 3) 0 (>> ?base 3)))
+  ?op
+  (sel (&& (== ?offset 0) (!= (& ?base 7) 5))
+       (begin
+         (1 (mod/rm 0 ?reg ?base)))
+       (is? s8 ?offset)
+       (begin
+         (1 (mod/rm 1 ?reg ?base) ?offset))
+       (is? s32 ?offset)
+       (begin
+         (1 (mod/rm 2 ?reg ?base))
+         (4 ?offset))))
+
+(def (inst-rm.rbiso ?w ?op ?reg ?base ?index ?scale ?offset)
   (1 (rex ?w (>> ?reg 3) (>> ?index 3) (>> ?base 3)))
   ?op
-  (sel (== ?scale 0)
-       (sel (== ?offset 0)    (addr-rb ?reg ?base)
-            (is? s8 ?offset)  (addr-rbo8 ?reg ?base ?offset)
-            (is? s32 ?offset) (addr-rbo32 ?reg ?base ?offset))
-       (sel (== ?offset 0)    (addr-rbi ?reg ?base ?index ?scale)
-            (is? s8 ?offset)  (addr-rbio8 ?reg ?base ?index ?scale ?offset)
-            (is? s32 ?offset) (addr-rbio32 ?reg ?base ?index ?scale ?offset))))
+  (sel (&& (== ?offset 0) (!= (& ?base 7) 5))
+       (begin
+         (1 (mod/rm 0 ?reg 4)
+            (sib (log2 ?scale) ?index ?base)))
+       (is? s8 ?offset)
+       (begin
+         (1 (mod/rm 1 ?reg 4)
+            (sib (log2 ?scale) ?index ?base)
+            ?offset))
+       (is? s32 ?offset)
+       (begin
+         (1 (mod/rm 2 ?reg 4)
+            (sib (log2 ?scale) ?index ?base))
+         (4 ?offset))))
 
 (def (set (reg ?dst) ?val)
   (sel (! (is? s32 ?val))
