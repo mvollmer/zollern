@@ -252,6 +252,31 @@
   (sub l0 x5)
   (assert-eq l0 15)
 
+  ;; structs
+
+  (defstruct foo
+    (u16 foo.a)
+    (s16 foo.b))
+
+  (defstruct bar
+    (u32 bar.a)
+    (foo bar.b))
+
+  (set l1 buf)
+  (set l2 0x12345678)
+  (set (u32 l1 0) l2)
+  (set l2 0x8765)
+  (set (u16 l1 4) l2)
+  (set l2 -1234)
+  (set (s16 l1 6) l2)
+  (set l0 -1)
+  (set l0 (bar.a l1))
+  (assert-eq l0 0x12345678)
+  (set l0 (foo.a (bar.b l1)))
+  (assert-eq l0 0x8765)
+  (set l0 (foo.b (bar.b l1)))
+  (assert-eq l0 -1234)
+
   (PASS))
 
 (code sub-1234

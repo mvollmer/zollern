@@ -70,34 +70,42 @@
   :p   :q   :r   :s   :t   :u   :v   :w
   :x   :y   :z   :{   :bar :}   :~   :del)
 
-;; Limits
+;; Fundamental types
 
-(def (in-range? ?val ?min ?max)
-  (&& (<= ?min ?val) (<= ?val ?max)))
+(def (deftype ?name ?size ?min ?max)
+  (def (sizeof ?name) ?size)
+  (def (min ?name) ?min)
+  (def (max ?name) ?max)
+  (def (?name (reg ??ptr)) (?name (reg ??ptr) 0))
+  (def (?name (??type ??ptr ??off1) ??off2) (?name ??ptr (+ ??off1 ??off2))))
 
-(def (s8? ?val)
-  (in-range? ?val -0x80 0x7F))
+(def (is? ?type ?val)
+  (&& (<= (min ?type) ?val) (<= ?val (max ?type))))
 
-(def (u8? ?val)
-  (in-range? ?val 0 0xFF))
+(deftype u8 1     0 0xFF)
+(deftype s8 1 -0x80 0x7F)
 
-(def (s16? ?val)
-  (in-range? ?val -0x8000 0x7FFF))
+(deftype u16 2       0 0xFFFF)
+(deftype s16 2 -0x8000 0x7FFF)
 
-(def (u16? ?val)
-  (in-range? ?val 0 0xFFFF))
+(deftype u32 4           0 0xFFFFFFFF)
+(deftype s32 4 -0x80000000 0x7FFFFFFF)
 
-(def (s32? ?val)
-  (in-range? ?val -0x80000000 0x7FFFFFFF))
+(deftype u64 8                   0 0xFFFFFFFFFFFFFFFF)
+(deftype s64 8 -0x8000000000000000 0x7FFFFFFFFFFFFFFF)
 
-(def (u32? ?val)
-  (in-range? ?val 0 0xFFFFFFFF))
+;; Structs
 
-(def (s64? ?val)
-  (in-range? ?val -0x8000000000000000 0x7FFFFFFFFFFFFFFF))
+(def (defstruct-at ?name ?off)
+  (def (sizeof ?name) ?off))
 
-(def (u64? ?val)
-  (in-range? ?val 0 0xFFFFFFFFFFFFFFFF))
+(def (defstruct-at ?name ?off (?type ?field) . ?rest)
+  (begin
+    (def (?field ??ptr) (?type ??ptr ?off))
+    (defstruct-at ?name (+ ?off (sizeof ?type)) . ?rest)))
+
+(def (defstruct ?name . ?rest)
+  (defstruct-at ?name 0 . ?rest))
 
 ;; Instructions
 
@@ -157,17 +165,17 @@
 (def (op-rro ?op ?w ?a ?b ?off)
   (sel (== ?off 0)
        (modop mod-00 ?op ?w ?a ?b)
-       (s8? ?off)
+       (is? s8 ?off)
        (begin
          (modop mod-01 ?op ?w ?a ?b)
          (1 ?off))
-       (s32? ?off)
+       (is? s32 ?off)
        (begin
          (modop mod-10 ?op ?w ?a ?b)
          (4 ?off))))
 
 (def (set (reg ?dst) ?val)
-  (sel (! (s32? ?val))
+  (sel (! (is? s32 ?val))
        (begin
          (1 (rex 1 0 0 (>> ?dst 3)) (+ 0xb8 (& ?dst 7)))
          (8 ?val))
@@ -179,9 +187,6 @@
   (op-rr 0x89 1 ?src ?dst))
 
 ;; Load unsigned
-
-(def (set (reg ?dst) (?type (reg ?src)))
-  (set (reg ?dst) (?type (reg ?src) 0)))
 
 (def (set (reg ?dst) (u8 (reg ?src) ?off))
   (op-rro (begin 0x0F 0xB6) 0 ?dst ?src ?off))
@@ -210,9 +215,6 @@
   (op-rro 0x8B 1 ?dst ?src ?off))
 
 ;; Storing
-
-(def (set (?type (reg ?dst)) (reg ?src))
-  (set (?type (reg ?dst) 0) (reg ?src)))
 
 (def (set (u8 (reg ?dst) ?off) (reg ?src))
   (op-rro 0x88 0 ?src ?dst ?off))
