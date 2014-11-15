@@ -282,8 +282,8 @@
   (-4 ?addr))
 
 (def (jne ?addr)
-  (1 0x0F 0x85)
-  (-4 ?addr))
+  (1 0x75)
+  (-1 ?addr))
 
 (def (call ?addr)
   (1 0xe8)
