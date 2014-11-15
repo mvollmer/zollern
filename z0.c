@@ -18,6 +18,9 @@
 
 bool verbose = false;
 
+const char *in_name;
+int lineno;
+
 __attribute__ ((noreturn))
 void
 exitf (int code, char *fmt, ...)
@@ -127,8 +130,11 @@ init_code()
 }
 
 void
-emit_code_at (uint64_t offset, int size, uint64_t val)
+emit_code_at (uint64_t offset, int size, int64_t val)
 {
+  int64_t orig_val;
+  int orig_size;
+
   uint8_t *ptr = code + offset;
 
   if (size < 0)
@@ -137,16 +143,23 @@ emit_code_at (uint64_t offset, int size, uint64_t val)
       val -= code_start + offset + size;
     }
 
+  orig_val = val;
+  orig_size = size;
+
   while (size > 0)
     {
       *ptr++ = val & 0xFF;
       val >>= 8;
       size -= 1;
     }
+
+  if (val != 0 && val != -1)
+    fprintf (stderr, "%s:%d: warning: %ld out of range for %d bytes\n",
+             in_name, lineno, orig_val, orig_size);
 }
 
 void
-emit_code (int size, uint64_t val)
+emit_code (int size, int64_t val)
 {
   if (code_offset + abs (size) >= code_max)
     exitf (1, "too large, congrats");
@@ -718,9 +731,7 @@ write_exp (FILE *f, exp *e)
     fprintf (f, "<?>");
 }
 
-const char *in_name;
 FILE *in_file;
-int lineno = 1;
 
 void
 read_open (const char *name)
@@ -1417,7 +1428,7 @@ compile_emitter_elements (int size, exp *elts)
       else
         {
           delay_emitter (code_offset, size, v);
-          emit_code (size, 0);
+          emit_code (abs (size), 0);
         }
       elts = rest (elts);
     }
