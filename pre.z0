@@ -139,8 +139,31 @@
                             (1 (mod/rm 2 ?reg ?base))
                             (4 ?off))))
 
+(def (log2 1) 0)
+(def (log2 2) 1)
+(def (log2 4) 2)
+(def (log2 8) 3)
+
 (def (addr-rbi ?reg ?base ?index ?scale)
-  (1 (mod/rm 0 ?reg 4) (sib (log2 ?scale) ?index ?base)))
+  (sel (== (& ?index 7) 4) (error "sp can't be index")
+       (== (& ?base 7) 5)  (1 (mod/rm 1 ?reg 4)
+                              (sib (log2 ?scale) ?index ?base)
+                              0)
+                           (1 (mod/rm 0 ?reg 4)
+                              (sib (log2 ?scale) ?index ?base))))
+
+(def (addr-rbio8 ?reg ?base ?index ?scale ?offset)
+  (sel (== (& ?index 7) 4) (error "sp can't be index")
+                           (1 (mod/rm 1 ?reg 4)
+                              (sib (log2 ?scale) ?index ?base)
+                              ?offset)))
+
+(def (addr-rbio32 ?reg ?base ?index ?scale ?offset)
+  (sel (== (& ?index 7) 4) (error "sp can't be index")
+                           (begin
+                             (1 (mod/rm 2 ?reg 4)
+                                (sib (log2 ?scale) ?index ?base))
+                             (4 ?offset))))
 
 ;; Instructions with both operands in a register.
 
@@ -158,14 +181,23 @@
 ;; (type (reg base) scale (reg index))
 ;; (type (reg base) scale (reg index) offset)
 
-(def (inst-rm ?w ?op ?reg (reg ?base))
-  (inst-rm ?w ?op ?reg (reg ?base) 0))
-
 (def (inst-rm ?w ?op ?reg (?type2 ?base ?offset2) ?offset1)
   (inst-rm ?w ?op ?reg ?base (+ ?offset2 ?offset1)))
 
+(def (inst-rm ?w ?op ?reg (reg ?base))
+  (inst-rm ?w ?op ?reg (reg ?base) 0))
+
 (def (inst-rm ?w ?op ?reg (reg ?base) ?offset)
   (inst-rm ?w ?op ?reg (reg ?base) 0 (reg 0) ?offset))
+
+(def (inst-rm ?w ?op ?reg (reg ?base) (reg ?index))
+  (inst-rm ?w ?op ?reg (reg ?base) 1 (reg ?index) 0))
+
+(def (inst-rm ?w ?op ?reg (reg ?base) (reg ?index) ?offset)
+  (inst-rm ?w ?op ?reg (reg ?base) 1 (reg ?index) ?offset))
+
+(def (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index))
+  (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index) 0))
 
 (def (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index) ?offset)
   (1 (rex ?w (>> ?reg 3) (>> ?index 3) (>> ?base 3)))
@@ -174,7 +206,9 @@
        (sel (== ?offset 0)    (addr-rb ?reg ?base)
             (is? s8 ?offset)  (addr-rbo8 ?reg ?base ?offset)
             (is? s32 ?offset) (addr-rbo32 ?reg ?base ?offset))
-       (sel (== ?offset 0)    (addr-rbi ?reg ?base ?index ?scale))))
+       (sel (== ?offset 0)    (addr-rbi ?reg ?base ?index ?scale)
+            (is? s8 ?offset)  (addr-rbio8 ?reg ?base ?index ?scale ?offset)
+            (is? s32 ?offset) (addr-rbio32 ?reg ?base ?index ?scale ?offset))))
 
 (def (set (reg ?dst) ?val)
   (sel (! (is? s32 ?val))

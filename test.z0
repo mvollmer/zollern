@@ -74,6 +74,13 @@
   (set l0 (u8 l1 -0x1234))
   (assert-eq l0 0x12)
 
+  ;; load with scaled index and offset
+  (set l1 data-inc)
+  (set l2 3)
+  (set l0 -1)
+  (set l0 (u8 l1 2 l2 1))
+  (assert-eq l0 0x78)
+
   ;; store
   (set l1 buf)
   (set l2 0x7654341276543412)
