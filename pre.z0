@@ -125,14 +125,46 @@
 (def (mod-00 ?r 13)
   (begin (mod/rm 1 ?r 5) 0x00))
 
+(def (mod-01 ?r ?m)
+  (mod/rm 1 ?r ?m))
+
+(def (mod-01 ?r 4)
+  (begin (mod/rm 1 ?r 4) 0x24))
+
+(def (mod-01 ?r 12)
+  (begin (mod/rm 1 ?r 4) 0x24))
+
+(def (mod-10 ?r ?m)
+  (mod/rm 2 ?r ?m))
+
+(def (mod-10 ?r 4)
+  (begin (mod/rm 2 ?r 4) 0x24))
+
+(def (mod-10 ?r 12)
+  (begin (mod/rm 2 ?r 4) 0x24))
+
 (def (mod-11 ?r ?m)
   (mod/rm 3 ?r ?m))
 
-(def (op/rr ?op ?dst ?src)
-  (1 (rex 1 (>> ?src 3) 0 (>> ?dst 3)) ?op (mod-11 ?src ?dst)))
+(def (modop ?mod ?op ?w ?a ?b)
+  (1 (rex ?w (>> ?a 3) 0 (>> ?b 3)) ?op (?mod ?a ?b)))
 
-(def (op/rm ?w ?op ?dst ?src)
-  (1 (rex ?w (>> ?dst 3) 0 (>> ?src 3)) ?op (mod-00 ?dst ?src)))
+;; register direct, register direct
+(def (op-rr ?op ?w ?a ?b)
+  (modop mod-11 ?op ?w ?a ?b))
+
+;; register direct, register indirect with offset
+(def (op-rro ?op ?w ?a ?b ?off)
+  (sel (== ?off 0)
+       (modop mod-00 ?op ?w ?a ?b)
+       (s8? ?off)
+       (begin
+         (modop mod-01 ?op ?w ?a ?b)
+         (1 ?off))
+       (s32? ?off)
+       (begin
+         (modop mod-10 ?op ?w ?a ?b)
+         (4 ?off))))
 
 (def (set (reg ?dst) ?val)
   (sel (! (s32? ?val))
@@ -144,64 +176,76 @@
          (4 ?val))))
 
 (def (set (reg ?dst) (reg ?src))
-  (op/rr 0x89 ?dst ?src))
+  (op-rr 0x89 1 ?src ?dst))
 
-(def (set (reg ?dst) (u8 (reg ?src)))
-  (op/rm 0 (begin 0x0F 0xB6) ?dst ?src))
+(def (set (reg ?dst) (?type (reg ?src)))
+  (set (reg ?dst) (?type (reg ?src) 0)))
 
-(def (set (reg ?dst) (u16 (reg ?src)))
-  (op/rm 0 (begin 0x0F 0xB7) ?dst ?src))
+(def (set (reg ?dst) (u8 (reg ?src) ?off))
+  (op-rro (begin 0x0F 0xB6) 0 ?dst ?src ?off))
 
-(def (set (reg ?dst) (u32 (reg ?src)))
-  (op/rm 0 0x8B ?dst ?src))
+(def (set (reg ?dst) (u16 (reg ?src) ?off))
+  (op-rro (begin 0x0F 0xB7) 0 ?dst ?src ?off))
 
-(def (set (reg ?dst) (u64 (reg ?src)))
-  (op/rm 1 0x8B ?dst ?src))
+(def (set (reg ?dst) (u32 (reg ?src) ?off))
+  (op-rro 0x8B 0 ?dst ?src ?off))
 
-(def (set (u8 (reg ?dst)) (reg ?src))
-  (op/rm 0 (begin 0x88) ?src ?dst))
+(def (set (reg ?dst) (u64 (reg ?src) ?off))
+  (op-rro 0x8B 1 ?dst ?src ?off))
 
-(def (set (u16 (reg ?dst)) (reg ?src))
-  (1 0x66) (op/rm 0 (begin 0x89) ?src ?dst))
+(def (set (?type (reg ?dst)) (reg ?src))
+  (set (?type (reg ?dst) 0) (reg ?src)))
 
-(def (set (u32 (reg ?dst)) (reg ?src))
-  (op/rm 0 (begin 0x89) ?src ?dst))
+(def (set (u8 (reg ?dst) ?off) (reg ?src))
+  (op-rro 0x88 0 ?src ?dst ?off))
 
-(def (set (u64 (reg ?dst)) (reg ?src))
-  (op/rm 1 (begin 0x89) ?src ?dst))
+(def (set (u16 (reg ?dst) ?off) (reg ?src))
+  (1 0x66) (op-rro 0x89 0 ?src ?dst ?off))
 
-(def (set (s8 (reg ?dst)) (reg ?src))
-  (op/rm 0 (begin 0x88) ?src ?dst))
+(def (set (u32 (reg ?dst) ?off) (reg ?src))
+  (op-rro 0x89 0 ?src ?dst ?off))
 
-(def (set (s16 (reg ?dst)) (reg ?src))
-  (1 0x66) (op/rm 0 (begin 0x89) ?src ?dst))
+(def (set (u64 (reg ?dst) ?off) (reg ?src))
+  (op-rro 0x89 1 ?src ?dst ?off))
 
-(def (set (s32 (reg ?dst)) (reg ?src))
-  (op/rm 0 (begin 0x89) ?src ?dst))
+(def (set (s8 (reg ?dst) ?off) (reg ?src))
+  (set (u8 (reg ?dst) ?off) (reg ?src)))
 
-(def (set (s64 (reg ?dst)) (reg ?src))
-  (op/rm 1 (begin 0x89) ?src ?dst))
+(def (set (s16 (reg ?dst) ?off) (reg ?src))
+  (set (u16 (reg ?dst) ?off) (reg ?src)))
+
+(def (set (s32 (reg ?dst) ?off) (reg ?src))
+  (set (u32 (reg ?dst) ?off) (reg ?src)))
+
+(def (set (s64 (reg ?dst) ?off) (reg ?src))
+  (set (u64 (reg ?dst) ?off) (reg ?src)))
 
 (def (add (reg ?dst) ?val)
   (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 0 ?dst))
   (4 ?val))
 
 (def (add (reg ?dst) (reg ?src))
-  (op/rr 0x01 ?dst ?src))
+  (op-rr 0x01 1 ?src ?dst))
+
+(def (add (u64 (reg ?dst)) (reg ?src))
+  (add (u8 (reg ?dst) 0) (reg ?src)))
+
+(def (add (u64 (reg ?dst) ?off) (reg ?src))
+  (op-rro 0x01 1 ?src ?dst ?off))
 
 (def (sub (reg ?dst) ?val)
   (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 5 ?dst))
   (4 ?val))
 
 (def (sub (reg ?dst) (reg ?src))
-  (op/rr 0x29 ?dst ?src))
+  (op-rr 0x29 1 ?src ?dst))
 
 (def (cmp (reg ?reg) ?val)
   (1 (rex 1 0 0 (>> ?reg 3)) 0x81 (mod-11 7 ?reg))
   (4 ?val))
 
 (def (cmp (reg ?dst) (reg ?src))
-  (op/rr 0x39 ?dst ?src))
+  (op-rr 0x39 1 ?src ?dst))
 
 (def (push (reg ?reg))
   (1 (rex 0 0 0 (>> ?reg 3)) (<<< 10 5 ?reg 3)))
