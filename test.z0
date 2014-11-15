@@ -150,11 +150,27 @@
   (jne .ok1)
   (assert-fail)
 .ok1
-  (set l1 13)
+  (set l1 12)
   (cmp l0 l1)
-  (jne .ok2)
+  (je .ok2)
   (assert-fail)
 .ok2
+  (cmp l0 14)
+  (jl .ok3)
+  (assert-fail)
+.ok3
+  (cmp l0 10)
+  (jg .ok4)
+  (assert-fail)
+.ok4
+  (cmp l0 12)
+  (jle .ok5)
+  (assert-fail)
+.ok5
+  (cmp l0 12)
+  (jge .ok6)
+  (assert-fail)
+.ok6
 
   ;; push/pop
   (set l1 14)
@@ -168,15 +184,15 @@
   (assert-eq l0 1234)
 
   ;; jmp
-  (jmp .ok4)
+  (jmp .ok12)
   (assert-fail)
-.ok3
-  (jmp .ok5)
+.ok11
+  (jmp .ok13)
   (assert-fail)
-.ok4
-  (jmp .ok3)
+.ok12
+  (jmp .ok11)
   (assert-fail)
-.ok5
+.ok13
 
   ;; rbp/rsp
   (set x1 1234)
