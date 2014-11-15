@@ -149,11 +149,11 @@
 (def (modop ?mod ?op ?w ?a ?b)
   (1 (rex ?w (>> ?a 3) 0 (>> ?b 3)) ?op (?mod ?a ?b)))
 
-;; register direct, register direct
+;; register a direct, register b direct
 (def (op-rr ?op ?w ?a ?b)
   (modop mod-11 ?op ?w ?a ?b))
 
-;; register direct, register indirect with offset
+;; register a direct, register b indirect with offset
 (def (op-rro ?op ?w ?a ?b ?off)
   (sel (== ?off 0)
        (modop mod-00 ?op ?w ?a ?b)
@@ -178,6 +178,8 @@
 (def (set (reg ?dst) (reg ?src))
   (op-rr 0x89 1 ?src ?dst))
 
+;; Load unsigned
+
 (def (set (reg ?dst) (?type (reg ?src)))
   (set (reg ?dst) (?type (reg ?src) 0)))
 
@@ -192,6 +194,22 @@
 
 (def (set (reg ?dst) (u64 (reg ?src) ?off))
   (op-rro 0x8B 1 ?dst ?src ?off))
+
+;; Load signed
+
+(def (set (reg ?dst) (s8 (reg ?src) ?off))
+  (op-rro (begin 0x0F 0xBE) 1 ?dst ?src ?off))
+
+(def (set (reg ?dst) (s16 (reg ?src) ?off))
+  (op-rro (begin 0x0F 0xBF) 1 ?dst ?src ?off))
+
+(def (set (reg ?dst) (s32 (reg ?src) ?off))
+  (op-rro 0x63 1 ?dst ?src ?off))
+
+(def (set (reg ?dst) (s64 (reg ?src) ?off))
+  (op-rro 0x8B 1 ?dst ?src ?off))
+
+;; Storing
 
 (def (set (?type (reg ?dst)) (reg ?src))
   (set (?type (reg ?dst) 0) (reg ?src)))
@@ -220,6 +238,8 @@
 (def (set (s64 (reg ?dst) ?off) (reg ?src))
   (set (u64 (reg ?dst) ?off) (reg ?src)))
 
+;; Addition
+
 (def (add (reg ?dst) ?val)
   (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 0 ?dst))
   (4 ?val))
@@ -227,11 +247,7 @@
 (def (add (reg ?dst) (reg ?src))
   (op-rr 0x01 1 ?src ?dst))
 
-(def (add (u64 (reg ?dst)) (reg ?src))
-  (add (u8 (reg ?dst) 0) (reg ?src)))
-
-(def (add (u64 (reg ?dst) ?off) (reg ?src))
-  (op-rro 0x01 1 ?src ?dst ?off))
+;; Subtraction
 
 (def (sub (reg ?dst) ?val)
   (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 5 ?dst))
@@ -240,6 +256,8 @@
 (def (sub (reg ?dst) (reg ?src))
   (op-rr 0x29 1 ?src ?dst))
 
+;; Comparison
+
 (def (cmp (reg ?reg) ?val)
   (1 (rex 1 0 0 (>> ?reg 3)) 0x81 (mod-11 7 ?reg))
   (4 ?val))
@@ -247,11 +265,15 @@
 (def (cmp (reg ?dst) (reg ?src))
   (op-rr 0x39 1 ?src ?dst))
 
+;; Stack
+
 (def (push (reg ?reg))
   (1 (rex 0 0 0 (>> ?reg 3)) (<<< 10 5 ?reg 3)))
 
 (def (pop (reg ?reg))
   (1 (rex 0 0 0 (>> ?reg 3)) (<<< 11 5 ?reg 3)))
+
+;; Jumping and calling
 
 (def (jmp ?addr)
   (1 0xe9)

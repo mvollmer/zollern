@@ -49,6 +49,21 @@
   (set l0 (u64 l1))
   (assert-eq l0 0xFFFFFFFFFFFFFFFF)
 
+  ;; load signed
+  (set l1 data-all-ones)
+  (set l0 -1)
+  (set l0 (s8 l1))
+  (assert-eq l0 -1)
+  (set l0 -1)
+  (set l0 (s16 l1))
+  (assert-eq l0 -1)
+  (set l0 -1)
+  (set l0 (s32 l1))
+  (assert-eq l0 -1)
+  (set l0 0)
+  (set l0 (s64 l1))
+  (assert-eq l0 -1)
+
   ;; load with offset
   (set l1 data-inc)
   (set l0 -1)
