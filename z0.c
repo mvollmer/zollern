@@ -1272,6 +1272,9 @@ subst (exp *body, exp *vars)
 {
   if (is_var (body))
     {
+      if (sym_name(body)[1] == '?')
+        return sym (sym_name(body) + 1);
+
       exp *val = lookup_var (vars, body);
       if (is_end_of_file (val))
         error (body, "undefined");
