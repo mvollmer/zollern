@@ -268,9 +268,6 @@
 (def (ret)
   (1 0xc3))
 
-(def (syscall)
-  (1 0x0F 0x05))
-
 ;; Init
 
 (code start

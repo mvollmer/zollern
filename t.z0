@@ -18,6 +18,9 @@
 ;; Our names: l4,  l3,  l2,  l7,  l5, l6, number to l0.
 ;; Args:      l0,  l1,  l2,  l3,  l4, l5
 
+(def (syscall)
+  (1 0x0F 0x05))
+
 (def (defsyscall ?func ?nsys ?nargs)
   (code ?func
     (sel (>= ?nargs 4)

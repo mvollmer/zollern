@@ -237,10 +237,7 @@
   (sub l0 x5)
   (assert-eq l0 15)
 
-  ;; PASS
-  (set l4 0)
-  (set l0 60)
-  (syscall))
+  (PASS))
 
 (code sub-1234
   (set l0 1234)

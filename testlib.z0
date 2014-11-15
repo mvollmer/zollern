@@ -14,3 +14,8 @@
   (assert-fail)
   ;; pop %x5
   (1 0x41 0x5f))
+
+(def (PASS)
+  (set l4 0)
+  (set l0 60)
+  (1 0x0F 0x05))
