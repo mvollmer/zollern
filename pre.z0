@@ -75,9 +75,7 @@
 (def (deftype ?name ?size ?min ?max)
   (def (sizeof ?name) ?size)
   (def (min ?name) ?min)
-  (def (max ?name) ?max)
-  (def (?name (reg ??ptr)) (?name (reg ??ptr) 0))
-  (def (?name (??type ??ptr ??off1) ??off2) (?name ??ptr (+ ??off1 ??off2))))
+  (def (max ?name) ?max))
 
 (def (is? ?type ?val)
   (&& (<= (min ?type) ?val) (<= ?val (max ?type))))
@@ -118,61 +116,65 @@
 (def (mod/rm ?mod ?r ?m)
   (<<< ?mod 2 ?r 3 ?m 3))
 
-(def (mod-00 ?r ?m)
-  (mod/rm 0 ?r ?m))
+(def (sib ?scale ?index ?base)
+  (<<< ?scale 2 ?index 3 ?base 3))
 
-(def (mod-00 ?r 4)
-  (begin (mod/rm 0 ?r 4) 0x24))
+(def (addr-rr ?r ?m)
+  (1 (mod/rm 3 ?r ?m)))
 
-(def (mod-00 ?r 5)
-  (begin (mod/rm 1 ?r 5) 0x00))
+(def (addr-rb ?reg ?base)
+  (sel (== (& ?base 7) 4) (1 (mod/rm 0 ?reg 4) (sib 0 4 4))
+       (== (& ?base 7) 5) (1 (mod/rm 1 ?reg ?base) 0)
+                          (1 (mod/rm 0 ?reg ?base))))
 
-(def (mod-00 ?r 12)
-  (begin (mod/rm 0 ?r 4) 0x24))
+(def (addr-rbo8 ?reg ?base ?off)
+  (sel (== (& ?base 7) 4) (1 (mod/rm 1 ?reg 4) (sib 0 4 4) ?off)
+                          (1 (mod/rm 1 ?reg ?base) ?off)))
 
-(def (mod-00 ?r 13)
-  (begin (mod/rm 1 ?r 5) 0x00))
+(def (addr-rbo32 ?reg ?base ?off)
+  (sel (== (& ?base 7) 4) (begin
+                            (1 (mod/rm 2 ?reg 4) (sib 0 4 4))
+                            (4 ?off))
+                          (begin
+                            (1 (mod/rm 2 ?reg ?base))
+                            (4 ?off))))
 
-(def (mod-01 ?r ?m)
-  (mod/rm 1 ?r ?m))
+(def (addr-rbi ?reg ?base ?index ?scale)
+  (1 (mod/rm 0 ?reg 4) (sib (log2 ?scale) ?index ?base)))
 
-(def (mod-01 ?r 4)
-  (begin (mod/rm 1 ?r 4) 0x24))
+;; Instructions with both operands in a register.
 
-(def (mod-01 ?r 12)
-  (begin (mod/rm 1 ?r 4) 0x24))
+(def (inst-rr ?w ?op ?a ?b)
+  (1 (rex ?w (>> ?a 3) 0 (>> ?b 3)))
+  ?op
+  (addr-rr ?a ?b))
 
-(def (mod-10 ?r ?m)
-  (mod/rm 2 ?r ?m))
+;; Instructions with one operand in a register and the other in
+;; memory.  This also defines the syntax for addresses:
+;;
+;; (type (reg base))
+;; (type (reg base) offset)
+;; (type1 (type2 (reg base) offset2) offset1)
+;; (type (reg base) scale (reg index))
+;; (type (reg base) scale (reg index) offset)
 
-(def (mod-10 ?r 4)
-  (begin (mod/rm 2 ?r 4) 0x24))
+(def (inst-rm ?w ?op ?reg (reg ?base))
+  (inst-rm ?w ?op ?reg (reg ?base) 0))
 
-(def (mod-10 ?r 12)
-  (begin (mod/rm 2 ?r 4) 0x24))
+(def (inst-rm ?w ?op ?reg (?type2 ?base ?offset2) ?offset1)
+  (inst-rm ?w ?op ?reg ?base (+ ?offset2 ?offset1)))
 
-(def (mod-11 ?r ?m)
-  (mod/rm 3 ?r ?m))
+(def (inst-rm ?w ?op ?reg (reg ?base) ?offset)
+  (inst-rm ?w ?op ?reg (reg ?base) 0 (reg 0) ?offset))
 
-(def (modop ?mod ?op ?w ?a ?b)
-  (1 (rex ?w (>> ?a 3) 0 (>> ?b 3)) ?op (?mod ?a ?b)))
-
-;; register a direct, register b direct
-(def (op-rr ?op ?w ?a ?b)
-  (modop mod-11 ?op ?w ?a ?b))
-
-;; register a direct, register b indirect with offset
-(def (op-rro ?op ?w ?a ?b ?off)
-  (sel (== ?off 0)
-       (modop mod-00 ?op ?w ?a ?b)
-       (is? s8 ?off)
-       (begin
-         (modop mod-01 ?op ?w ?a ?b)
-         (1 ?off))
-       (is? s32 ?off)
-       (begin
-         (modop mod-10 ?op ?w ?a ?b)
-         (4 ?off))))
+(def (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index) ?offset)
+  (1 (rex ?w (>> ?reg 3) (>> ?index 3) (>> ?base 3)))
+  ?op
+  (sel (== ?scale 0)
+       (sel (== ?offset 0)    (addr-rb ?reg ?base)
+            (is? s8 ?offset)  (addr-rbo8 ?reg ?base ?offset)
+            (is? s32 ?offset) (addr-rbo32 ?reg ?base ?offset))
+       (sel (== ?offset 0)    (addr-rbi ?reg ?base ?index ?scale))))
 
 (def (set (reg ?dst) ?val)
   (sel (! (is? s32 ?val))
@@ -180,92 +182,92 @@
          (1 (rex 1 0 0 (>> ?dst 3)) (+ 0xb8 (& ?dst 7)))
          (8 ?val))
        (begin
-         (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod-11 0 ?dst))
+         (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod/rm 3 0 ?dst))
          (4 ?val))))
 
 (def (set (reg ?dst) (reg ?src))
-  (op-rr 0x89 1 ?src ?dst))
+  (inst-rr 1 (1 0x89) ?src ?dst))
 
 ;; Load unsigned
 
-(def (set (reg ?dst) (u8 (reg ?src) ?off))
-  (op-rro (begin 0x0F 0xB6) 0 ?dst ?src ?off))
+(def (set (reg ?dst) (u8 . ?addr))
+  (inst-rm 0 (1 0x0F 0xB6) ?dst . ?addr))
 
-(def (set (reg ?dst) (u16 (reg ?src) ?off))
-  (op-rro (begin 0x0F 0xB7) 0 ?dst ?src ?off))
+(def (set (reg ?dst) (u16 . ?addr))
+  (inst-rm 0 (1 0x0F 0xB7) ?dst . ?addr))
 
-(def (set (reg ?dst) (u32 (reg ?src) ?off))
-  (op-rro 0x8B 0 ?dst ?src ?off))
+(def (set (reg ?dst) (u32 . ?addr))
+  (inst-rm 0 (1 0x8B) ?dst . ?addr))
 
-(def (set (reg ?dst) (u64 (reg ?src) ?off))
-  (op-rro 0x8B 1 ?dst ?src ?off))
+(def (set (reg ?dst) (u64 . ?addr))
+  (inst-rm 1 (1 0x8B) ?dst . ?addr))
 
 ;; Load signed
 
-(def (set (reg ?dst) (s8 (reg ?src) ?off))
-  (op-rro (begin 0x0F 0xBE) 1 ?dst ?src ?off))
+(def (set (reg ?dst) (s8 . ?addr))
+  (inst-rm 1 (1 0x0F 0xBE) ?dst . ?addr))
 
-(def (set (reg ?dst) (s16 (reg ?src) ?off))
-  (op-rro (begin 0x0F 0xBF) 1 ?dst ?src ?off))
+(def (set (reg ?dst) (s16 . ?addr))
+  (inst-rm 1 (1 0x0F 0xBF) ?dst . ?addr))
 
-(def (set (reg ?dst) (s32 (reg ?src) ?off))
-  (op-rro 0x63 1 ?dst ?src ?off))
+(def (set (reg ?dst) (s32 . ?addr))
+  (inst-rm 1 (1 0x63) ?dst . ?addr))
 
-(def (set (reg ?dst) (s64 (reg ?src) ?off))
-  (op-rro 0x8B 1 ?dst ?src ?off))
+(def (set (reg ?dst) (s64 . ?addr))
+  (inst-rm 1 (1 0x8B) ?dst . ?addr))
 
 ;; Storing
 
-(def (set (u8 (reg ?dst) ?off) (reg ?src))
-  (op-rro 0x88 0 ?src ?dst ?off))
+(def (set (u8 . ?addr) (reg ?src))
+  (inst-rm 0 (1 0x88) ?src . ?addr))
 
-(def (set (u16 (reg ?dst) ?off) (reg ?src))
-  (1 0x66) (op-rro 0x89 0 ?src ?dst ?off))
+(def (set (u16 . ?addr) (reg ?src))
+  (1 0x66) (inst-rm 0 (1 0x89) ?src . ?addr))
 
-(def (set (u32 (reg ?dst) ?off) (reg ?src))
-  (op-rro 0x89 0 ?src ?dst ?off))
+(def (set (u32 . ?addr) (reg ?src))
+  (inst-rm 0 (1 0x89) ?src . ?addr))
 
-(def (set (u64 (reg ?dst) ?off) (reg ?src))
-  (op-rro 0x89 1 ?src ?dst ?off))
+(def (set (u64 . ?addr) (reg ?src))
+  (inst-rm 1 (1 0x89) ?src . ?addr))
 
-(def (set (s8 (reg ?dst) ?off) (reg ?src))
-  (set (u8 (reg ?dst) ?off) (reg ?src)))
+(def (set (s8 . ?addr) (reg ?src))
+  (set (u8 . ?addr) (reg ?src)))
 
-(def (set (s16 (reg ?dst) ?off) (reg ?src))
-  (set (u16 (reg ?dst) ?off) (reg ?src)))
+(def (set (s16 . ?addr) (reg ?src))
+  (set (u16 . ?addr) (reg ?src)))
 
-(def (set (s32 (reg ?dst) ?off) (reg ?src))
-  (set (u32 (reg ?dst) ?off) (reg ?src)))
+(def (set (s32 . ?addr) (reg ?src))
+  (set (u32 . ?addr) (reg ?src)))
 
-(def (set (s64 (reg ?dst) ?off) (reg ?src))
-  (set (u64 (reg ?dst) ?off) (reg ?src)))
+(def (set (s64 . ?addr) (reg ?src))
+  (set (u64 . ?addr) (reg ?src)))
 
 ;; Addition
 
 (def (add (reg ?dst) ?val)
-  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 0 ?dst))
+  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod/rm 3 0 ?dst))
   (4 ?val))
 
 (def (add (reg ?dst) (reg ?src))
-  (op-rr 0x01 1 ?src ?dst))
+  (inst-rr 1 (1 0x01) ?src ?dst))
 
 ;; Subtraction
 
 (def (sub (reg ?dst) ?val)
-  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod-11 5 ?dst))
+  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod/rm 3 5 ?dst))
   (4 ?val))
 
 (def (sub (reg ?dst) (reg ?src))
-  (op-rr 0x29 1 ?src ?dst))
+  (inst-rr 1 (1 0x29) ?src ?dst))
 
 ;; Comparison
 
 (def (cmp (reg ?reg) ?val)
-  (1 (rex 1 0 0 (>> ?reg 3)) 0x81 (mod-11 7 ?reg))
+  (1 (rex 1 0 0 (>> ?reg 3)) 0x81 (mod/rm 3 7 ?reg))
   (4 ?val))
 
 (def (cmp (reg ?dst) (reg ?src))
-  (op-rr 0x39 1 ?src ?dst))
+  (inst-rr 1 (1 0x39) ?src ?dst))
 
 ;; Stack
 
