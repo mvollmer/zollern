@@ -30,3 +30,6 @@ check: z0
 	./z0 pre.z0 testlib.z0 test.z0 test
 	objdump -d ./test
 	./test
+
+fb: fb.c
+	gcc -o fb fb.c $$(pkg-config --libs --cflags sdl2) -lrt
