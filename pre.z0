@@ -118,8 +118,8 @@
 (def (rex-op ?rex (1 0x66 . ?ops))
   (1 0x66 ?rex . ?ops))
 
-(def (rex-op 0 . ?op)
-  (1 . ?op))
+(def (rex-op 0x40 ?op)
+  ?op)
 
 (def (mod/rm ?mod ?r ?m)
   (<<< ?mod 2 ?r 3 ?m 3))
@@ -206,6 +206,21 @@
             (sib (log2 ?scale) ?index ?base))
          (4 ?offset))))
 
+;; Instructions with one operand in a register, and the other as an
+;; immediate
+
+(def (inst-ri8 ?w ?x ?op ?reg ?val)
+  (rex-op (rex ?w 0 0 (>> ?reg 3)) ?op)
+  (1 (mod/rm 3 ?x ?reg))
+  (1 ?val))
+
+(def (inst-ri32 ?w ?x ?op ?reg ?val)
+  (rex-op (rex ?w 0 0 (>> ?reg 3)) ?op)
+  (1 (mod/rm 3 ?x ?reg))
+  (4 ?val))
+
+;; Convenience macros for defining instructions.
+
 (def (def-inst (?name . ?rest))
   (begin))
 
@@ -227,6 +242,17 @@
       (inst-rm ?w (1 . ?op) ??src . ??addr))
     (def-inst (?name _ reg) . ?rest)))
 
+(def (def-inst (?name reg imm) (s32 ?w32 ?x32 . ?op32))
+  (def (?name (reg ??dst) ??val)
+    (sel (! (is? s32 ??val))   (error)
+                               (inst-ri32 ?w32 ?x32 (1 . ?op32) ??dst ??val))))
+
+(def (def-inst (?name reg imm) (s8 ?w8 ?x8 . ?op8) (s32 ?w32 ?x32 . ?op32))
+  (def (?name (reg ??dst) ??val)
+    (sel (is? s8 ??val)        (inst-ri8 ?w8 ?x8 (1 . ?op8) ??dst ??val)
+         (! (is? s32 ??val))   (error)
+                               (inst-ri32 ?w32 ?x32 (1 . ?op32) ??dst ??val))))
+
 ;; Setting registers
 
 (def (set (reg ?dst) ?val)
@@ -235,8 +261,7 @@
          (1 (rex 1 0 0 (>> ?dst 3)) (+ 0xb8 (& ?dst 7)))
          (8 ?val))
        (begin
-         (1 (rex 1 0 0 (>> ?dst 3)) 0xc7 (mod/rm 3 0 ?dst))
-         (4 ?val))))
+         (inst-ri32 1 0 (1 0xC7) ?dst ?val))))
 
 (def-inst (set reg _)
   (reg 1 0x89)
@@ -253,27 +278,27 @@
 
 ;; Addition
 
-(def (add (reg ?dst) ?val)
-  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod/rm 3 0 ?dst))
-  (4 ?val))
+(def-inst (add reg imm)
+  (s8  1 0 0x83)
+  (s32 1 0 0x81))
 
 (def-inst (add reg _)
   (reg 1 0x01))
 
 ;; Subtraction
 
-(def (sub (reg ?dst) ?val)
-  (1 (rex 1 0 0 (>> ?dst 3)) 0x81 (mod/rm 3 5 ?dst))
-  (4 ?val))
+(def-inst (sub reg imm)
+  (s8  1 5 0x83)
+  (s32 1 5 0x81))
 
 (def-inst (sub reg _)
   (reg 1 0x29))
 
 ;; Comparison
 
-(def (cmp (reg ?reg) ?val)
-  (1 (rex 1 0 0 (>> ?reg 3)) 0x81 (mod/rm 3 7 ?reg))
-  (4 ?val))
+(def-inst (cmp reg imm)
+  (s8  1 7 0x83)
+  (s32 1 7 0x81))
 
 (def-inst (cmp reg _)
   (reg 1 0x39))
