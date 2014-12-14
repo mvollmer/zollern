@@ -20,8 +20,6 @@
          nil t (("+-*/.<>=!?$%_&~^:|" . "w") (?# . "w 14"))
          beginning-of-defun
          (font-lock-mark-block-function . mark-defun)
-         (font-lock-syntactic-face-function
-          . scheme-font-lock-syntactic-face-function)
          (parse-sexp-lookup-properties . t)
          (font-lock-extra-managed-props syntax-table))))
 
