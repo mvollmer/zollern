@@ -242,6 +242,12 @@
       (inst-rm ?w (1 . ?op) ??src . ??addr))
     (def-inst (?name _ reg) . ?rest)))
 
+(def (def-inst (?name _ reg) (reg ?w . ?op) . ?rest)
+  (begin
+    (def (?name (reg ??dst) (reg ??src))
+      (inst-rr ?w (1 . ?op) ??dst ??src))
+    (def-inst (?name reg _) . ?rest)))
+
 (def (def-inst (?name reg imm) (s32 ?w32 ?x32 . ?op32))
   (def (?name (reg ??dst) ??val)
     (sel (! (is? s32 ??val))   (error)
@@ -293,6 +299,37 @@
 
 (def-inst (sub reg _)
   (reg 1 0x29))
+
+;; Multiplication
+
+(def (mul (reg ?dst) ?val)
+  (sel (is? s8 ?val)        (inst-ri8 1 ?dst (1 0x6B) ?dst ?val)
+       (! (is? s32 ??val))  (error)
+                            (inst-ri32 1 ?dst (1 0x69) ?dst ?val)))
+
+(def-inst (mul _ reg)
+  (reg 1 0x0F 0xAF))
+
+(def (umul (reg ?src))
+  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
+  (1 (mod/rm 3 4 ?src)))
+
+(def (smul (reg ?src))
+  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
+  (1 (mod/rm 3 5 ?src)))
+
+;; Division
+
+(def (sign-extend)
+  (rex-op (rex 1 0 0 0) (1 0x99)))
+
+(def (udiv (reg ?src))
+  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
+  (1 (mod/rm 3 6 ?src)))
+
+(def (sdiv (reg ?src))
+  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
+  (1 (mod/rm 3 7 ?src)))
 
 ;; Comparison
 
