@@ -1,0 +1,8 @@
+(code main
+  (set l0 message)
+  (call print)
+  (set l0 0)
+  (call exit))
+
+(code message
+  (1 "Hello World" :nl 0))

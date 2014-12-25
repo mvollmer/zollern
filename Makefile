@@ -1,22 +1,28 @@
-all: sieve.test
+all: hello
+
+# Assembler
 
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c
 
-%: pre.z0 %.z0 z0
-	./z0 pre.z0 $*.z0 $*
+# Assembling
+
+%: %.z0 $($*_ADD) pre.z0 z0
+	./z0 pre.z0 $($*_ADD) $*.z0 $*
 	objdump -d $*
 
-%.test: %
-	./$* >$*.out
-	cmp $*.out $*.expected
+# Programs
 
-sieve.dump: sieve.c Makefile
-	gcc -O6 -std=c99 -o sieve-c sieve.c
-	objdump -d sieve-c >sieve.dump
+hello_ADD = std.z0
 
-sieve.s: sieve.c Makefile
-	gcc -O6 -std=c99 -S sieve.c
+# Testing
+
+test_ADD = testlib.z0
+
+check: test
+	./test
+
+# Stuff
 
 tt.dump: tt.c Makefile
 	gcc -O6 -std=c99 -c tt.c
@@ -25,11 +31,6 @@ tt.dump: tt.c Makefile
 asm.dump: asm.s Makefile
 	gcc -O6 -std=c99 -c asm.s
 	objdump -d asm.o
-
-check: z0
-	./z0 pre.z0 testlib.z0 test.z0 test
-	objdump -d ./test
-	./test
 
 fb: fb.c
 	gcc -o fb fb.c $$(pkg-config --libs --cflags sdl2) -lrt
