@@ -1,0 +1,101 @@
+(def N 1000)
+
+(data strbuf 20)
+(data intbuf N)
+
+(code strint
+  ;; l0: n
+  (set l1 (+ strbuf 19))
+  (set l2 0)
+  (set l3 10)
+  (set (u8 l1) l2)
+.loop
+  (add l1 -1)
+  (sign-extend)
+  (udiv l3)
+  (add l2 :0)
+  (set (u8 l1) l2)
+  (cmp l0 0)
+  (jne .loop)
+  (set l0 l1)
+  (ret))
+
+(code init-intbuf
+  (set l0 intbuf)
+  (set l1 0)
+  (jmp .test)
+.loop
+  (set (u8 l0) l1)
+  (add l0 1)
+.test
+  (cmp l0 (+ intbuf N))
+  (jl .loop)
+  (ret))
+
+(code print-intbuf
+  (push x0)
+  (push x1)
+  (set x0 intbuf)
+  (set x1 2)
+  (jmp .test)
+.loop
+  (set l0 (u8 x0 x1))
+  (cmp l0 0)
+  (jne .skip)
+  (set l0 x1)
+  (call strint)
+  (call print)
+  (call newline)
+.skip
+  (add x1 1)
+.test
+  (cmp x1 N)
+  (jl .loop)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code set-intbuf
+  ;; l0: factor
+  (set l1 l0)
+  (set l2 intbuf)
+  (set l3 1)
+  (jmp .next)
+.loop
+  (set (u8 l2 l1) l3)
+.next
+  (add l1 l0)
+  (cmp l1 N)
+  (jl .loop)
+  (ret))
+
+(code sieve-intbuf
+  ;; x0 - intbuf
+  ;; x1 - p
+  ;; x2 - p*p
+  (set x0 intbuf)
+  (set x1 2)
+  (set x2 4)
+  (jmp .test)
+.loop
+  (set l0 (u8 x0 x1))
+  (cmp l0 0)
+  (jne .skip)
+  (set l0 x1)
+  (call set-intbuf)
+.skip
+  (add x2 x1)   ;; x2 = x2 + 2*x1 + 1 = (x1+1)*(x1+1)
+  (add x2 x1)
+  (add x2 1)
+  (add x1 1)
+.test
+  (cmp x2 N)
+  (jl .loop)
+  (ret))
+
+(code main
+  (call init-intbuf)
+  (call sieve-intbuf)
+  (call print-intbuf)
+  (set l0 0)
+  (call exit))

@@ -14,6 +14,7 @@ z0: z0.c
 # Programs
 
 hello_ADD = std.z0
+sieve_ADD = std.z0
 
 # Testing
 
@@ -31,6 +32,9 @@ tt.dump: tt.c Makefile
 asm.dump: asm.s Makefile
 	gcc -O6 -std=c99 -c asm.s
 	objdump -d asm.o
+
+sieve-c: sieve.c
+	gcc -O6 -std=c99 -o sieve-c sieve.c
 
 fb: fb.c
 	gcc -o fb fb.c $$(pkg-config --libs --cflags sdl2) -lrt

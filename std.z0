@@ -53,3 +53,12 @@
   (set l0 1)
   (pop l1)
   (jmp write))
+
+(code newline
+  (set l0 1)
+  (set l1 newline-string)
+  (set l2 1)
+  (jmp write))
+
+(code newline-string
+  (1 :nl))
