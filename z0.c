@@ -723,6 +723,11 @@ write_exp (FILE *f, exp *e)
           e = e->rest;
           need_space = true;
         }
+      if (!is_nil (e))
+        {
+          fprintf (f, " . ");
+          write_exp (f, e);
+        }
       fprintf (f, ")");
     }
   else if (is_end_of_file (e))
@@ -1317,7 +1322,7 @@ expand1 (exp *e)
           x = cons (expand (first (e)), x);
           e = rest (e);
         }
-      e = reverse (x);
+      e = reverse_onto (x, expand (e));
     }
   else if (is_sym (e) && sym_is_label (e))
     return inum (sym_label (e));
