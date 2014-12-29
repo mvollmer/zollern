@@ -33,9 +33,15 @@ exitf (int code, char *fmt, ...)
   exit (code);
 }
 
+size_t total_alloc = 0;
+
 void *
 xmalloc (size_t size)
 {
+  total_alloc += size;
+  if (total_alloc > 1<<30)
+    exitf (1, "out of memory");
+
   void *mem = malloc (size);
   if (mem == 0)
     exitf (1, "Out of memory");
@@ -1587,6 +1593,8 @@ main (int argc, char **argv)
     }
 
   check_delayeds ();
+
+  printf ("allocated %ld bytes\n", total_alloc);
 
   dump (*argv);
   return 0;
