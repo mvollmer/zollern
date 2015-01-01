@@ -115,6 +115,9 @@
 (def (rex-op ?rex (1 . ?ops))
   (1 ?rex . ?ops))
 
+(def (rex-op ?rex (1 0x40 . ?ops))
+  (1 ?rex . ?ops))
+
 (def (rex-op ?rex (1 0x66 . ?ops))
   (1 0x66 ?rex . ?ops))
 
@@ -277,7 +280,7 @@
   (u64 1 0x8B)         (s64 1 0x8B))
 
 (def-inst (set _ reg)
-  (u8  0 0x88)         (s8  0 0x88)
+  (u8  0 0x40 0x88)    (s8  0 0x40 0x88)
   (u16 0 0x66 0x89)    (s16 0 0x66 0x89)
   (u32 0 0x89)         (s32 0 0x89)
   (u64 1 0x89)         (s64 1 0x89))
