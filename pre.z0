@@ -346,10 +346,10 @@
 ;; Stack
 
 (def (push (reg ?reg))
-  (1 (rex 0 0 0 (>> ?reg 3)) (<<< 10 5 ?reg 3)))
+  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 (<<< 10 5 ?reg 3))))
 
 (def (pop (reg ?reg))
-  (1 (rex 0 0 0 (>> ?reg 3)) (<<< 11 5 ?reg 3)))
+  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 (<<< 11 5 ?reg 3))))
 
 ;; Jumping and calling
 
