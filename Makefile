@@ -1,27 +1,34 @@
-all: hello
+all: z0 zfb hello sieve dots
 
 # Assembler
 
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c
 
-# Assembling
-
-%: %.z0 $($*_ADD) pre.z0 z0
-	./z0 pre.z0 $($*_ADD) $*.z0 $*
-	objdump -d $*
-
 # Programs
+
+LIBS = std.z0 fb.z0 testlib.z0
 
 hello_ADD = std.z0
 sieve_ADD = std.z0
+dots_ADD  = std.z0 fb.z0
+test_ADD = testlib.z0
 
 # Testing
 
-test_ADD = testlib.z0
-
 check: test
 	./test
+
+# Assembling
+
+%: %.z0 $(LIBS) pre.z0 z0
+	./z0 pre.z0 $($*_ADD) $*.z0 $*
+#       objdump -d $*
+
+# Framebuffer
+
+zfb: zfb.c
+	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt -lX11
 
 # Stuff
 
@@ -35,6 +42,3 @@ asm.dump: asm.s Makefile
 
 sieve-c: sieve.c
 	gcc -O6 -std=c99 -o sieve-c sieve.c
-
-fb: fb.c
-	gcc -o fb fb.c $$(pkg-config --libs --cflags sdl2) -lrt

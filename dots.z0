@@ -1,0 +1,27 @@
+(data ev (sizeof fb-event-struct))
+
+(code main
+  (call fb-init)
+  (set x0 ev)
+  (set x1 fb-pixels)
+  (set x1 (u64 x1))
+.loop
+  (set l0 x0)
+  (call fb-read-event)
+  (set l0 (ev.type x0))
+  (cmp l0 1) ; QUIT
+  (je .done)
+  (cmp l0 2) ; INPUT
+  (jne .loop)
+  (set l0 (ev.x x0))
+  (set l1 (ev.y x0))
+  (mul l1 512)
+  (add l0 l1)
+  (mul l0 4)
+  (set l2 0x00FFFFFF)
+  (set (u32 x1 l0) l2)
+  (call fb-show)
+  (jmp .loop)
+.done
+  (set l0 0)
+  (call exit))
