@@ -764,6 +764,25 @@ read_close ()
 char token[token_size];
 enum { punct_tok, sym_tok, string_tok, inum_tok, dnum_tok, eof_tok } token_kind;
 
+int
+isdelimiter (int c)
+{
+  return isspace (c) || c == '(' || c == ')';
+}
+
+int
+isnumstartchar (int c)
+{
+  return isdigit (c) || c == '-';
+}
+
+int
+isnumrestchar (int c)
+{
+  return (isdigit (c) || c == '.' || c == 'x' ||
+          (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
+}
+
 void
 read_token ()
 {
@@ -826,33 +845,23 @@ read_token ()
       token[i] = '\0';
       token_kind = (quote == '\''? sym_tok : string_tok);
     }
-  else if (isdigit (c) || c == '-')
+  else if (c != EOF)
     {
       int i = 0;
       token_kind = inum_tok;
-      token[i++] = c;
-      while (isdigit (c = fgetc (in_file)) || c == '.' || c == 'x' ||
-             (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+      while (c != EOF && !isdelimiter (c))
         {
-          token[i++] = c;
-          if (c == '.')
+          if (!((i == 0)? isnumstartchar (c) : isnumrestchar (c)))
+            token_kind = sym_tok;
+          if (c == '.' && token_kind == inum_tok)
             token_kind = dnum_tok;
+          token[i++] = c;
+          c = fgetc (in_file);
         }
       token[i] = '\0';
       ungetc (c, in_file);
       if (strcmp (token, "-") == 0)
         token_kind = sym_tok;
-    }
-  else if (c != EOF)
-    {
-      int i = 0;
-      token_kind = sym_tok;
-      token[i++] = c;
-      while ((c = fgetc (in_file)) != EOF
-             && !isspace (c) && c != '(' && c != ')')
-        token[i++] = c;
-      token[i] = '\0';
-      ungetc (c, in_file);
     }
   else
     token_kind = eof_tok;
