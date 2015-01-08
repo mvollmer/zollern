@@ -1170,6 +1170,7 @@ DEFMULOP(diff, -)
 DEFMULOP(prod, *)
 DEFMULOP(bitand, &)
 DEFMULOP(bitor, |)
+DEFMULOP(bitxor, ^)
 DEFUNAOP(bitnot, ~)
 DEFBINOP(lsh, <<)
 DEFBINOP(rsh, >>)
@@ -1200,6 +1201,7 @@ builtin builtins[] = {
   { ">>",  builtin_rsh },
   { "&",   builtin_bitand },
   { "|",   builtin_bitor },
+  { "^",   builtin_bitxor },
   { "~",   builtin_bitnot },
   { "&&",  builtin_and },
   { "||",  builtin_or },

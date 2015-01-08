@@ -334,6 +334,32 @@
   (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
   (1 (mod/rm 3 7 ?src)))
 
+;; Bit twiddling
+
+(def-inst (and reg imm)
+  (s8  1 4 0x83)
+  (s32 1 4 0x81))
+
+(def-inst (and reg _)
+  (reg 1 0x21))
+
+(def-inst (or reg imm)
+  (s8  1 1 0x83)
+  (s32 1 1 0x81))
+
+(def-inst (or reg _)
+  (reg 1 0x09))
+
+(def-inst (xor reg imm)
+  (s8  1 6 0x83)
+  (s32 1 6 0x81))
+
+(def-inst (xor reg _)
+  (reg 1 0x31))
+
+(def (not (reg ?r))
+  (rex-op (rex 1 0 0 (>> ?r 3)) (1 0xf7 (<<< 26 5 ?r 3))))
+
 ;; Comparison
 
 (def-inst (cmp reg imm)
