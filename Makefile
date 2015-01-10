@@ -1,5 +1,7 @@
 all: z0 zfb hello sieve dots
 
+V=
+
 # Assembler
 
 z0: z0.c
@@ -23,7 +25,7 @@ check: test
 
 %: %.z0 $(LIBS) pre.z0 z0
 	./z0 pre.z0 $($*_ADD) $*.z0 $*
-#       objdump -d $*
+	@if [ -n "$V" ]; then objdump -d $*; fi
 
 # Framebuffer
 
