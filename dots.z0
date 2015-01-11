@@ -18,7 +18,7 @@
   (set l1 (ev.y x0))
   (shl l1 9)
   (add l0 l1)
-  (set (u32 x1 4 l0) x2)
+  (set (u32 x1 l0) x2)
   (call fb-show)
   (jmp .loop)
 .done

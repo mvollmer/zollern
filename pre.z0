@@ -150,25 +150,25 @@
 ;; (type (reg base) scale (reg index))
 ;; (type (reg base) scale (reg index) offset)
 
-(def (inst-rm ?w ?op ?reg (?type2 ?base ?offset2) ?offset1)
-  (inst-rm ?w ?op ?reg ?base (+ ?offset2 ?offset1)))
+(def (inst-rm ?w ?op ?reg ?type (?type2 ?base ?offset2) ?offset1)
+  (inst-rm ?w ?op ?reg ?type ?base (+ ?offset2 ?offset1)))
 
-(def (inst-rm ?w ?op ?reg (reg ?base))
-  (inst-rm ?w ?op ?reg (reg ?base) 0))
+(def (inst-rm ?w ?op ?reg ?type (reg ?base))
+  (inst-rm ?w ?op ?reg ?type (reg ?base) 0))
 
-(def (inst-rm ?w ?op ?reg (reg ?base) ?offset)
-  (inst-rm ?w ?op ?reg (reg ?base) 0 (reg 0) ?offset))
+(def (inst-rm ?w ?op ?reg ?type (reg ?base) ?offset)
+  (inst-rm ?w ?op ?reg ?type (reg ?base) 0 (reg 0) ?offset))
 
-(def (inst-rm ?w ?op ?reg (reg ?base) (reg ?index))
-  (inst-rm ?w ?op ?reg (reg ?base) 1 (reg ?index) 0))
+(def (inst-rm ?w ?op ?reg ?type (reg ?base) (reg ?index))
+  (inst-rm ?w ?op ?reg ?type (reg ?base) (sizeof ?type) (reg ?index) 0))
 
-(def (inst-rm ?w ?op ?reg (reg ?base) (reg ?index) ?offset)
-  (inst-rm ?w ?op ?reg (reg ?base) 1 (reg ?index) ?offset))
+(def (inst-rm ?w ?op ?reg ?type (reg ?base) (reg ?index) ?offset)
+  (inst-rm ?w ?op ?reg ?type (reg ?base) (sizeof ?type) (reg ?index) ?offset))
 
-(def (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index))
-  (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index) 0))
+(def (inst-rm ?w ?op ?reg ?type (reg ?base) ?scale (reg ?index))
+  (inst-rm ?w ?op ?reg ?type (reg ?base) ?scale (reg ?index) 0))
 
-(def (inst-rm ?w ?op ?reg (reg ?base) ?scale (reg ?index) ?offset)
+(def (inst-rm ?w ?op ?reg ?type (reg ?base) ?scale (reg ?index) ?offset)
   (sel (== ?index 4) (error "sp can't be index")
                      (begin))
   (sel (== ?scale 0)
@@ -230,7 +230,7 @@
 (def (def-inst (?name reg _) (?type ?w . ?op) . ?rest)
   (begin
     (def (?name (reg ??dst) (?type . ??addr))
-      (inst-rm ?w (1 . ?op) ??dst . ??addr))
+      (inst-rm ?w (1 . ?op) ??dst ?type . ??addr))
     (def-inst (?name reg _) . ?rest)))
 
 (def (def-inst (?name reg _) (reg ?w . ?op) . ?rest)
@@ -242,7 +242,7 @@
 (def (def-inst (?name _ reg) (?type ?w . ?op) . ?rest)
   (begin
     (def (?name  (?type . ??addr) (reg ??src))
-      (inst-rm ?w (1 . ?op) ??src . ??addr))
+      (inst-rm ?w (1 . ?op) ??src ?type . ??addr))
     (def-inst (?name _ reg) . ?rest)))
 
 (def (def-inst (?name _ reg) (reg ?w . ?op) . ?rest)
