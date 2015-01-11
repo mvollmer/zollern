@@ -15,7 +15,11 @@
   (cmp l0 2) ; INPUT
   (jne .loop)
   (set l0 (ev.x x0))
+  (cmp l0 512)
+  (ja .loop)
   (set l1 (ev.y x0))
+  (cmp l1 512)
+  (ja .loop)
   (shl l1 9)
   (add l0 l1)
   (set (u32 x1 l0) x2)
