@@ -5,8 +5,9 @@
   (set x0 ev)
   (set x1 fb-pixels)
   (set x1 (u64 x1))
-  (set x2 0x00FFFFFF)
+  (set x2 0)
 .loop
+  (call fb-show)
   (set l0 x0)
   (call fb-read-event)
   (set l0 (ev.type x0))
@@ -23,7 +24,6 @@
   (shl l1 9)
   (add l0 l1)
   (set (u32 x1 l0) x2)
-  (call fb-show)
   (jmp .loop)
 .done
   (set l0 0)

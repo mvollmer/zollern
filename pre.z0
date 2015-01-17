@@ -321,6 +321,10 @@
   (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
   (1 (mod/rm 3 5 ?src)))
 
+(def (neg (reg ?src))
+  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
+  (1 (mod/rm 3 3 ?src)))
+
 ;; Division
 
 (def (sign-extend)

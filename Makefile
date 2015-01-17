@@ -1,4 +1,4 @@
-all: z0 zfb hello sieve dots
+all: z0 zfb hello sieve dots hellofb
 
 V=
 
@@ -9,12 +9,13 @@ z0: z0.c
 
 # Programs
 
-LIBS = std.z0 fb.z0 testlib.z0
+LIBS = std.z0 fb.z0 testlib.z0 font.z0
 
 hello_ADD = std.z0
 sieve_ADD = std.z0
 dots_ADD  = std.z0 fb.z0
 test_ADD = testlib.z0
+hellofb_ADD = std.z0 fb.z0 font.z0
 
 # Testing
 
@@ -31,6 +32,12 @@ check: test
 
 zfb: zfb.c
 	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt -lX11
+
+zttf: zttf.c
+	gcc -g -o zttf zttf.c $$(freetype-config --cflags --libs)
+
+font.z0: zttf Makefile
+	./zttf /usr/share/fonts/dejavu/DejaVuSansMono.ttf 14 mono-14 >font.z0
 
 # Stuff
 

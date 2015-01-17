@@ -7,6 +7,7 @@
 
 (def -fb-width  512)
 (def -fb-height 512)
+(def -fb-row-shift 9)
 
 (data fb-pixels 8)
 
@@ -25,6 +26,15 @@
   (call mmap)
   (set l1 fb-pixels)
   (set (u64 l1) l0)
+  (set l1 0)
+  (set l2 0xFFFFFF)
+  (jmp .test)
+.loop
+  (set (u32 l0 l1) l2)
+  (add l1 1)
+.test
+  (cmp l1 (* -fb-width -fb-height))
+  (jl .loop)
   (set l0 -fb-op-conf)
   (set l1 -fb-width)
   (set l2 -fb-height)
@@ -69,3 +79,100 @@
   (set l0 -fb-events-fd)
   (set l2 (sizeof fb-event-struct))
   (jmp read))
+
+(data -fb-event-buffer (sizeof fb-event-struct))
+
+(code fb-wait-and-quit
+  (call fb-show)
+  (push x0)
+  (set x0 -fb-event-buffer)
+.loop
+  (set l0 x0)
+  (call fb-read-event)
+  (set l0 (ev.type x0))
+  (cmp l0 1) ; QUIT
+  (jne .loop)
+  (pop x0)
+  (set l0 0)
+  (jmp exit))
+
+(defstruct fb-font
+  (u64 font.glyphs)
+  (u8  font.ascent)
+  (u8  font.descent))
+
+(defstruct fb-glyph-header
+  (u8 glyph.width)
+  (u8 glyph.height)
+  (s8 glyph.offset-x)
+  (s8 glyph.offset-y)
+  (u8 glyph.advance)
+  (u8 glyph.unused-1)
+  (u8 glyph.unused-2)
+  (u8 glyph.unused-3))
+
+(code fb-glyph
+  ;; l0 < font
+  ;; l1 < x
+  ;; l2 < y
+  ;; l3 < codepoint
+  ;;
+  ;; l0 > advance
+
+  (push x0)
+  (push x1)
+
+  ;; Validate codepoint
+  (cmp l3 127)
+  (jbe .maybe-good-codepoint)
+.bad-codepoint
+  (set l3 32)
+.maybe-good-codepoint
+  (set l4 (font.glyphs l0))
+  (set l4 (u64 l4 l3))
+  (cmp l4 0)
+  (je .bad-codepoint)
+
+  (set x0 fb-pixels)
+  (set x0 (u64 x0))
+
+  ;; Copy glyph
+  (set l5 (glyph.offset-x l4))
+  (add l1 l5)
+  (set l5 (glyph.offset-y l4))
+  (add l2 l5)
+  (shl l2 -fb-row-shift)
+  (add l1 l2)
+  (set l8 (glyph.height l4))
+  (set x1 l4)
+  (add x1 (sizeof fb-glyph-header))
+  (jmp .test-y)
+.loop-y
+  (set l6 0)
+  (set l5 (glyph.width l4))
+  (jmp .test-x)
+.loop-x
+  (set l7 (u8 x1 l6))
+  (neg l7)
+  (add l7 255)
+  (mul l7 0x010101)
+  (set (u32 x0 l1) l7)
+  (add l6 1)
+  (add l1 1)
+.test-x
+  (cmp l6 l5)
+  (jl .loop-x)
+  (add l1 -fb-width)
+  (sub l1 l5)
+  (set l5 (glyph.width l4))
+  (add x1 l5)
+  (sub l8 1)
+.test-y
+  (cmp l8 0)
+  (jne .loop-y)
+
+  (set l0 (glyph.advance l4))
+
+  (pop x1)
+  (pop x0)
+  (ret))
