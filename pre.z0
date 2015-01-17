@@ -213,12 +213,12 @@
 ;; immediate
 
 (def (inst-ri8 ?w ?x ?op ?reg ?val)
-  (rex-op (rex ?w 0 0 (>> ?reg 3)) ?op)
+  (rex-op (rex ?w (>> ?x 3) 0 (>> ?reg 3)) ?op)
   (1 (mod/rm 3 ?x ?reg))
   (1 ?val))
 
 (def (inst-ri32 ?w ?x ?op ?reg ?val)
-  (rex-op (rex ?w 0 0 (>> ?reg 3)) ?op)
+  (rex-op (rex ?w (>> ?x 3) 0 (>> ?reg 3)) ?op)
   (1 (mod/rm 3 ?x ?reg))
   (4 ?val))
 
