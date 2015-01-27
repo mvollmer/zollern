@@ -362,36 +362,36 @@
   (reg 1 0x31))
 
 (def (not (reg ?r))
-  (1 (rex 1 0 0 (>> ?r 3)) 0xf7 (mod/rm 3 2 ?r)))
+  (inst-rr 1 (1 0xf7) 2 ?r))
 
 ;; Shifting
 
 (def (shl (reg ?r))
-  (1 (rex 1 0 0 (>> ?r 3)) 0xd1 (mod/rm 3 4 ?r)))
+  (inst-rr 1 (1 0xd1) 4 ?r))
 
 (def (shl (reg ?r) ?val)
-  (1 (rex 1 0 0 (>> ?r 3)) 0xc1 (mod/rm 3 4 ?r) ?val))
+  (inst-rr 1 (1 0xc1) 4 ?r) (1 ?val))
 
 (def (shl (reg ?r) (reg 1))
-  (1 (rex 1 0 0 (>> ?r 3)) 0xd3 (mod/rm 3 4 ?r)))
+  (inst-rr 1 (1 0xd3) 4 ?r))
 
 (def (shr (reg ?r))
-  (1 (rex 1 0 0 (>> ?r 3)) 0xd1 (mod/rm 3 5 ?r)))
+  (inst-rr 1 (1 0xd1) 5 ?r))
 
 (def (shr (reg ?r) ?val)
-  (1 (rex 1 0 0 (>> ?r 3)) 0xc1 (mod/rm 3 5 ?r) ?val))
+  (inst-rr 1 (1 0xc1) 5 ?r) (1 ?val))
 
 (def (shr (reg ?r) (reg 1))
-  (1 (rex 1 0 0 (>> ?r 3)) 0xd3 (mod/rm 3 5 ?r)))
+  (inst-rr 1 (1 0xd3) 5 ?r))
 
 (def (sar (reg ?r))
-  (1 (rex 1 0 0 (>> ?r 3)) 0xd1 (mod/rm 3 7 ?r)))
+  (inst-rr 1 (1 0xd1) 7 ?r))
 
 (def (sar (reg ?r) ?val)
-  (1 (rex 1 0 0 (>> ?r 3)) 0xc1 (mod/rm 3 7 ?r) ?val))
+  (inst-rr 1 (1 0xc1) 7 ?r) (1 ?val))
 
 (def (sar (reg ?r) (reg 1))
-  (1 (rex 1 0 0 (>> ?r 3)) 0xd3 (mod/rm 3 7 ?r)))
+  (inst-rr 1 (1 0xd3) 7 ?r))
 
 ;; Comparison
 
