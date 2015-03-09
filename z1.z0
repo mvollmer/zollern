@@ -1,0 +1,145 @@
+;;; Z1 compiler
+
+(code abort
+  (call print)
+  (set l0 125)
+  (jmp exit))
+
+;; Memory
+;;
+;; (data p (sizeof mem-pool))
+;;
+;; (mem-pool-init p pool-size)
+;; (mem-pool-alloc p size)
+;; (mem-pool-reset p)
+;; (mem-pool-destroy p)
+
+(defstruct mem-pool
+  (u64 mp-start)
+  (u64 mp-end)
+  (u64 mp-next))
+
+(code mem-pool-init
+  (push x1)
+  (push x2)
+  (set x1 l0)
+  (set x2 l1)
+  (set l0 0)
+  (set l2 3) ; PROT_READ | PROT_WRITE
+  (set l3 0x22) ; MAP_ANONYMOUS | MAP_PRIVATE
+  (set l4 0)
+  (set l5 0)
+  (call mmap)
+  (cmp l0 0)
+  (jl .err)
+  (set (mp-start x1) l0)
+  (set (mp-next x1) l0)
+  (add l0 x2)
+  (set (mp-end x1) l0)
+  (pop x2)
+  (pop x1)
+  (ret)
+.err
+  (set l0 .message)
+  (jmp abort)
+.message
+  (1 "Can't get memory\n" 0))
+
+(code mem-pool-alloc
+  (set l2 (mp-next l0))
+  (add l1 l2)
+  (set l3 (mp-end l0))
+  (cmp l1 l3)
+  (jge .oom)
+  (set (mp-next l0) l1)
+  (set l0 l2)
+  (ret)
+.oom
+  (set l0 .message)
+  (call print)
+  (set l0 13)
+  (call exit)
+.message
+  (1 "Out of pool memory\n" 0))
+
+(code mem-pool-reset
+  (set l1 (mp-start l0))
+  (set (mp-next l0) l1)
+  (ret))
+
+(code mem-pool-destroy
+  (set l1 (mp-end l0))
+  (set l0 (mp-start l0))
+  (sub l1 l0)
+  (jmp munmap))
+
+;; Reading files
+
+;; (file-open fb name)
+;; (file-close fb)
+
+(defstruct file-buffer
+  (u64 fb-start)
+  (u64 fb-end))
+
+(code file-open
+  (push x0)
+  (push x1)
+  (set x1 l0)
+  (sub sp (sizeof syscall-fstat-buf))
+  (set l0 l1)
+  (set l1 0)
+  (call open)
+  (cmp l0 0)
+  (jl .err)
+  (set x0 l0)
+  (set l1 sp)
+  (call fstat)
+  (cmp l0 0)
+  (jl .err)
+  (set l0 0)
+  (set l1 (st_size sp))
+  (set l2 1) ; PROT_READ
+  (set l3 2) ; MAP_PRIVATE
+  (set l4 x0)
+  (set l5 0)
+  (call mmap)
+  (cmp l0 0)
+  (jl .err)
+  (set (fb-start x1) l0)
+  (set l1 (st_size sp))
+  (add l0 l1)
+  (set (fb-end x1) l0)
+  (add sp (sizeof syscall-fstat-buf))
+  (set l0 x0)
+  (call close)
+  (pop x1)
+  (pop x0)
+  (ret)
+.err
+  (set l0 .message)
+  (jmp abort)
+.message
+  (1 "Can't read file\n" 0))
+
+(code file-close)
+
+;; Tokens
+
+;; Expressions
+
+;; Main
+
+(data
+  pool (sizeof mem-pool)
+  fbuf (sizeof file-buffer))
+
+(code main
+  (set x1 fbuf)
+  (set l0 x1)
+  (set l1 .boot-filename)
+  (call file-open)
+  (set l0 0)
+  (jmp exit)
+.boot-filename
+  (1 "boot.z1" 0))

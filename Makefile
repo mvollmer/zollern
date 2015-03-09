@@ -1,4 +1,5 @@
-all: z0 zfb hello sieve dots hellofb
+all: z0 zfb hello sieve dots hellofb \
+     z1
 
 V=
 
@@ -16,6 +17,8 @@ sieve_ADD = std.z0
 dots_ADD  = std.z0 fb.z0
 test_ADD = testlib.z0
 hellofb_ADD = std.z0 fb.z0 font.z0
+
+z1_ADD = std.z0
 
 # Testing
 
