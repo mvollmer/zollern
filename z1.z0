@@ -80,7 +80,8 @@
 
 (defstruct file-buffer
   (u64 fb-start)
-  (u64 fb-end))
+  (u64 fb-end)
+  (u64 fb-ptr))
 
 (code file-open
   (push x0)
@@ -107,6 +108,7 @@
   (cmp l0 0)
   (jl .err)
   (set (fb-start x1) l0)
+  (set (fb-ptr x1) l0)
   (set l1 (st_size sp))
   (add l0 l1)
   (set (fb-end x1) l0)
@@ -126,19 +128,68 @@
 
 ;; Tokens
 
+(defstruct token-struct
+  (u64 tk-buf)
+  (u8  tk-kind))
+
+(def tk-kind-eof   0)
+(def tk-kind-punct 1)
+
+(code next-token
+  ;; l0: file-buffer
+  ;; l1: token-struct
+  ;;
+  ;; Reads the next token from file-buffer l0 into token-struct l1.
+  ;;
+  (set l2 (fb-ptr l0))
+  (set l3 (fb-end l0))
+  (cmp l2 l3)
+  (jge .eof)
+  (set l4 tk-kind-punct)
+  (set (tk-kind l1) l4)
+  (set l3 (u8 l2))
+  (add l2 1)
+  (set (fb-ptr l0) l2)
+  (set l2 (tk-buf l1))
+  (set (u8 l2) l3)
+  (set l4 0)
+  (set (u8 l2 1) l4)
+  (ret)
+.eof
+  (set l4 tk-kind-eof)
+  (set (tk-kind l1) l4)
+  (ret))
+
 ;; Expressions
 
 ;; Main
 
 (data
   pool (sizeof mem-pool)
-  fbuf (sizeof file-buffer))
+  fbuf (sizeof file-buffer)
+  token-buf 1024
+  token (sizeof token-struct))
 
 (code main
   (set x1 fbuf)
   (set l0 x1)
   (set l1 .boot-filename)
   (call file-open)
+  (set x2 token)
+  (set l0 token-buf)
+  (set (tk-buf x2) l0)
+.again
+  (set l0 x1)
+  (set l1 x2)
+  (call next-token)
+  (set l0 (tk-kind x2))
+  (cmp l0 tk-kind-eof)
+  (je .end)
+  (set l0 (tk-buf x2))
+  (call print)
+  (call newline)
+  (jmp .again)
+.end
   (set l0 0)
   (jmp exit)
 .boot-filename
