@@ -132,8 +132,17 @@
   (u64 tk-buf)
   (u8  tk-kind))
 
-(def tk-kind-eof   0)
-(def tk-kind-punct 1)
+(def tk-kind-eof    0)
+(def tk-kind-open   1)
+(def tk-kind-close  2)
+(def tk-kind-symbol 3)
+(def tk-kind-string 4)
+
+(def (getchar ?dst ?ptr ?end)
+  (cmp ?ptr ?end)
+  (jge .eof)
+  (set ?dst (u8 ?ptr))
+  (add ?ptr 1))
 
 (code next-token
   ;; l0: file-buffer
@@ -143,21 +152,82 @@
   ;;
   (set l2 (fb-ptr l0))
   (set l3 (fb-end l0))
-  (cmp l2 l3)
-  (jge .eof)
-  (set l4 tk-kind-punct)
-  (set (tk-kind l1) l4)
-  (set l3 (u8 l2))
-  (add l2 1)
-  (set (fb-ptr l0) l2)
-  (set l2 (tk-buf l1))
-  (set (u8 l2) l3)
+.skip-whitespace
+  (getchar l4 l2 l3)
+  (cmp l4 :spc)
+  (jle .skip-whitespace)
+  (cmp l4 :sc)
+  (jne .not-comment)
+.skip-comment
+  (getchar l4 l2 l3)
+  (cmp l4 :nl)
+  (je .skip-whitespace)
+  (jmp .skip-comment)
+.not-comment
+  (cmp l4 :lp)
+  (jne .not-open)
+  (set l5 tk-kind-open)
+  (jmp .out)
+.not-open
+  (cmp l4 :rp)
+  (jne .not-close)
+  (set l5 tk-kind-close)
+  (jmp .out)
+.not-close
+  (cmp l4 :dq)
+  (jne .not-string)
+  (set l5 (tk-buf l1))
+.next-string-char
+  (getchar l4 l2 l3)
+  (cmp l4 :dq)
+  (je .end-string)
+  (cmp l4 :bs)
+  (jne .store-string-char)
+  (getchar l4 l2 l3)
+  (cmp l4 :bs)
+  (je .store-string-char)
+  (cmp l4 :dq)
+  (je .store-string-char)
+  (cmp l4 :n)
+  (jne .not-newline-escape)
+  (set l4 :nl)
+  (jmp .store-string-char)
+.not-newline-escape
+  (cmp l4 :t)
+  (jne .store-string-char)
+  (set l4 :ht)
+.store-string-char
+  (set (u8 l5) l4)
+  (add l5 1)
+  (jmp .next-string-char)
+.end-string
   (set l4 0)
-  (set (u8 l2 1) l4)
-  (ret)
+  (set (u8 l5) l4)
+  (set l5 tk-kind-string)
+  (jmp .out)
+.not-string
+  (set l5 (tk-buf l1))
+.store-sym-char
+  (set (u8 l5) l4)
+  (add l5 1)
+  (getchar l4 l2 l3)
+  (cmp l4 :spc)
+  (jle .end-symbol)
+  (cmp l4 :lp)
+  (je .end-symbol)
+  (cmp l4 :rp)
+  (je .end-symbol)
+  (jmp .store-sym-char)
+.end-symbol
+  (set l4 0)
+  (set (u8 l5) l4)
+  (set l5 tk-kind-symbol)
+  (jmp .out)
 .eof
-  (set l4 tk-kind-eof)
-  (set (tk-kind l1) l4)
+  (set l5 tk-kind-eof)
+.out
+  (set (tk-kind l1) l5)
+  (set (fb-ptr l0) l2)
   (ret))
 
 ;; Expressions
@@ -185,6 +255,11 @@
   (set l0 (tk-kind x2))
   (cmp l0 tk-kind-eof)
   (je .end)
+  (cmp l0 tk-kind-symbol)
+  (je .output)
+  (cmp l0 tk-kind-string)
+  (jne .again)
+.output
   (set l0 (tk-buf x2))
   (call print)
   (call newline)
