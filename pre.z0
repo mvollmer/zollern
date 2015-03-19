@@ -416,34 +416,34 @@
   (1 0xe9) (-4 ?addr))
 
 (def (je ?addr)
-  (1 0x74) (-1 ?addr))
+  (1 0x0F 0x84) (-4 ?addr))
 
 (def (jne ?addr)
-  (1 0x75) (-1 ?addr))
+  (1 0x0F 0x85) (-4 ?addr))
 
 (def (jl ?addr)
-  (1 0x7C) (-1 ?addr))
+  (1 0x0F 0x8C) (-4 ?addr))
 
 (def (jle ?addr)
-  (1 0x7E) (-1 ?addr))
+  (1 0x0F 0x8E) (-4 ?addr))
 
 (def (jg ?addr)
-  (1 0x7F) (-1 ?addr))
+  (1 0x0F 0x8F) (-4 ?addr))
 
 (def (jge ?addr)
-  (1 0x7D) (-1 ?addr))
+  (1 0x0F 0x8D) (-4 ?addr))
 
 (def (ja ?addr)
-  (1 0x77) (-1 ?addr))
+  (1 0x0F 0x87) (-4 ?addr))
 
 (def (jae ?addr)
-  (1 0x73) (-1 ?addr))
+  (1 0x0F 0x83) (-4 ?addr))
 
 (def (jb ?addr)
-  (1 0x72) (-1 ?addr))
+  (1 0x0F 0x82) (-4 ?addr))
 
 (def (jbe ?addr)
-  (1 0x76) (-1 ?addr))
+  (1 0x0F 0x86) (-4 ?addr))
 
 (def (call ?addr)
   (1 0xe8) (-4 ?addr))
