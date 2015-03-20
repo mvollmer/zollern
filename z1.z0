@@ -138,9 +138,9 @@
 (def tk-kind-symbol 3)
 (def tk-kind-string 4)
 
-(def (getchar ?dst ?ptr ?end)
+(def (getchar ?dst ?ptr ?end ?eof-label)
   (cmp ?ptr ?end)
-  (jge .eof)
+  (jge ?eof-label)
   (set ?dst (u8 ?ptr))
   (add ?ptr 1))
 
@@ -153,13 +153,13 @@
   (set l2 (fb-ptr l0))
   (set l3 (fb-end l0))
 .skip-whitespace
-  (getchar l4 l2 l3)
+  (getchar l4 l2 l3 .eof)
   (cmp l4 :spc)
   (jle .skip-whitespace)
   (cmp l4 :sc)
   (jne .not-comment)
 .skip-comment
-  (getchar l4 l2 l3)
+  (getchar l4 l2 l3 .eof)
   (cmp l4 :nl)
   (je .skip-whitespace)
   (jmp .skip-comment)
@@ -178,12 +178,12 @@
   (jne .not-string)
   (set l5 (tk-buf l1))
 .next-string-char
-  (getchar l4 l2 l3)
+  (getchar l4 l2 l3 .eof-in-string)
   (cmp l4 :dq)
   (je .end-string)
   (cmp l4 :bs)
   (jne .store-string-char)
-  (getchar l4 l2 l3)
+  (getchar l4 l2 l3 .eof-in-string)
   (cmp l4 :bs)
   (je .store-string-char)
   (cmp l4 :dq)
@@ -210,14 +210,16 @@
 .store-sym-char
   (set (u8 l5) l4)
   (add l5 1)
-  (getchar l4 l2 l3)
+  (getchar l4 l2 l3 .end-symbol)
   (cmp l4 :spc)
-  (jle .end-symbol)
+  (jle .end-symbol-put-back)
   (cmp l4 :lp)
-  (je .end-symbol)
+  (je .end-symbol-put-back)
   (cmp l4 :rp)
-  (je .end-symbol)
+  (je .end-symbol-put-back)
   (jmp .store-sym-char)
+.end-symbol-put-back
+  (sub l2 1)
 .end-symbol
   (set l4 0)
   (set (u8 l5) l4)
@@ -228,7 +230,12 @@
 .out
   (set (tk-kind l1) l5)
   (set (fb-ptr l0) l2)
-  (ret))
+  (ret)
+.eof-in-string
+  (set l0 .eof-in-string-message)
+  (jmp abort)
+.eof-in-string-message
+  (1 "Unexpected end of file in string" 0))
 
 ;; Expressions
 
@@ -248,6 +255,7 @@
   (set x2 token)
   (set l0 token-buf)
   (set (tk-buf x2) l0)
+  (set x3 .prefix-end)
 .again
   (set l0 x1)
   (set l1 x2)
@@ -255,11 +263,23 @@
   (set l0 (tk-kind x2))
   (cmp l0 tk-kind-eof)
   (je .end)
+  (cmp l0 tk-kind-open)
+  (jne .not-open)
+  (sub x3 1)
+  (jmp .again)
+.not-open
+  (cmp l0 tk-kind-close)
+  (jne .not-close)
+  (add x3 1)
+  (jmp .again)
+.not-close
   (cmp l0 tk-kind-symbol)
   (je .output)
   (cmp l0 tk-kind-string)
   (jne .again)
 .output
+  (set l0 x3)
+  (call print)
   (set l0 (tk-buf x2))
   (call print)
   (call newline)
@@ -268,4 +288,8 @@
   (set l0 0)
   (jmp exit)
 .boot-filename
-  (1 "boot.z1" 0))
+  (1 "boot.z1" 0)
+.prefix
+  (1 "                                                            ")
+.prefix-end
+  (1 0))
