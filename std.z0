@@ -43,17 +43,17 @@
     (syscall)
     (ret)))
 
-(defsyscall read         0  3)
-(defsyscall write        1  3)
-(defsyscall open         2  3)
-(defsyscall close        3  1)
-(defsyscall fstat        5  2)
-(defsyscall mmap         9  6)
-(defsyscall munmap      11  2)
-(defsyscall exit        60  1)
-(defsyscall ftruncate   77  2)
+(defsyscall sys-read         0  3)
+(defsyscall sys-write        1  3)
+(defsyscall sys-open         2  3)
+(defsyscall sys-close        3  1)
+(defsyscall sys-fstat        5  2)
+(defsyscall sys-mmap         9  6)
+(defsyscall sys-munmap      11  2)
+(defsyscall sys-exit        60  1)
+(defsyscall sys-ftruncate   77  2)
 
-(defstruct syscall-fstat-buf
+(defstruct sys-fstat-buf
   (u64 st_dev)
   (u64 st_ino)
   (u64 st_nlink)
@@ -81,13 +81,13 @@
   (set l2 l0)
   (set l0 1)
   (pop l1)
-  (jmp write))
+  (jmp sys-write))
 
 (code newline
   (set l0 1)
   (set l1 newline-string)
   (set l2 1)
-  (jmp write))
+  (jmp sys-write))
 
 (code newline-string
   (1 :nl))

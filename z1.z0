@@ -3,7 +3,7 @@
 (code abort
   (call print)
   (set l0 125)
-  (jmp exit))
+  (jmp sys-exit))
 
 ;; Memory
 ;;
@@ -29,7 +29,7 @@
   (set l3 0x22) ; MAP_ANONYMOUS | MAP_PRIVATE
   (set l4 0)
   (set l5 0)
-  (call mmap)
+  (call sys-mmap)
   (cmp l0 0)
   (jl .err)
   (set (mp-start x1) l0)
@@ -58,7 +58,7 @@
   (set l0 .message)
   (call print)
   (set l0 13)
-  (call exit)
+  (jmp sys-exit)
 .message
   (1 "Out of pool memory\n" 0))
 
@@ -71,7 +71,7 @@
   (set l1 (mp-end l0))
   (set l0 (mp-start l0))
   (sub l1 l0)
-  (jmp munmap))
+  (jmp sys-munmap))
 
 ;; Reading files
 
@@ -87,15 +87,15 @@
   (push x0)
   (push x1)
   (set x1 l0)
-  (sub sp (sizeof syscall-fstat-buf))
+  (sub sp (sizeof sys-fstat-buf))
   (set l0 l1)
   (set l1 0)
-  (call open)
+  (call sys-open)
   (cmp l0 0)
   (jl .err)
   (set x0 l0)
   (set l1 sp)
-  (call fstat)
+  (call sys-fstat)
   (cmp l0 0)
   (jl .err)
   (set l0 0)
@@ -104,7 +104,7 @@
   (set l3 2) ; MAP_PRIVATE
   (set l4 x0)
   (set l5 0)
-  (call mmap)
+  (call sys-mmap)
   (cmp l0 0)
   (jl .err)
   (set (fb-start x1) l0)
@@ -112,9 +112,9 @@
   (set l1 (st_size sp))
   (add l0 l1)
   (set (fb-end x1) l0)
-  (add sp (sizeof syscall-fstat-buf))
+  (add sp (sizeof sys-fstat-buf))
   (set l0 x0)
-  (call close)
+  (call sys-close)
   (pop x1)
   (pop x0)
   (ret)
@@ -286,7 +286,7 @@
   (jmp .again)
 .end
   (set l0 0)
-  (jmp exit)
+  (jmp sys-exit)
 .boot-filename
   (1 "boot.z1" 0)
 .prefix

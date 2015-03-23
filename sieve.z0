@@ -98,4 +98,4 @@
   (call sieve-intbuf)
   (call print-intbuf)
   (set l0 0)
-  (call exit))
+  (jmp sys-exit))

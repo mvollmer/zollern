@@ -27,4 +27,4 @@
   (jmp .loop)
 .done
   (set l0 0)
-  (call exit))
+  (jmp sys-exit))

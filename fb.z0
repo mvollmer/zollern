@@ -14,7 +14,7 @@
 (code fb-init
   (set l0 -fb-pixels-fd)
   (set l1 (* -fb-width -fb-height 4))
-  (call ftruncate)
+  (call sys-ftruncate)
   (cmp l0 0)
   (jl .error)
   (set l0 0)
@@ -23,7 +23,7 @@
   (set l3 1) ; MAP_SHARED
   (set l4 -fb-pixels-fd)
   (set l5 0)
-  (call mmap)
+  (call sys-mmap)
   (set l1 fb-pixels)
   (set (u64 l1) l0)
   (set l1 0)
@@ -42,7 +42,7 @@
   (ret)
 .error
   (set l0 12)
-  (call exit))
+  (jmp sys-exit))
 
 (defstruct -fb-command-struct
   (u32 cmd.op)
@@ -61,7 +61,7 @@
   (set l0 -fb-commands-fd)
   (set l1 l5)
   (set l2 (sizeof -fb-command-struct))
-  (jmp write))
+  (jmp sys-write))
 
 (code fb-show
   (set l0 -fb-op-show)
@@ -78,7 +78,7 @@
   (set l1 l0)
   (set l0 -fb-events-fd)
   (set l2 (sizeof fb-event-struct))
-  (jmp read))
+  (jmp sys-read))
 
 (data -fb-event-buffer (sizeof fb-event-struct))
 
@@ -94,7 +94,7 @@
   (jne .loop)
   (pop x0)
   (set l0 0)
-  (jmp exit))
+  (jmp sys-exit))
 
 (defstruct fb-font
   (u64 font.glyphs)
