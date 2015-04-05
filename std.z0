@@ -12,6 +12,16 @@
   (sub l0 l1)
   (ret))
 
+(code strcpy
+.loop
+  (set l2 (u8 l1))
+  (set (u8 l0) l2)
+  (add l0 1)
+  (add l1 1)
+  (cmp l2 0)
+  (jne .loop)
+  (ret))
+
 ;; Syscalls
 
 ;; Args go to rdi, rsi, rdx, r10, r8, r9, number to rax.
