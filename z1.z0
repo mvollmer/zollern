@@ -235,61 +235,255 @@
   (set l0 .eof-in-string-message)
   (jmp abort)
 .eof-in-string-message
-  (1 "Unexpected end of file in string" 0))
+  (1 "Unexpected end of file in string\n" 0))
 
 ;; Expressions
+
+(def EXP-POOL-SIZE (* 10 1024 1024))
+(def EXP-HASH-SIZE 1023)
+
+(data
+  exp-pool (sizeof mem-pool)
+  exp-symbols (sizeof u64)
+  exp-token-buf 1024
+  exp-token (sizeof token-struct))
+
+(def exp-type-pair   0)
+(def exp-type-symbol 1)
+(def exp-type-string 2)
+(def exp-type-number 3)
+
+(defstruct exp-base
+  (u32 exp-type))
+
+(defstruct exp-symbol
+  (exp-base base)
+  (u64 exp-sym-link))
+
+(defstruct exp-string
+  (exp-base base))
+
+(defstruct exp-pair
+  (exp-base base)
+  (u64 exp-first)
+  (u64 exp-rest))
+
+(defstruct exp-number
+  (exp-base base)
+  (s64 exp-num-val))
+
+(code exp-init
+  (set l0 exp-pool)
+  (set l1 EXP-POOL-SIZE)
+  (call mem-pool-init)
+  (jmp exp-reset))
+
+(code exp-reset
+  (set l0 exp-pool)
+  (set l1 (mp-start l0))
+  (set (mp-next l1) l0)
+  (set l1 (* EXP-HASH-SIZE (sizeof u64)))
+  (call mem-pool-alloc)
+  (set l1 exp-symbols)
+  (set (u64 l1) l0)
+  (set l1 EXP-HASH-SIZE)
+  (set l2 0)
+  (jmp .test)
+.loop
+  (set (u64 l0) l2)
+  (add l0 (sizeof u64))
+  (sub l1 1)
+.test
+  (cmp l1 0)
+  (jg .loop)
+  (ret))
+
+(code exp-make-pair
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (set x1 l1)
+  (set l0 exp-pool)
+  (set l1 (sizeof exp-pair))
+  (call mem-pool-alloc)
+  (set l1 exp-type-pair)
+  (set (exp-type l0) l1)
+  (set (exp-first l0) x0)
+  (set (exp-rest l0) x1)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code exp-make-string
+  (push x0)
+  (push x1)
+  (push x2)
+  (set x0 l0)
+  (call strlen)
+  (add l0 1)
+  (set x1 l0)
+  (add l0 (sizeof exp-string))
+  (set l1 l0)
+  (set l0 exp-pool)
+  (call mem-pool-alloc)
+  (set x2 l0)
+  (set l1 exp-type-string)
+  (set (exp-type x2) l1)
+  (set l0 x2)
+  (add l0 (sizeof exp-string))
+  (set l1 x0)
+  (call strcpy)
+  (set l0 x2)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code exp-list-reverse
+  (set l1 0)
+.loop
+  (cmp l0 0)
+  (je .done)
+  (set l2 (exp-rest l0))
+  (set (exp-rest l0) l1)
+  (set l1 l0)
+  (set l0 l2)
+  (jmp .loop)
+.done
+  (set l0 l1)
+  (ret))
+
+(code exp-read
+  (set l1 token)
+  (set l2 token-buf)
+  (set (tk-buf l1) l2)
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (set x1 l1)
+  (call next-token)
+  (call .read1)
+  (pop x1)
+  (pop x0)
+  (ret)
+.read1
+  (set l0 (tk-kind x1))
+  (cmp l0 tk-kind-open)
+  (jne .not-open)
+  (push x2)
+  (set x2 0)
+.list-loop
+  (set l0 x0)
+  (set l1 x1)
+  (call next-token)
+  (set l0 (tk-kind x1))
+  (cmp l0 tk-kind-eof)
+  (je .eof-in-list)
+  (cmp l0 tk-kind-close)
+  (je .list-done)
+  (call .read1)
+  (set l1 x2)
+  (call exp-make-pair)
+  (set x2 l0)
+  (jmp .list-loop)
+.eof-in-list
+  (set l0 .eof-in-list-message)
+  (jmp abort)
+.eof-in-list-message
+  (1 "Unexpected end of file in list\n" 0)
+.list-done
+  (set l0 x2)
+  (call exp-list-reverse)
+  (pop x2)
+  (ret)
+.not-open
+  (cmp l0 tk-kind-eof)
+  (jne .not-eof)
+  (set l0 0)
+  (ret)
+.not-eof
+  (set l0 (tk-buf x1))
+  (jmp exp-make-string))
+
+(code exp-write
+  (cmp l0 0)
+  (jne .not-empty-list)
+  (set l0 .empty-list-string)
+  (jmp print)
+.empty-list-string
+  (1 "()" 0)
+.not-empty-list
+  (set l1 (exp-type l0))
+  (cmp l1 exp-type-pair)
+  (jne .not-list)
+.list
+  (push x0)
+  (set x0 l0)
+  (set l0 .open-paren-string)
+  (call print)
+  (jmp .list-loop-no-space)
+.list-loop
+  (set l0 .space-string)
+  (call print)
+.list-loop-no-space
+  (set l0 (exp-first x0))
+  (call exp-write)
+  (set x0 (exp-rest x0))
+  (cmp x0 0)
+  (je .list-done)
+  (set l0 (exp-type x0))
+  (cmp l0 exp-type-pair)
+  (je .list-loop)
+  (set l0 .improper-end-string)
+  (call print)
+  (set l0 x0)
+  (call exp-write)
+.list-done
+  (pop x0)
+  (set l0 .close-paren-string)
+  (jmp print)
+.open-paren-string
+  (1 "(" 0)
+.space-string
+  (1 " " 0)
+.close-paren-string
+  (1 ")" 0)
+.improper-end-string
+  (1 " . " 0)
+.not-list
+  (cmp l1 exp-type-string)
+  (jne .not-string)
+  (add l0 (sizeof exp-string))
+  (jmp print)
+.not-string
+  (set l0 .unknown-string)
+  (jmp print)
+.unknown-string
+  (1 "<unknown>" 0))
 
 ;; Main
 
 (data
-  pool (sizeof mem-pool)
   fbuf (sizeof file-buffer)
   token-buf 1024
   token (sizeof token-struct))
 
 (code main
+  (call exp-init)
   (set x1 fbuf)
   (set l0 x1)
   (set l1 .boot-filename)
   (call file-open)
-  (set x2 token)
-  (set l0 token-buf)
-  (set (tk-buf x2) l0)
-  (set x3 .prefix-end)
-.again
+.loop
   (set l0 x1)
-  (set l1 x2)
-  (call next-token)
-  (set l0 (tk-kind x2))
-  (cmp l0 tk-kind-eof)
+  (call exp-read)
+  (cmp l0 0)
   (je .end)
-  (cmp l0 tk-kind-open)
-  (jne .not-open)
-  (sub x3 1)
-  (jmp .again)
-.not-open
-  (cmp l0 tk-kind-close)
-  (jne .not-close)
-  (add x3 1)
-  (jmp .again)
-.not-close
-  (cmp l0 tk-kind-symbol)
-  (je .output)
-  (cmp l0 tk-kind-string)
-  (jne .again)
-.output
-  (set l0 x3)
-  (call print)
-  (set l0 (tk-buf x2))
-  (call print)
+  (call exp-write)
   (call newline)
-  (jmp .again)
+  (jmp .loop)
 .end
   (set l0 0)
   (jmp sys-exit)
 .boot-filename
-  (1 "boot.z1" 0)
-.prefix
-  (1 "                                                            ")
-.prefix-end
-  (1 0))
+  (1 "boot.z1" 0))
