@@ -314,26 +314,91 @@
   (pop x0)
   (ret))
 
-(code exp-make-string
+(code exp-make-with-string
+  ;; l0 - string
+  ;; l1 - header size
   (push x0)
   (push x1)
   (push x2)
   (set x0 l0)
+  (set x1 l1)
   (call strlen)
   (add l0 1)
-  (set x1 l0)
-  (add l0 (sizeof exp-string))
+  (add l0 x1)
   (set l1 l0)
   (set l0 exp-pool)
   (call mem-pool-alloc)
   (set x2 l0)
-  (set l1 exp-type-string)
-  (set (exp-type x2) l1)
-  (set l0 x2)
-  (add l0 (sizeof exp-string))
+  (add l0 x1)
   (set l1 x0)
   (call strcpy)
   (set l0 x2)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code exp-make-string
+  ;; l0 - string
+  (set l1 (sizeof exp-string))
+  (call exp-make-with-string)
+  (set l1 exp-type-string)
+  (set (exp-type l0) l1)
+  (ret))
+
+(code exp-intern
+  ;; l0 - name
+  (push x0) ;; name
+  (push x1) ;; hash(name)
+  (push x2) ;; candidate symbol
+  (set x0 l0)
+  ;; compute hash of x0
+  (set l0 5381)
+  (set l1 x0)
+.hash-loop
+  (set l2 (u8 l1))
+  (cmp l2 0)
+  (je .hash-done)
+  (mul l0 33)
+  (xor l0 l2)
+  (add l1 1)
+  (jmp .hash-loop)
+.hash-done
+  (set l2 0)
+  (set l1 EXP-HASH-SIZE)
+  (sdiv l1)
+  (set x1 l2)
+  (set l0 exp-symbols)
+  (set l0 (u64 l0))
+  (set x2 (u64 l0 x1))
+  (jmp .find-test)
+.find-loop
+  (set x2 (exp-sym-link x2))
+.find-test
+  (set l0 x2)
+  (cmp l0 0)
+  (je .not-found)
+  (add l0 (sizeof exp-symbol))
+  (set l1 x0)
+  (call streq)
+  (cmp l0 0)
+  (je .find-loop)
+  (set l0 x2)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret)
+.not-found
+  (set l0 x0)
+  (set l1 (sizeof exp-symbol))
+  (call exp-make-with-string)
+  (set l1 exp-type-symbol)
+  (set (exp-type l0) l1)
+  (set l1 exp-symbols)
+  (set l1 (u64 l1))
+  (set l2 (u64 l1 x1))
+  (set (exp-sym-link l0) l2)
+  (set (u64 l1 x1) l0)
   (pop x2)
   (pop x1)
   (pop x0)
@@ -397,6 +462,11 @@
   (pop x2)
   (ret)
 .not-open
+  (cmp l0 tk-kind-symbol)
+  (jne .not-symbol)
+  (set l0 (tk-buf x1))
+  (jmp exp-intern)
+.not-symbol
   (cmp l0 tk-kind-eof)
   (jne .not-eof)
   (set l0 0)
@@ -454,8 +524,24 @@
   (cmp l1 exp-type-string)
   (jne .not-string)
   (add l0 (sizeof exp-string))
-  (jmp print)
+  (push x0)
+  (set x0 l0)
+  (set l0 .double-quote-string)
+  (call print)
+  (set l0 x0)
+  (call print)
+  (set l0 .double-quote-string)
+  (call print)
+  (pop x0)
+  (ret)
+.double-quote-string
+  (1 "\"" 0)
 .not-string
+  (cmp l1 exp-type-symbol)
+  (jne .not-symbol)
+  (add l0 (sizeof exp-symbol))
+  (jmp print)
+.not-symbol
   (set l0 .unknown-string)
   (jmp print)
 .unknown-string

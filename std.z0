@@ -22,6 +22,25 @@
   (jne .loop)
   (ret))
 
+(code streq
+  (jmp .test)
+.loop
+  (add l0 1)
+  (add l1 1)
+.test
+  (set l2 (u8 l0))
+  (set l3 (u8 l1))
+  (cmp l2 l3)
+  (je .eq)
+  (set l0 0)
+  (ret)
+.eq
+  (cmp l2 0)
+  (jne .loop)
+  (set l0 1)
+  (ret))
+
+
 ;; Syscalls
 
 ;; Args go to rdi, rsi, rdx, r10, r8, r9, number to rax.
