@@ -314,6 +314,18 @@
   (pop x0)
   (ret))
 
+(code exp-make-number
+  (push x0)
+  (set x0 l0)
+  (set l0 exp-pool)
+  (set l1 (sizeof exp-number))
+  (call mem-pool-alloc)
+  (set l1 exp-type-number)
+  (set (exp-type l0) l1)
+  (set (exp-num-val l0) x0)
+  (pop x0)
+  (ret))
+
 (code exp-make-with-string
   ;; l0 - string
   ;; l1 - header size
@@ -464,6 +476,36 @@
 .not-open
   (cmp l0 tk-kind-symbol)
   (jne .not-symbol)
+  (set l1 (tk-buf x1))
+  (set l3 (u8 l1))
+  (cmp l3 :-)
+  (jne .no-sign)
+  (add l1 1)
+.no-sign
+  (set l2 0)
+.number-loop
+  (set l3 (u8 l1))
+  (cmp l3 0)
+  (je .number-done)
+  (cmp l3 :0)
+  (jl .symbol)
+  (cmp l3 :9)
+  (jg .symbol)
+  (sub l3 :0)
+  (mul l2 10)
+  (add l2 l3)
+  (add l1 1)
+  (jmp .number-loop)
+.number-done
+  (set l1 (tk-buf x1))
+  (set l3 (u8 l1))
+  (cmp l3 :-)
+  (jne .dont-negate)
+  (neg l2)
+.dont-negate
+  (set l0 l2)
+  (jmp exp-make-number)
+.symbol
   (set l0 (tk-buf x1))
   (jmp exp-intern)
 .not-symbol
@@ -474,6 +516,8 @@
 .not-eof
   (set l0 (tk-buf x1))
   (jmp exp-make-string))
+
+(data exp-write-strbuf 20)
 
 (code exp-write
   (cmp l0 0)
@@ -542,6 +586,35 @@
   (add l0 (sizeof exp-symbol))
   (jmp print)
 .not-symbol
+  (cmp l1 exp-type-number)
+  (jne .not-number)
+  (set l0 (exp-num-val l0))
+  (set l4 l0)
+  (cmp l0 0)
+  (jge .positive)
+  (neg l0)
+.positive
+  (set l1 (+ exp-write-strbuf 19))
+  (set l2 0)
+  (set l3 10)
+  (set (u8 l1) l2)
+.number-loop
+  (add l1 -1)
+  (set l2 0)
+  (udiv l3)
+  (add l2 :0)
+  (set (u8 l1) l2)
+  (cmp l0 0)
+  (jne .number-loop)
+  (cmp l4 0)
+  (jge .no-sign)
+  (set l2 :-)
+  (add l1 -1)
+  (set (u8 l1) l2)
+.no-sign
+  (set l0 l1)
+  (jmp print)
+.not-number
   (set l0 .unknown-string)
   (jmp print)
 .unknown-string
