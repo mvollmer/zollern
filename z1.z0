@@ -623,13 +623,23 @@
 ;; Code generation
 
 (data
-  codebuf 1024
-  codeptr (sizeof u64))
+  codebuf (* 1024 1024)
+  codebuf.end)
 
 (code code-init
   (set l0 codebuf)
-  (set l1 codeptr)
-  (set (u64 l1) l0)
+  (ret))
+
+(code code-fini
+  (set l1 codebuf.end)
+  (cmp l0 l1)
+  (jl .ok)
+  (set l0 .too-big-string)
+  (jmp abort)
+.too-big-string
+  (1 "too much code!" 0)
+.ok
+  (set l0 codebuf)
   (ret))
 
 (def (size-to-type 1) u8)
@@ -660,6 +670,30 @@
 (def (code-emit-1 ?ptr (begin ?first) ?repl)
   (code-emit-1 ?ptr ?first ?repl))
 
+;; Compilation
+
+(code syntax
+  (set l0 .syntax-error-string)
+  (jmp abort)
+.syntax-error-string
+  (1 "syntax error" 0))
+
+(code comp-expr
+  ;; l0 - codeptr
+  ;; l1 - exp
+  (cmp l1 0)
+  (jne .not-empty-list)
+  (jmp syntax)
+.not-empty-list
+  (set l2 (exp-type l1))
+  (cmp l2 exp-type-number)
+  (jne .not-number)
+  (set l2 (exp-num-val l1))
+  (code-emit l0 (set l0 0x7FFFFFFF) l2)
+  (ret)
+.not-number
+  (jmp syntax))
+
 ;; Main
 
 (data
@@ -667,30 +701,22 @@
   token-buf 1024
   token (sizeof token-struct))
 
-;; (code main
-;;   (call exp-init)
-;;   (set x1 fbuf)
-;;   (set l0 x1)
-;;   (set l1 .boot-filename)
-;;   (call file-open)
-;; .loop
-;;   (set l0 x1)
-;;   (call exp-read)
-;;   (cmp l0 0)
-;;   (je .end)
-;;   (call exp-write)
-;;   (call newline)
-;;   (jmp .loop)
-;; .end
-;;   (set l0 0)
-;;   (jmp sys-exit)
-;; .boot-filename
-;;   (1 "boot.z1" 0))
-
 (code main
+  (call exp-init)
+  (set x1 fbuf)
+  (set l0 x1)
+  (set l1 .boot-filename)
+  (call file-open)
   (call code-init)
-  (set l1 10)
-  (code-emit l0 (set l0 0) l1)
+  (set x0 l0)
+  (set l0 x1)
+  (call exp-read)
+  (set l1 l0)
+  (set l0 x0)
+  (call comp-expr)
   (code-emit l0 (ret))
+  (call code-fini)
   (call codebuf)
-  (jmp sys-exit))
+  (jmp sys-exit)
+.boot-filename
+  (1 "boot.z1" 0))
