@@ -620,6 +620,46 @@
 .unknown-string
   (1 "<unknown>" 0))
 
+;; Code generation
+
+(data
+  codebuf 1024
+  codeptr (sizeof u64))
+
+(code code-init
+  (set l0 codebuf)
+  (set l1 codeptr)
+  (set (u64 l1) l0)
+  (ret))
+
+(def (size-to-type 1) u8)
+(def (size-to-type 4) u32)
+
+(def (code-emit ?ptr ?insn)
+  (code-emit-1 ?ptr ?insn ()))
+
+(def (code-emit ?ptr ?insn ?repl)
+  (code-emit-1 ?ptr ?insn (?repl)))
+
+(def (code-emit-1 ?ptr (?size) ?repl)
+  (begin))
+
+(def (code-emit-1 ?ptr (?size ?first . ?rest) ?repl)
+  (set ((size-to-type ?size) ?ptr) ?first)
+  (add ?ptr ?size)
+  (code-emit-1 ?ptr (?size . ?rest) ?repl))
+
+(def (code-emit-1 ?ptr (?size ?first) (?repl))
+  (set ((size-to-type ?size) ?ptr) ?repl)
+  (add ?ptr ?size))
+
+(def (code-emit-1 ?ptr (begin ?first . ?rest) ?repl)
+  (code-emit-1 ?ptr ?first ())
+  (code-emit-1 ?ptr (begin . ?rest) ?repl))
+
+(def (code-emit-1 ?ptr (begin ?first) ?repl)
+  (code-emit-1 ?ptr ?first ?repl))
+
 ;; Main
 
 (data
@@ -627,22 +667,30 @@
   token-buf 1024
   token (sizeof token-struct))
 
+;; (code main
+;;   (call exp-init)
+;;   (set x1 fbuf)
+;;   (set l0 x1)
+;;   (set l1 .boot-filename)
+;;   (call file-open)
+;; .loop
+;;   (set l0 x1)
+;;   (call exp-read)
+;;   (cmp l0 0)
+;;   (je .end)
+;;   (call exp-write)
+;;   (call newline)
+;;   (jmp .loop)
+;; .end
+;;   (set l0 0)
+;;   (jmp sys-exit)
+;; .boot-filename
+;;   (1 "boot.z1" 0))
+
 (code main
-  (call exp-init)
-  (set x1 fbuf)
-  (set l0 x1)
-  (set l1 .boot-filename)
-  (call file-open)
-.loop
-  (set l0 x1)
-  (call exp-read)
-  (cmp l0 0)
-  (je .end)
-  (call exp-write)
-  (call newline)
-  (jmp .loop)
-.end
-  (set l0 0)
-  (jmp sys-exit)
-.boot-filename
-  (1 "boot.z1" 0))
+  (call code-init)
+  (set l1 10)
+  (code-emit l0 (set l0 0) l1)
+  (code-emit l0 (ret))
+  (call codebuf)
+  (jmp sys-exit))
