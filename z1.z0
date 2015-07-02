@@ -644,6 +644,7 @@
 
 (def (size-to-type 1) u8)
 (def (size-to-type 4) u32)
+(def (size-to-type 8) u64)
 
 (def (code-emit ?ptr ?insn)
   (code-emit-1 ?ptr ?insn ()))
@@ -655,6 +656,8 @@
   (begin))
 
 (def (code-emit-1 ?ptr (?size ?first . ?rest) ?repl)
+  (sel (== ?size 8) (error "can't emit 64 bit literals")
+                    (begin))
   (set ((size-to-type ?size) ?ptr) ?first)
   (add ?ptr ?size)
   (code-emit-1 ?ptr (?size . ?rest) ?repl))
@@ -689,7 +692,7 @@
   (cmp l2 exp-type-number)
   (jne .not-number)
   (set l2 (exp-num-val l1))
-  (code-emit l0 (set l0 0x7FFFFFFF) l2)
+  (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l2)
   (ret)
 .not-number
   (jmp syntax))
