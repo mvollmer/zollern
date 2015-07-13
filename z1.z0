@@ -676,18 +676,74 @@
 ;; Compilation
 
 (code syntax
+  (set l0 l1)
+  (call exp-write)
   (set l0 .syntax-error-string)
   (jmp abort)
 .syntax-error-string
-  (1 "syntax error" 0))
+  (1 "\nsyntax error\n" 0))
+
+(def (get-first-as-number ?exp ?res ?max)
+  (cmp ?exp 0)
+  (je syntax)
+  (set ?res (exp-type ?exp))
+  (cmp ?res exp-type-pair)
+  (jne syntax)
+  (set ?res (exp-first ?exp))
+  (cmp ?res 0)
+  (je syntax)
+  (set ?res (exp-type ?res))
+  (cmp ?res exp-type-number)
+  (jne syntax)
+  (set ?res (exp-first ?exp))
+  (set ?res (exp-num-val ?res))
+  (cmp ?res ?max)
+  (jae syntax))
+
+(code comp-unop-table
+  (8 comp-unop-neg)  ; 0
+  (8 comp-unop-not)  ; 1
+  comp-unop-table-end)
+
+(def comp-unop-table-size (>> (- comp-unop-table-end comp-unop-table) 3))
+
+(code comp-unop
+  (get-first-as-number l1 l2 comp-unop-table-size)
+  (set l1 (exp-rest l1))
+  (set l1 (exp-first l1))
+  (push l2)
+  (call comp-expr)
+  (pop l2)
+  (set l1 comp-unop-table)
+  (set l1 (u64 l1 l2))
+  (jmp l1))
+
+(code comp-unop-neg
+  (code-emit l0 (neg l0))
+  (ret))
+
+(code comp-unop-not
+  (code-emit l0 (not l0))
+  (ret))
+
+(code comp-expr-table
+  (8 syntax)     ; 0 begin
+  (8 syntax)     ; 1 label
+  (8 syntax)     ; 2 goto
+  (8 syntax)     ; 3 if
+  (8 comp-unop)  ; 4
+  (8 syntax)     ; 5 polop
+  (8 syntax)     ; 6 var
+  (8 syntax)     ; 7 alloc
+  comp-expr-table-end)
+
+(def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
 
 (code comp-expr
   ;; l0 - codeptr
   ;; l1 - exp
   (cmp l1 0)
-  (jne .not-empty-list)
-  (jmp syntax)
-.not-empty-list
+  (je syntax)
   (set l2 (exp-type l1))
   (cmp l2 exp-type-number)
   (jne .not-number)
@@ -695,6 +751,12 @@
   (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l2)
   (ret)
 .not-number
+  (get-first-as-number l1 l2 comp-expr-table-size)
+  (set l1 (exp-rest l1))
+  (set l3 comp-expr-table)
+  (set l3 (u64 l3 l2))
+  (jmp l3)
+.not-list
   (jmp syntax))
 
 ;; Main
