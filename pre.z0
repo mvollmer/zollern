@@ -436,6 +436,9 @@
 (def (jmp ?addr)
   (1 0xe9) (-4 ?addr))
 
+(def (jmp (reg ?reg))
+  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 0xFF (<<< 28 5 ?reg 3))))
+
 (def (je ?addr)
   (1 0x0F 0x84) (-4 ?addr))
 
