@@ -700,6 +700,29 @@
   (cmp ?res ?max)
   (jae syntax))
 
+(code comp-exprs
+  (cmp l1 0)
+  (je syntax)
+  (set l2 (exp-type l1))
+  (cmp l2 exp-type-pair)
+  (jne syntax)
+  (push l1)
+  (set l2 0)
+  (set l1 (exp-rest l1))
+  (cmp l1 0)
+  (je .done)
+  (call comp-exprs)
+  (code-emit l0 (push l0))
+  (set l2 l1)
+.done
+  (pop l1)
+  (set l1 (exp-first l1))
+  (push l2)
+  (call comp-expr)
+  (pop l1)
+  (add l1 1)
+  (ret))
+
 (code comp-unop-table
   (8 comp-unop-neg)  ; 0
   (8 comp-unop-not)  ; 1
@@ -726,13 +749,63 @@
   (code-emit l0 (not l0))
   (ret))
 
+(code comp-polop-table
+  (8 comp-polop-add)  ; 0
+  (8 comp-polop-sub)  ; 1
+  (8 comp-polop-mul)  ; 2
+  (8 comp-polop-div)  ; 3
+  comp-polop-table-end)
+
+(def comp-polop-table-size (>> (- comp-polop-table-end comp-polop-table) 3))
+
+(code comp-polop
+  (push x0)
+  (push x1)
+  (get-first-as-number l1 l2 comp-polop-table-size)
+  (set x0 comp-polop-table)
+  (set x0 (u64 x0 l2))
+  (set l1 (exp-rest l1))
+  (call comp-exprs)
+  (set x1 l1)
+  (jmp .test)
+.loop
+  (call x0)
+  (sub x1 1)
+.test
+  (cmp x1 1)
+  (jg .loop)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code comp-polop-add
+  (code-emit l0 (pop l1))
+  (code-emit l0 (add l0 l1))
+  (ret))
+
+(code comp-polop-sub
+  (code-emit l0 (pop l1))
+  (code-emit l0 (sub l0 l1))
+  (ret))
+
+(code comp-polop-mul
+  (code-emit l0 (pop l1))
+  (code-emit l0 (mul l0 l1))
+  (ret))
+
+(code comp-polop-div
+  (code-emit l0 (pop l1))
+  (code-emit l0 (sign-extend))
+  (code-emit l0 (sdiv l1))
+  (ret))
+
 (code comp-expr-table
   (8 syntax)     ; 0 begin
   (8 syntax)     ; 1 label
   (8 syntax)     ; 2 goto
   (8 syntax)     ; 3 if
   (8 comp-unop)  ; 4
-  (8 syntax)     ; 5 polop
+  (8 comp-polop) ; 5
   (8 syntax)     ; 6 var
   (8 syntax)     ; 7 alloc
   comp-expr-table-end)
