@@ -472,6 +472,9 @@
 (def (call ?addr)
   (1 0xe8) (-4 ?addr))
 
+(def (call (reg ?reg))
+  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 0xFF (<<< 26 5 ?reg 3))))
+
 (def (ret)
   (1 0xc3))
 
