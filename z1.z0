@@ -642,9 +642,15 @@
   (set l0 codebuf)
   (ret))
 
-(def (size-to-type 1) u8)
-(def (size-to-type 4) u32)
-(def (size-to-type 8) u64)
+(def (size-to-type  1) u8)
+(def (size-to-type  4) u32)
+(def (size-to-type -4) u32)
+(def (size-to-type  8) u64)
+
+(def (size-to-offset  1) 1)
+(def (size-to-offset  4) 4)
+(def (size-to-offset -4) 4)
+(def (size-to-offset  8) 8)
 
 (def (code-emit ?ptr ?insn)
   (code-emit-1 ?ptr ?insn ()))
@@ -659,12 +665,12 @@
   (sel (== ?size 8) (error "can't emit 64 bit literals")
                     (begin))
   (set ((size-to-type ?size) ?ptr) ?first)
-  (add ?ptr ?size)
+  (add ?ptr (size-to-offset ?size))
   (code-emit-1 ?ptr (?size . ?rest) ?repl))
 
 (def (code-emit-1 ?ptr (?size ?first) (?repl))
   (set ((size-to-type ?size) ?ptr) ?repl)
-  (add ?ptr ?size))
+  (add ?ptr (size-to-offset ?size)))
 
 (def (code-emit-1 ?ptr (begin ?first . ?rest) ?repl)
   (code-emit-1 ?ptr ?first ())
@@ -700,6 +706,15 @@
   (cmp ?res ?max)
   (jae syntax))
 
+(def (get-first-and-rest ?exp ?first ?rest)
+  (cmp ?exp 0)
+  (je syntax)
+  (set ?first (exp-type ?exp))
+  (cmp ?first exp-type-pair)
+  (jne syntax)
+  (set ?first (exp-first ?exp))
+  (set ?rest (exp-rest ?exp)))
+
 (code comp-exprs
   (cmp l1 0)
   (je syntax)
@@ -721,6 +736,31 @@
   (call comp-expr)
   (pop l1)
   (add l1 1)
+  (ret))
+
+(code comp-if
+  (push x0)
+  (push x1)
+  (set x0 l1)
+  (get-first-and-rest x0 l1 x0)
+  (call comp-expr)
+  (code-emit l0 (cmp l0 0))
+  (code-emit l0 (je 0x1234))
+  (set x1 l0)
+  (get-first-and-rest x0 l1 x0)
+  (call comp-expr)
+  (code-emit l0 (jmp 0x1234))
+  (set l1 l0)
+  (sub l1 x1)
+  (set (u32 x1 -4) l1)
+  (set x1 l0)
+  (get-first-and-rest x0 l1 x0)
+  (call comp-expr)
+  (set l1 l0)
+  (sub l1 x1)
+  (set (u32 x1 -4) l1)
+  (pop x1)
+  (pop x0)
   (ret))
 
 (code comp-unop-table
@@ -803,7 +843,7 @@
   (8 syntax)     ; 0 begin
   (8 syntax)     ; 1 label
   (8 syntax)     ; 2 goto
-  (8 syntax)     ; 3 if
+  (8 comp-if)    ; 3
   (8 comp-unop)  ; 4
   (8 comp-polop) ; 5
   (8 syntax)     ; 6 var
