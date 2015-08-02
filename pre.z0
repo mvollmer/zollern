@@ -153,6 +153,9 @@
 (def (inst-rm ?w ?op ?reg ?type (?type2 ?base ?offset2) ?offset1)
   (inst-rm ?w ?op ?reg ?type ?base (+ ?offset2 ?offset1)))
 
+(def (inst-rm ?w ?op ?reg ?type ?addr)
+  (inst-rm.pcrel ?w ?op ?reg ?addr))
+
 (def (inst-rm ?w ?op ?reg ?type (reg ?base))
   (inst-rm ?w ?op ?reg ?type (reg ?base) 0))
 
@@ -208,6 +211,11 @@
          (1 (mod/rm 2 ?reg 4)
             (sib (log2 ?scale) ?index ?base))
          (4 ?offset))))
+
+(def (inst-rm.pcrel ?w ?op ?reg ?addr)
+  (rex-op (rex ?w (>> ?reg 3) 0 0) ?op)
+  (1 (mod/rm 0 ?reg 5))
+  (-4 ?addr))
 
 ;; Instructions with one operand in a register, and the other as an
 ;; immediate
@@ -305,6 +313,9 @@
   (u16 0 0x66 0x89)    (s16 0 0x66 0x89)
   (u32 0 0x89)         (s32 0 0x89)
   (u64 1 0x89)         (s64 1 0x89))
+
+(def (let (reg ?reg) ?addr)
+  (inst-rm.pcrel 1 (1 0x8d) ?reg ?addr))
 
 ;; Addition
 
