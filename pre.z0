@@ -273,12 +273,12 @@
 ;; Setting registers
 
 (def (set (reg ?dst) ?val)
-  (sel (! (is? s32 ?val))
+  (sel (is? s32 ?val)
+       (begin
+         (inst-ri32 1 0 (1 0xC7) ?dst ?val))
        (begin
          (1 (rex 1 0 0 (>> ?dst 3)) (+ 0xb8 (& ?dst 7)))
-         (8 ?val))
-       (begin
-         (inst-ri32 1 0 (1 0xC7) ?dst ?val))))
+         (8 ?val))))
 
 (def (set (u8 . ?addr) ?val)
   (inst-rm 0 (1 0xC6) 0 u8 . ?addr)

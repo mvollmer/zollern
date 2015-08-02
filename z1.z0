@@ -40,7 +40,7 @@
   (pop x1)
   (ret)
 .err
-  (set l0 .message)
+  (let l0 .message)
   (jmp abort)
 .message
   (1 "Can't get memory\n" 0))
@@ -55,10 +55,8 @@
   (set l0 l2)
   (ret)
 .oom
-  (set l0 .message)
-  (call print)
-  (set l0 13)
-  (jmp sys-exit)
+  (let l0 .message)
+  (jmp abort)
 .message
   (1 "Out of pool memory\n" 0))
 
@@ -119,12 +117,10 @@
   (pop x0)
   (ret)
 .err
-  (set l0 .message)
+  (let l0 .message)
   (jmp abort)
 .message
   (1 "Can't read file\n" 0))
-
-(code file-close)
 
 ;; Tokens
 
@@ -232,7 +228,7 @@
   (set (fb-ptr l0) l2)
   (ret)
 .eof-in-string
-  (set l0 .eof-in-string-message)
+  (let l0 .eof-in-string-message)
   (jmp abort)
 .eof-in-string-message
   (1 "Unexpected end of file in string\n" 0))
@@ -431,8 +427,8 @@
   (ret))
 
 (code exp-read
-  (set l1 token)
-  (set l2 token-buf)
+  (let l1 token)
+  (let l2 token-buf)
   (set (tk-buf l1) l2)
   (push x0)
   (push x1)
@@ -464,7 +460,7 @@
   (set x2 l0)
   (jmp .list-loop)
 .eof-in-list
-  (set l0 .eof-in-list-message)
+  (let l0 .eof-in-list-message)
   (jmp abort)
 .eof-in-list-message
   (1 "Unexpected end of file in list\n" 0)
@@ -522,7 +518,7 @@
 (code exp-write
   (cmp l0 0)
   (jne .not-empty-list)
-  (set l0 .empty-list-string)
+  (let l0 .empty-list-string)
   (jmp print)
 .empty-list-string
   (1 "()" 0)
@@ -533,11 +529,11 @@
 .list
   (push x0)
   (set x0 l0)
-  (set l0 .open-paren-string)
+  (let l0 .open-paren-string)
   (call print)
   (jmp .list-loop-no-space)
 .list-loop
-  (set l0 .space-string)
+  (let l0 .space-string)
   (call print)
 .list-loop-no-space
   (set l0 (exp-first x0))
@@ -548,13 +544,13 @@
   (set l0 (exp-type x0))
   (cmp l0 exp-type-pair)
   (je .list-loop)
-  (set l0 .improper-end-string)
+  (let l0 .improper-end-string)
   (call print)
   (set l0 x0)
   (call exp-write)
 .list-done
   (pop x0)
-  (set l0 .close-paren-string)
+  (let l0 .close-paren-string)
   (jmp print)
 .open-paren-string
   (1 "(" 0)
@@ -570,11 +566,11 @@
   (add l0 (sizeof exp-string))
   (push x0)
   (set x0 l0)
-  (set l0 .double-quote-string)
+  (let l0 .double-quote-string)
   (call print)
   (set l0 x0)
   (call print)
-  (set l0 .double-quote-string)
+  (let l0 .double-quote-string)
   (call print)
   (pop x0)
   (ret)
@@ -594,7 +590,7 @@
   (jge .positive)
   (neg l0)
 .positive
-  (set l1 (+ exp-write-strbuf 19))
+  (let l1 (+ exp-write-strbuf 19))
   (set l2 0)
   (set l3 10)
   (set (u8 l1) l2)
@@ -615,7 +611,7 @@
   (set l0 l1)
   (jmp print)
 .not-number
-  (set l0 .unknown-string)
+  (let l0 .unknown-string)
   (jmp print)
 .unknown-string
   (1 "<unknown>" 0))
@@ -627,19 +623,19 @@
   codebuf.end)
 
 (code code-init
-  (set l0 codebuf)
+  (let l0 codebuf)
   (ret))
 
 (code code-fini
-  (set l1 codebuf.end)
+  (let l1 codebuf.end)
   (cmp l0 l1)
   (jl .ok)
-  (set l0 .too-big-string)
+  (let l0 .too-big-string)
   (jmp abort)
 .too-big-string
   (1 "too much code!" 0)
 .ok
-  (set l0 codebuf)
+  (let l0 codebuf)
   (ret))
 
 (def (size-to-type  1) u8)
@@ -684,7 +680,7 @@
 (code syntax
   (set l0 l1)
   (call exp-write)
-  (set l0 .syntax-error-string)
+  (let l0 .syntax-error-string)
   (jmp abort)
 .syntax-error-string
   (1 "\nsyntax error\n" 0))
@@ -883,7 +879,7 @@
   (call exp-init)
   (set x1 fbuf)
   (set l0 x1)
-  (set l1 .boot-filename)
+  (let l1 .boot-filename)
   (call file-open)
   (call code-init)
   (set x0 l0)
