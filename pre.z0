@@ -317,8 +317,8 @@
   (u32 0 0x89)         (s32 0 0x89)
   (u64 1 0x89)         (s64 1 0x89))
 
-(def (let (reg ?reg) ?addr)
-  (inst-rm.pcrel 1 (1 0x8d) ?reg ?addr))
+(def (let (reg ?reg) (?type . ?addr))
+  (inst-rm 1 (1 0x8d) ?reg ?type . ?addr))
 
 ;; Addition
 

@@ -114,7 +114,7 @@
 
 (code newline
   (set l0 1)
-  (let l1 newline-string)
+  (let l1 (u8 newline-string))
   (set l2 1)
   (jmp sys-write))
 
