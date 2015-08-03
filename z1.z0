@@ -233,16 +233,22 @@
 .eof-in-string-message
   (1 "Unexpected end of file in string\n" 0))
 
+;;; Compiler context
+
+;; All functions that use a compiler context expect it in x5.
+
+(defstruct compiler-context
+  (mem-pool cc-pool)
+  (u64 cc-symbols)
+  (u8 cc-tokenbuf 1024)
+  (token-struct cc-token)
+  (u64 cc-codebuf)
+  (u64 cc-codebuf-end))
+
 ;; Expressions
 
 (def EXP-POOL-SIZE (* 10 1024 1024))
 (def EXP-HASH-SIZE 1023)
-
-(data
-  exp-pool (sizeof mem-pool)
-  exp-symbols (sizeof u64)
-  exp-token-buf 1024
-  exp-token (sizeof token-struct))
 
 (def exp-type-pair   0)
 (def exp-type-symbol 1)
@@ -269,19 +275,18 @@
   (s64 exp-num-val))
 
 (code exp-init
-  (set l0 exp-pool)
+  (let l0 (cc-pool x5))
   (set l1 EXP-POOL-SIZE)
   (call mem-pool-init)
   (jmp exp-reset))
 
 (code exp-reset
-  (set l0 exp-pool)
+  (let l0 (cc-pool x5))
   (set l1 (mp-start l0))
   (set (mp-next l1) l0)
   (set l1 (* EXP-HASH-SIZE (sizeof u64)))
   (call mem-pool-alloc)
-  (set l1 exp-symbols)
-  (set (u64 l1) l0)
+  (set (cc-symbols x5) l0)
   (set l1 EXP-HASH-SIZE)
   (set l2 0)
   (jmp .test)
@@ -299,7 +304,7 @@
   (push x1)
   (set x0 l0)
   (set x1 l1)
-  (set l0 exp-pool)
+  (let l0 (cc-pool x5))
   (set l1 (sizeof exp-pair))
   (call mem-pool-alloc)
   (set l1 exp-type-pair)
@@ -313,7 +318,7 @@
 (code exp-make-number
   (push x0)
   (set x0 l0)
-  (set l0 exp-pool)
+  (let l0 (cc-pool x5))
   (set l1 (sizeof exp-number))
   (call mem-pool-alloc)
   (set l1 exp-type-number)
@@ -334,7 +339,7 @@
   (add l0 1)
   (add l0 x1)
   (set l1 l0)
-  (set l0 exp-pool)
+  (let l0 (cc-pool x5))
   (call mem-pool-alloc)
   (set x2 l0)
   (add l0 x1)
@@ -376,8 +381,7 @@
   (set l1 EXP-HASH-SIZE)
   (sdiv l1)
   (set x1 l2)
-  (set l0 exp-symbols)
-  (set l0 (u64 l0))
+  (set l0 (cc-symbols x5))
   (set x2 (u64 l0 x1))
   (jmp .find-test)
 .find-loop
@@ -402,8 +406,7 @@
   (call exp-make-with-string)
   (set l1 exp-type-symbol)
   (set (exp-type l0) l1)
-  (set l1 exp-symbols)
-  (set l1 (u64 l1))
+  (set l1 (cc-symbols x5))
   (set l2 (u64 l1 x1))
   (set (exp-sym-link l0) l2)
   (set (u64 l1 x1) l0)
@@ -427,8 +430,8 @@
   (ret))
 
 (code exp-read
-  (let l1 (token-struct token))
-  (let l2 (u8 token-buf))
+  (let l1 (cc-token x5))
+  (let l2 (cc-tokenbuf x5))
   (set (tk-buf l1) l2)
   (push x0)
   (push x1)
@@ -620,22 +623,13 @@
 
 (data
   codebuf (* 1024 1024)
-  codebuf.end)
+  codebuf-end)
 
 (code code-init
   (let l0 (u8 codebuf))
-  (ret))
-
-(code code-fini
-  (let l1 (u8 codebuf.end))
-  (cmp l0 l1)
-  (jl .ok)
-  (let l0 (u8 .too-big-string))
-  (jmp abort)
-.too-big-string
-  (1 "too much code!" 0)
-.ok
-  (let l0 (u8 codebuf))
+  (set (cc-codebuf x5) l0)
+  (let l1 (u8 (- codebuf-end 100)))
+  (set (cc-codebuf-end x5) l1)
   (ret))
 
 (def (size-to-type  1) u8)
@@ -674,6 +668,19 @@
 
 (def (code-emit-1 ?ptr (begin ?first) ?repl)
   (code-emit-1 ?ptr ?first ?repl))
+
+(def (code-check ?ptr)
+  (push l1)
+  (set l1 (cc-codebuf-end x5))
+  (cmp ?ptr l1)
+  (jae too-much-code)
+  (pop l1))
+
+(code too-much-code
+  (let l0 (u8 .too-big-string))
+  (jmp abort)
+.too-big-string
+  (1 "too much code!" 0))
 
 ;; Compilation
 
@@ -864,6 +871,7 @@
   (set l1 (exp-rest l1))
   (set l3 comp-expr-table)
   (set l3 (u64 l3 l2))
+  (code-check l0)
   (jmp l3)
 .not-list
   (jmp syntax))
@@ -872,10 +880,10 @@
 
 (data
   fbuf (sizeof file-buffer)
-  token-buf 1024
-  token (sizeof token-struct))
+  cc (sizeof compiler-context))
 
 (code main
+  (let x5 (compiler-context cc))
   (call exp-init)
   (set x1 fbuf)
   (set l0 x1)
@@ -889,8 +897,8 @@
   (set l0 x0)
   (call comp-expr)
   (code-emit l0 (ret))
-  (call code-fini)
-  (call codebuf)
+  (set l0 (cc-codebuf x5))
+  (call l0)
   (jmp sys-exit)
 .boot-filename
   (1 "boot.z1" 0))
