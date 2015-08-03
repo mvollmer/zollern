@@ -98,9 +98,12 @@
   (def (sizeof ?name) ?off))
 
 (def (defstruct-at ?name ?off (?type ?field) . ?rest)
+  (defstruct-at ?name ?off (?type ?field 1) . ?rest))
+
+(def (defstruct-at ?name ?off (?type ?field ?length) . ?rest)
   (begin
     (def (?field ??ptr) (?type ??ptr ?off))
-    (defstruct-at ?name (+ ?off (sizeof ?type)) . ?rest)))
+    (defstruct-at ?name (+ ?off (* (sizeof ?type) ?length)) . ?rest)))
 
 (def (defstruct ?name . ?rest)
   (defstruct-at ?name 0 . ?rest))
