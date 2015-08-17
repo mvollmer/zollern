@@ -126,7 +126,10 @@
 
 (defstruct token-struct
   (u64 tk-buf)
-  (u8  tk-kind))
+  (u8  tk-kind)
+  (u8  tk-unused-1)
+  (u8  tk-unused-2)
+  (u8  tk-unused-3))
 
 (def tk-kind-eof    0)
 (def tk-kind-open   1)
@@ -240,10 +243,11 @@
 (defstruct compiler-context
   (mem-pool cc-pool)
   (u64 cc-symbols)
-  (u8 cc-tokenbuf 1024)
   (token-struct cc-token)
   (u64 cc-codebuf)
-  (u64 cc-codebuf-end))
+  (u64 cc-codebuf-end)
+  (u32 cc-stackoff)
+  (u8 cc-tokenbuf 1024))
 
 ;; Expressions
 
@@ -731,6 +735,8 @@
   (je .done)
   (call comp-exprs)
   (code-emit l0 (push l0))
+  (set l2 8)
+  (add (cc-stackoff x5) l2)
   (set l2 l1)
 .done
   (pop l1)
@@ -812,6 +818,9 @@
   (set x1 l1)
   (jmp .test)
 .loop
+  (code-emit l0 (pop l1))
+  (set l2 -8)
+  (add (cc-stackoff x5) l2)
   (call x0)
   (sub x1 1)
 .test
@@ -822,22 +831,18 @@
   (ret))
 
 (code comp-polop-add
-  (code-emit l0 (pop l1))
   (code-emit l0 (add l0 l1))
   (ret))
 
 (code comp-polop-sub
-  (code-emit l0 (pop l1))
   (code-emit l0 (sub l0 l1))
   (ret))
 
 (code comp-polop-mul
-  (code-emit l0 (pop l1))
   (code-emit l0 (mul l0 l1))
   (ret))
 
 (code comp-polop-div
-  (code-emit l0 (pop l1))
   (code-emit l0 (sign-extend))
   (code-emit l0 (sdiv l1))
   (ret))
