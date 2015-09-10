@@ -273,52 +273,144 @@
          (! (is? s32 ??val))   (error)
                                (inst-ri32 ?w32 ?x32 (1 . ?op32) ??dst ??val))))
 
+;; Defining instructions, second try
+;;
+;; Use:
+;;
+;; (def-inst set
+;;   ((reg reg) (w 1) (op ...))
+;;   ((reg u8)  (w 0) (op ...)))
+;;
+;; Because of how macro expansion works, immediates must come first.
+
+(def (def-inst2 ?name . ?rest)
+  (def-inst-0 ?name . ?rest))
+
+;; Immediates
+
+(def (inst2-ri ?size ?dst ?val (w ?w) (x ?x) (op . ?op))
+  (rex-op (rex ?w (>> ?x 3) 0 (>> ?dst 3)) (1 . ?op))
+  (1 (mod/rm 3 ?x ?dst))
+  (?size ?val))
+
+(def (inst2-ri ?size ?dst ?val (w ?w) (op/dst ?op))
+  (1 (rex 1 0 0 (>> ?dst 3)) (+ ?op (& ?dst 7)))
+  (?size ?val))
+
+(def (def-inst-0 ?name . ?rest)
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-0 ?name
+       ((?type i8) . ?op)
+       . ?rest)
+  (def (?name (?type . ??addr) ??val)
+       (inst2-rm ?type 0 ??addr . ?op)
+       (1 ??val))
+  (def-inst-0 ?name . ?rest))
+
+(def (def-inst-0 ?name
+       ((?type i32) . ?op)
+       . ?rest)
+  (def (?name (?type . ??addr) ??val)
+       (inst2-rm ?type 0 ??addr . ?op)
+       (4 ??val))
+  (def-inst-0 ?name . ?rest))
+
+(def (def-inst-0 ?name
+       ((reg i8) . ?op8)
+       ((reg i32) . ?op32)
+       . ?rest)
+  (def (?name (reg ??dst) ??val)
+       (sel (is? s8  ??val) (inst2-ri 1 ??dst ??val . ?op8)
+            (is? s32 ??val) (inst2-ri 4 ??dst ??val . ?op32)))
+  (def-inst-0 ?name . ?rest))
+
+(def (def-inst-0 ?name
+       ((reg i32) . ?op32)
+       . ?rest)
+  (def (?name (reg ??dst) ??val)
+       (inst2-ri 4 ??dst ??val . ?op32))
+  (def-inst-0 ?name . ?rest))
+
+(def (def-inst-0 ?name
+       ((reg i32) . ?op32)
+       ((reg i64) . ?op64)
+       . ?rest)
+  (def (?name (reg ??dst) ??val)
+       (sel (is? s32 ??val) (inst2-ri 4 ??dst ??val . ?op32)
+                            (inst2-ri 8 ??dst ??val . ?op64)))
+  (def-inst-0 ?name . ?rest))
+
+;; Rest
+
+(def (inst2-rr ?dst ?src (w ?w) (op . ?op))
+  (rex-op (rex ?w (>> ?src 3) 0 (>> ?dst 3)) (1 . ?op))
+  (1 (mod/rm 3 ?src ?dst)))
+
+(def (inst2-rm ?type ?reg ?addr (w ?w) (op . ?op))
+  (inst-rm ?w (1 . ?op) ?reg ?type . ?addr))
+
+(def (def-inst-1 ?name
+       ((reg ?type) . ?op)
+       . ?rest)
+  (def (?name (reg ??dst) (?type . ??addr))
+       (inst2-rm ?type ??dst ??addr . ?op))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
+       ((?type reg) . ?op)
+       . ?rest)
+  (def (?name (?type . ??addr) (reg ??src))
+       (inst2-rm ?type ??src ??addr . ?op))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
+       ((reg mem) . ?op)
+       . ?rest)
+  (def (?name (reg ??dst) (??type . ??addr))
+       (inst2-rm ??type ??dst ??addr . ?op))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
+       ((reg reg) . ?op)
+       . ?rest)
+  (def (?name (reg ??dst) (reg ??src))
+       (inst2-rr ??dst ??src . ?op))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name))
+
 ;; Setting registers
 
-(def (set (reg ?dst) ?val)
-  (sel (is? s32 ?val)
-       (begin
-         (inst-ri32 1 0 (1 0xC7) ?dst ?val))
-       (begin
-         (1 (rex 1 0 0 (>> ?dst 3)) (+ 0xb8 (& ?dst 7)))
-         (8 ?val))))
+(def-inst2 set
+  ((reg i32)   (w 1) (x 0) (op     0xC7))
+  ((reg i64)   (w 1)       (op/dst 0xB8))
+  (( u8  i8)   (w 0)       (op     0xC6))
+  ((u32 i32)   (w 0)       (op     0xC7))
+  ((u64 i32)   (w 1)       (op     0xC7))
+  (( s8  i8)   (w 0)       (op     0xC6))
+  ((s32 i32)   (w 0)       (op     0xC7))
+  ((s64 i32)   (w 1)       (op     0xC7))
+  ((reg reg)   (w 1)       (op     0x89))
+  ((reg  u8)   (w 0)       (op     0x0F 0xB6))
+  ((reg u16)   (w 0)       (op     0x0F 0xB7))
+  ((reg u32)   (w 0)       (op     0x8B))
+  ((reg u64)   (w 1)       (op     0x8B))
+  ((reg  s8)   (w 1)       (op     0x0F 0xBE))
+  ((reg s16)   (w 1)       (op     0x0F 0xBf))
+  ((reg s32)   (w 1)       (op     0x63))
+  ((reg s64)   (w 1)       (op     0x8B))
+  (( u8 reg)   (w 0)       (op     0x40 0x88))
+  ((u16 reg)   (w 0)       (op     0x66 0x89))
+  ((u32 reg)   (w 0)       (op     0x89))
+  ((u64 reg)   (w 1)       (op     0x89))
+  (( s8 reg)   (w 0)       (op     0x40 0x88))
+  ((s16 reg)   (w 0)       (op     0x66 0x89))
+  ((s32 reg)   (w 0)       (op     0x89))
+  ((s64 reg)   (w 1)       (op     0x89)))
 
-(def (set (u8 . ?addr) ?val)
-  (inst-rm 0 (1 0xC6) 0 u8 . ?addr)
-  (1 ?val))
-
-(def (set (u32 . ?addr) ?val)
-  (inst-rm 0 (1 0xC7) 0 u32 . ?addr)
-  (4 ?val))
-
-(def (set (u64 . ?addr) ?val)
-  (inst-rm 1 (1 0xC7) 0 u64 . ?addr)
-  (4 ?val))
-
-(def (set (s8 . ?addr) ?val)
-  (set (u8 . ?addr) ?val))
-
-(def (set (s32 . ?addr) ?val)
-  (set (u32 . ?addr) ?val))
-
-(def (set (s64 . ?addr) ?val)
-  (set (u64 . ?addr) ?val))
-
-(def-inst (set reg _)
-  (reg 1 0x89)
-  (u8  0 0x0F 0xB6)    (s8  1 0x0F 0xBE)
-  (u16 0 0x0F 0xB7)    (s16 1 0x0F 0xBF)
-  (u32 0 0x8B)         (s32 1 0x63)
-  (u64 1 0x8B)         (s64 1 0x8B))
-
-(def-inst (set _ reg)
-  (u8  0 0x40 0x88)    (s8  0 0x40 0x88)
-  (u16 0 0x66 0x89)    (s16 0 0x66 0x89)
-  (u32 0 0x89)         (s32 0 0x89)
-  (u64 1 0x89)         (s64 1 0x89))
-
-(def (let (reg ?reg) (?type . ?addr))
-  (inst-rm 1 (1 0x8d) ?reg ?type . ?addr))
+(def-inst2 let
+  ((reg mem)   (w 1) (op 0x8D)))
 
 ;; Addition
 
