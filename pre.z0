@@ -293,6 +293,9 @@
   (1 (mod/rm 3 ?x ?dst))
   (?size ?val))
 
+(def (inst2-ri ?size ?dst ?val (w ?w) (x dst) (op . ?op))
+  (inst2-ri ?size ?dst ?val (w ?w) (x ?dst) (op . ?op)))
+
 (def (inst2-ri ?size ?dst ?val (w ?w) (op/dst ?op))
   (1 (rex 1 0 0 (>> ?dst 3)) (+ ?op (& ?dst 7)))
   (?size ?val))
@@ -347,6 +350,9 @@
   (rex-op (rex ?w (>> ?src 3) 0 (>> ?dst 3)) (1 . ?op))
   (1 (mod/rm 3 ?src ?dst)))
 
+(def (inst2-rr ?dst ?src (w ?w) (op . ?op) (regs-reversed))
+  (inst2-rr ?src ?dst (w ?w) (op . ?op)))
+
 (def (inst2-rm ?type ?reg ?addr (w ?w) (op . ?op))
   (inst-rm ?w (1 . ?op) ?reg ?type . ?addr))
 
@@ -376,6 +382,21 @@
        . ?rest)
   (def (?name (reg ??dst) (reg ??src))
        (inst2-rr ??dst ??src . ?op))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
+       ((reg)   (w ?w) (x ?x) (op . ?op))
+       . ?rest)
+  (def (?name (reg ??reg))
+       (rex-op (rex ?w 0 0 (>> ??reg 3)) (1 . ?op))
+       (1 (mod/rm 3 ?x ??reg)))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
+       (()   (w ?w) (op . ?op))
+       . ?rest)
+  (def (?name)
+       (rex-op (rex ?w 0 0 0) (1 . ?op)))
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name))
@@ -414,62 +435,52 @@
 
 ;; Addition
 
-(def-inst (add reg imm)
-  (s8  1 0 0x83)
-  (s32 1 0 0x81))
-
-(def-inst (add reg _)
-  (reg 1 0x01))
-
-(def-inst (add _ reg)
-  (u8 0 0x00) (s8 0 0x00)
-  (u16 0 0x66 0x01) (s16 0 0x66 0x01)
-  (u32 0 0x01) (s32 0 0x01)
-  (u64 1 0x01) (s64 1 0x01))
+(def-inst2 add
+  ((reg  i8)   (w 1) (x 0) (op 0x83))
+  ((reg i32)   (w 1) (x 0) (op 0x81))
+  ((reg reg)   (w 1)       (op 0x01))
+  (( u8 reg)   (w 0)       (op 0x00))
+  ((u16 reg)   (w 0)       (op 0x66 0x01))
+  ((u32 reg)   (w 0)       (op 0x01))
+  ((u64 reg)   (w 1)       (op 0x01))
+  (( s8 reg)   (w 0)       (op 0x00))
+  ((s16 reg)   (w 0)       (op 0x66 0x01))
+  ((s32 reg)   (w 0)       (op 0x01))
+  ((s64 reg)   (w 1)       (op 0x01)))
 
 ;; Subtraction
 
-(def-inst (sub reg imm)
-  (s8  1 5 0x83)
-  (s32 1 5 0x81))
-
-(def-inst (sub reg _)
-  (reg 1 0x29))
+(def-inst2 sub
+  ((reg  i8)   (w 1) (x 5) (op 0x83))
+  ((reg i32)   (w 1) (x 5) (op 0x81))
+  ((reg reg)   (w 1)       (op 0x29)))
 
 ;; Multiplication
 
-(def (mul (reg ?dst) ?val)
-  (sel (is? s8 ?val)        (inst-ri8 1 ?dst (1 0x6B) ?dst ?val)
-       (! (is? s32 ??val))  (error)
-                            (inst-ri32 1 ?dst (1 0x69) ?dst ?val)))
+(def-inst2 mul
+  ((reg  i8)   (w 1) (x dst) (op 0x6B))
+  ((reg i32)   (w 1) (x dst) (op 0x69))
+  ((reg reg)   (w 1)         (op 0x0F 0xAF) (regs-reversed)))
 
-(def-inst (mul _ reg)
-  (reg 1 0x0F 0xAF))
+(def-inst2 neg
+  ((reg)       (w 1) (x 3)   (op 0xF7)))
 
-(def (umul (reg ?src))
-  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
-  (1 (mod/rm 3 4 ?src)))
+(def-inst2 umul
+  ((reg)       (w 1) (x 4)   (op 0xF7)))
 
-(def (smul (reg ?src))
-  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
-  (1 (mod/rm 3 5 ?src)))
-
-(def (neg (reg ?src))
-  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
-  (1 (mod/rm 3 3 ?src)))
+(def-inst2 smul
+  ((reg)       (w 1) (x 5)   (op 0xF7)))
 
 ;; Division
 
-(def (sign-extend)
-  (rex-op (rex 1 0 0 0) (1 0x99)))
+(def-inst2 sign-extend
+  (()          (w 1) (op 0x99)))
 
-(def (udiv (reg ?src))
-  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
-  (1 (mod/rm 3 6 ?src)))
+(def-inst2 udiv
+  ((reg)       (w 1) (x 6) (op 0xF7)))
 
-(def (sdiv (reg ?src))
-  (rex-op (rex 1 0 0 (>> ?src 3)) (1 0xF7))
-  (1 (mod/rm 3 7 ?src)))
+(def-inst2 sdiv
+  ((reg)       (w 1) (x 7) (op 0xF7)))
 
 ;; Bit twiddling
 
