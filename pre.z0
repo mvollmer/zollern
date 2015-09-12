@@ -613,24 +613,6 @@
 (def-inst2 ret
   (()            (w 0) (op 0xC3)))
 
-;; Local variables
-
-(def (locals-1 ?offset ((?name ?type) . ?rest))
-  (def ?name (?type x0 ?offset))
-  (locals-1 (+ ?offset (sizeof ?type)) ?rest))
-
-(def (locals-1 ?offset ())
-  (push x0)
-  (sub sp ?offset)
-  (set x0 sp))
-
-(def (locals ?vars)
-  (locals-1 0 ?vars))
-
-(def (end-locals)
-  (set sp x0)
-  (pop x0))
-
 ;; Init
 
 (code start
