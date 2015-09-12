@@ -296,7 +296,7 @@
 (def (inst2-ri ?size ?dst ?val (w ?w) (x dst) (op . ?op))
   (inst2-ri ?size ?dst ?val (w ?w) (x ?dst) (op . ?op)))
 
-(def (inst2-ri ?size ?dst ?val (w ?w) (op/dst ?op))
+(def (inst2-ri ?size ?dst ?val (w ?w) (op/reg ?op))
   (1 (rex 1 0 0 (>> ?dst 3)) (+ ?op (& ?dst 7)))
   (?size ?val))
 
@@ -400,6 +400,13 @@
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name
+       ((reg)   (w ?w) (op/reg ?op))
+       . ?rest)
+  (def (?name (reg ??reg))
+       (rex-op (rex ?w 0 0 (>> ??reg 3)) (1 (+ ?op (& ??reg 7)))))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
        ((reg (reg ?fixed))   (w ?w) (x ?x) (op . ?op))
        . ?rest)
   (def (?name (reg ??reg) (reg ?fixed))
@@ -420,7 +427,7 @@
 
 (def-inst2 set
   ((reg i32)   (w 1) (x 0) (op     0xC7))
-  ((reg i64)   (w 1)       (op/dst 0xB8))
+  ((reg i64)   (w 1)       (op/reg 0xB8))
   (( u8  i8)   (w 0)       (op     0xC6))
   ((u32 i32)   (w 0)       (op     0xC7))
   ((u64 i32)   (w 1)       (op     0xC7))
@@ -543,11 +550,11 @@
 
 ;; Stack
 
-(def (push (reg ?reg))
-  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 (<<< 10 5 ?reg 3))))
+(def-inst2 push
+  ((reg)         (w 0) (op/reg 0x50)))
 
-(def (pop (reg ?reg))
-  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 (<<< 11 5 ?reg 3))))
+(def-inst2 pop
+  ((reg)         (w 0) (op/reg 0x58)))
 
 ;; Jumping and calling
 
