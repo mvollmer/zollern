@@ -133,19 +133,7 @@
 (def (sib ?scale ?index ?base)
   (<<< ?scale 2 ?index 3 ?base 3))
 
-(def (log2 1) 0)
-(def (log2 2) 1)
-(def (log2 4) 2)
-(def (log2 8) 3)
-
-;; Instructions with both operands in a register.
-
-(def (inst-rr ?w ?op ?a ?b)
-  (rex-op (rex ?w (>> ?a 3) 0 (>> ?b 3)) ?op)
-  (1 (mod/rm 3 ?a ?b)))
-
-;; Instructions with one operand in a register and the other in
-;; memory.  This also defines the syntax for addresses:
+;; Syntax for addresses:
 ;;
 ;; (type (reg base))
 ;; (type (reg base) offset)
@@ -153,39 +141,63 @@
 ;; (type (reg base) scale (reg index))
 ;; (type (reg base) scale (reg index) offset)
 
-(def (inst-rm ?w ?op ?reg ?type (?type2 ?base ?offset2) ?offset1)
-  (inst-rm ?w ?op ?reg ?type ?base (+ ?offset2 ?offset1)))
+(def (log2 1) 0)
+(def (log2 2) 1)
+(def (log2 4) 2)
+(def (log2 8) 3)
 
-(def (inst-rm ?w ?op ?reg ?type ?addr)
-  (inst-rm.pcrel ?w ?op ?reg ?addr))
+(def (inst-rr ?dst ?src ((w ?w) (op . ?op)))
+  (rex-op (rex ?w (>> ?src 3) 0 (>> ?dst 3)) (1 . ?op))
+  (1 (mod/rm 3 ?src ?dst)))
 
-(def (inst-rm ?w ?op ?reg ?type (reg ?base))
-  (inst-rm ?w ?op ?reg ?type (reg ?base) 0))
+(def (inst-rr ?dst ?src ((w ?w) (op . ?op) (regs-reversed)))
+  (inst-rr ?src ?dst ((w ?w) (op . ?op))))
 
-(def (inst-rm ?w ?op ?reg ?type (reg ?base) ?offset)
-  (inst-rm ?w ?op ?reg ?type (reg ?base) 0 (reg 0) ?offset))
+(def (inst-ri ?size ?dst ?val ((w ?w) (x ?x) (op . ?op)))
+  (rex-op (rex ?w (>> ?x 3) 0 (>> ?dst 3)) (1 . ?op))
+  (1 (mod/rm 3 ?x ?dst))
+  (?size ?val))
 
-(def (inst-rm ?w ?op ?reg ?type (reg ?base) (reg ?index))
-  (inst-rm ?w ?op ?reg ?type (reg ?base) (sizeof ?type) (reg ?index) 0))
+(def (inst-ri ?size ?dst ?val ((w ?w) (x dst) (op . ?op)))
+  (inst-ri ?size ?dst ?val ((w ?w) (x ?dst) (op . ?op))))
 
-(def (inst-rm ?w ?op ?reg ?type (reg ?base) (reg ?index) ?offset)
-  (inst-rm ?w ?op ?reg ?type (reg ?base) (sizeof ?type) (reg ?index) ?offset))
+(def (inst-ri ?size ?dst ?val ((w ?w) (op/reg ?op)))
+  (1 (rex 1 0 0 (>> ?dst 3)) (+ ?op (& ?dst 7)))
+  (?size ?val))
 
-(def (inst-rm ?w ?op ?reg ?type (reg ?base) ?scale (reg ?index))
-  (inst-rm ?w ?op ?reg ?type (reg ?base) ?scale (reg ?index) 0))
+(def (inst-rm ?op ?reg ?type ((?type2 ?base ?offset2) ?offset1))
+  (inst-rm ?op ?reg ?type (?base (+ ?offset2 ?offset1))))
 
-(def (inst-rm ?w ?op ?reg ?type (reg ?base) ?scale (reg ?index) ?offset)
+(def (inst-rm ?op ?reg ?type (?addr))
+  (inst-rm.pcrel ?op ?reg ?addr))
+
+(def (inst-rm ?op ?reg ?type ((reg ?base)))
+  (inst-rm ?op ?reg ?type ((reg ?base) 0)))
+
+(def (inst-rm ?op ?reg ?type ((reg ?base) ?offset))
+  (inst-rm ?op ?reg ?type ((reg ?base) 0 (reg 0) ?offset)))
+
+(def (inst-rm ?op ?reg ?type ((reg ?base) (reg ?index)))
+  (inst-rm ?op ?reg ?type ((reg ?base) (sizeof ?type) (reg ?index) 0)))
+
+(def (inst-rm ?op ?reg ?type ((reg ?base) (reg ?index) ?offset))
+  (inst-rm ?op ?reg ?type ((reg ?base) (sizeof ?type) (reg ?index) ?offset)))
+
+(def (inst-rm ?op ?reg ?type ((reg ?base) ?scale (reg ?index)))
+  (inst-rm ?op ?reg ?type ((reg ?base) ?scale (reg ?index) 0)))
+
+(def (inst-rm ?op ?reg ?type ((reg ?base) ?scale (reg ?index) ?offset))
   (sel (== ?index 4) (error "sp can't be index")
                      (begin))
   (sel (== ?scale 0)
        (sel (== (& ?base 7) 4)
-            (inst-rm.rbiso ?w ?op ?reg ?base 4 1 ?offset)
-            (inst-rm.rbo ?w ?op ?reg ?base ?offset))
-       (inst-rm.rbiso ?w ?op ?reg ?base ?index ?scale ?offset)))
+            (inst-rm.rbiso ?op ?reg ?base 4 1 ?offset)
+            (inst-rm.rbo ?op ?reg ?base ?offset))
+       (inst-rm.rbiso ?op ?reg ?base ?index ?scale ?offset)))
 
-(def (inst-rm.rbo ?w ?op ?reg ?base ?offset)
+(def (inst-rm.rbo ((w ?w) (op . ?op)) ?reg ?base ?offset)
   (rex-op (rex ?w (>> ?reg 3) 0 (>> ?base 3))
-          ?op)
+          (1 . ?op))
   (sel (&& (== ?offset 0) (!= (& ?base 7) 5))
        (begin
          (1 (mod/rm 0 ?reg ?base)))
@@ -197,9 +209,9 @@
          (1 (mod/rm 2 ?reg ?base))
          (4 ?offset))))
 
-(def (inst-rm.rbiso ?w ?op ?reg ?base ?index ?scale ?offset)
+(def (inst-rm.rbiso ((w ?w) (op . ?op)) ?reg ?base ?index ?scale ?offset)
   (rex-op (rex ?w (>> ?reg 3) (>> ?index 3) (>> ?base 3))
-          ?op)
+          (1 . ?op))
   (sel (&& (== ?offset 0) (!= (& ?base 7) 5))
        (begin
          (1 (mod/rm 0 ?reg 4)
@@ -215,90 +227,19 @@
             (sib (log2 ?scale) ?index ?base))
          (4 ?offset))))
 
-(def (inst-rm.pcrel ?w ?op ?reg ?addr)
-  (rex-op (rex ?w (>> ?reg 3) 0 0) ?op)
+(def (inst-rm.pcrel ((w ?w) (op . ?op)) ?reg ?addr)
+  (rex-op (rex ?w (>> ?reg 3) 0 0) (1 . ?op))
   (1 (mod/rm 0 ?reg 5))
   (-4 ?addr))
 
-;; Instructions with one operand in a register, and the other as an
-;; immediate
-
-(def (inst-ri8 ?w ?x ?op ?reg ?val)
-  (rex-op (rex ?w (>> ?x 3) 0 (>> ?reg 3)) ?op)
-  (1 (mod/rm 3 ?x ?reg))
-  (1 ?val))
-
-(def (inst-ri32 ?w ?x ?op ?reg ?val)
-  (rex-op (rex ?w (>> ?x 3) 0 (>> ?reg 3)) ?op)
-  (1 (mod/rm 3 ?x ?reg))
-  (4 ?val))
-
-;; Convenience macros for defining instructions.
-
-(def (def-inst (?name . ?rest))
-  (begin))
-
-(def (def-inst (?name reg _) (?type ?w . ?op) . ?rest)
-  (begin
-    (def (?name (reg ??dst) (?type . ??addr))
-      (inst-rm ?w (1 . ?op) ??dst ?type . ??addr))
-    (def-inst (?name reg _) . ?rest)))
-
-(def (def-inst (?name reg _) (reg ?w . ?op) . ?rest)
-  (begin
-    (def (?name (reg ??dst) (reg ??src))
-      (inst-rr ?w (1 . ?op) ??src ??dst))
-    (def-inst (?name reg _) . ?rest)))
-
-(def (def-inst (?name _ reg) (?type ?w . ?op) . ?rest)
-  (begin
-    (def (?name  (?type . ??addr) (reg ??src))
-      (inst-rm ?w (1 . ?op) ??src ?type . ??addr))
-    (def-inst (?name _ reg) . ?rest)))
-
-(def (def-inst (?name _ reg) (reg ?w . ?op) . ?rest)
-  (begin
-    (def (?name (reg ??dst) (reg ??src))
-      (inst-rr ?w (1 . ?op) ??dst ??src))
-    (def-inst (?name reg _) . ?rest)))
-
-(def (def-inst (?name reg imm) (s32 ?w32 ?x32 . ?op32))
-  (def (?name (reg ??dst) ??val)
-    (sel (! (is? s32 ??val))   (error)
-                               (inst-ri32 ?w32 ?x32 (1 . ?op32) ??dst ??val))))
-
-(def (def-inst (?name reg imm) (s8 ?w8 ?x8 . ?op8) (s32 ?w32 ?x32 . ?op32))
-  (def (?name (reg ??dst) ??val)
-    (sel (is? s8 ??val)        (inst-ri8 ?w8 ?x8 (1 . ?op8) ??dst ??val)
-         (! (is? s32 ??val))   (error)
-                               (inst-ri32 ?w32 ?x32 (1 . ?op32) ??dst ??val))))
-
-;; Defining instructions, second try
-;;
-;; Use:
-;;
-;; (def-inst set
-;;   ((reg reg) (w 1) (op ...))
-;;   ((reg u8)  (w 0) (op ...)))
+;; Defining instructions
 ;;
 ;; Because of how macro expansion works, immediates must come first.
 
-(def (def-inst2 ?name . ?rest)
+(def (def-inst ?name . ?rest)
   (def-inst-0 ?name . ?rest))
 
 ;; Immediates
-
-(def (inst2-ri ?size ?dst ?val (w ?w) (x ?x) (op . ?op))
-  (rex-op (rex ?w (>> ?x 3) 0 (>> ?dst 3)) (1 . ?op))
-  (1 (mod/rm 3 ?x ?dst))
-  (?size ?val))
-
-(def (inst2-ri ?size ?dst ?val (w ?w) (x dst) (op . ?op))
-  (inst2-ri ?size ?dst ?val (w ?w) (x ?dst) (op . ?op)))
-
-(def (inst2-ri ?size ?dst ?val (w ?w) (op/reg ?op))
-  (1 (rex 1 0 0 (>> ?dst 3)) (+ ?op (& ?dst 7)))
-  (?size ?val))
 
 (def (def-inst-0 ?name . ?rest)
   (def-inst-1 ?name . ?rest))
@@ -307,7 +248,7 @@
        ((?type i8) . ?op)
        . ?rest)
   (def (?name (?type . ??addr) ??val)
-       (inst2-rm ?type 0 ??addr . ?op)
+       (inst-rm ?op 0 ?type ??addr)
        (1 ??val))
   (def-inst-0 ?name . ?rest))
 
@@ -315,7 +256,7 @@
        ((?type i32) . ?op)
        . ?rest)
   (def (?name (?type . ??addr) ??val)
-       (inst2-rm ?type 0 ??addr . ?op)
+       (inst-rm ?op 0 ?type ??addr)
        (4 ??val))
   (def-inst-0 ?name . ?rest))
 
@@ -323,7 +264,7 @@
        ((reg i8) . ?op8)
        . ?rest)
   (def (?name (reg ??dst) ??val)
-       (inst2-ri 1 ??dst ??val . ?op8))
+       (inst-ri 1 ??dst ??val ?op8))
   (def-inst-0 ?name . ?rest))
 
 (def (def-inst-0 ?name
@@ -331,15 +272,15 @@
        ((reg i32) . ?op32)
        . ?rest)
   (def (?name (reg ??dst) ??val)
-       (sel (is? s8  ??val) (inst2-ri 1 ??dst ??val . ?op8)
-            (is? s32 ??val) (inst2-ri 4 ??dst ??val . ?op32)))
+       (sel (is? s8  ??val) (inst-ri 1 ??dst ??val ?op8)
+            (is? s32 ??val) (inst-ri 4 ??dst ??val ?op32)))
   (def-inst-0 ?name . ?rest))
 
 (def (def-inst-0 ?name
        ((reg i32) . ?op32)
        . ?rest)
   (def (?name (reg ??dst) ??val)
-       (inst2-ri 4 ??dst ??val . ?op32))
+       (inst-ri 4 ??dst ??val ?op32))
   (def-inst-0 ?name . ?rest))
 
 (def (def-inst-0 ?name
@@ -347,48 +288,38 @@
        ((reg i64) . ?op64)
        . ?rest)
   (def (?name (reg ??dst) ??val)
-       (sel (is? s32 ??val) (inst2-ri 4 ??dst ??val . ?op32)
-                            (inst2-ri 8 ??dst ??val . ?op64)))
+       (sel (is? s32 ??val) (inst-ri 4 ??dst ??val ?op32)
+                            (inst-ri 8 ??dst ??val ?op64)))
   (def-inst-0 ?name . ?rest))
 
 ;; Rest
-
-(def (inst2-rr ?dst ?src (w ?w) (op . ?op))
-  (rex-op (rex ?w (>> ?src 3) 0 (>> ?dst 3)) (1 . ?op))
-  (1 (mod/rm 3 ?src ?dst)))
-
-(def (inst2-rr ?dst ?src (w ?w) (op . ?op) (regs-reversed))
-  (inst2-rr ?src ?dst (w ?w) (op . ?op)))
-
-(def (inst2-rm ?type ?reg ?addr (w ?w) (op . ?op))
-  (inst-rm ?w (1 . ?op) ?reg ?type . ?addr))
 
 (def (def-inst-1 ?name
        ((reg ?type) . ?op)
        . ?rest)
   (def (?name (reg ??dst) (?type . ??addr))
-       (inst2-rm ?type ??dst ??addr . ?op))
+       (inst-rm ?op ??dst ?type ??addr))
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name
        ((?type reg) . ?op)
        . ?rest)
   (def (?name (?type . ??addr) (reg ??src))
-       (inst2-rm ?type ??src ??addr . ?op))
+       (inst-rm ?op ??src ?type ??addr))
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name
        ((reg mem) . ?op)
        . ?rest)
   (def (?name (reg ??dst) (??type . ??addr))
-       (inst2-rm ??type ??dst ??addr . ?op))
+       (inst-rm ?op ??dst ??type ??addr))
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name
        ((reg reg) . ?op)
        . ?rest)
   (def (?name (reg ??dst) (reg ??src))
-       (inst2-rr ??dst ??src . ?op))
+       (inst-rr ??dst ??src ?op))
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name
@@ -439,7 +370,7 @@
 
 ;; Setting registers
 
-(def-inst2 set
+(def-inst set
   ((reg i32)   (w 1) (x 0) (op     0xC7))
   ((reg i64)   (w 1)       (op/reg 0xB8))
   (( u8  i8)   (w 0)       (op     0xC6))
@@ -466,12 +397,12 @@
   ((s32 reg)   (w 0)       (op     0x89))
   ((s64 reg)   (w 1)       (op     0x89)))
 
-(def-inst2 let
+(def-inst let
   ((reg mem)   (w 1) (op 0x8D)))
 
 ;; Addition
 
-(def-inst2 add
+(def-inst add
   ((reg  i8)   (w 1) (x 0) (op 0x83))
   ((reg i32)   (w 1) (x 0) (op 0x81))
   ((reg reg)   (w 1)       (op 0x01))
@@ -486,131 +417,131 @@
 
 ;; Subtraction
 
-(def-inst2 sub
+(def-inst sub
   ((reg  i8)   (w 1) (x 5) (op 0x83))
   ((reg i32)   (w 1) (x 5) (op 0x81))
   ((reg reg)   (w 1)       (op 0x29)))
 
 ;; Multiplication
 
-(def-inst2 mul
+(def-inst mul
   ((reg  i8)   (w 1) (x dst) (op 0x6B))
   ((reg i32)   (w 1) (x dst) (op 0x69))
   ((reg reg)   (w 1)         (op 0x0F 0xAF) (regs-reversed)))
 
-(def-inst2 neg
+(def-inst neg
   ((reg)       (w 1) (x 3)   (op 0xF7)))
 
-(def-inst2 umul
+(def-inst umul
   ((reg)       (w 1) (x 4)   (op 0xF7)))
 
-(def-inst2 smul
+(def-inst smul
   ((reg)       (w 1) (x 5)   (op 0xF7)))
 
 ;; Division
 
-(def-inst2 sign-extend
+(def-inst sign-extend
   (()          (w 1) (op 0x99)))
 
-(def-inst2 udiv
+(def-inst udiv
   ((reg)       (w 1) (x 6) (op 0xF7)))
 
-(def-inst2 sdiv
+(def-inst sdiv
   ((reg)       (w 1) (x 7) (op 0xF7)))
 
 ;; Bit twiddling
 
-(def-inst2 and
+(def-inst and
   ((reg  i8)   (w 1) (x 4) (op 0x83))
   ((reg i32)   (w 1) (x 4) (op 0x81))
   ((reg reg)   (w 1)       (op 0x21)))
 
-(def-inst2 or
+(def-inst or
   ((reg  i8)   (w 1) (x 1) (op 0x83))
   ((reg i32)   (w 1) (x 1) (op 0x81))
   ((reg reg)   (w 1)       (op 0x09)))
 
-(def-inst2 xor
+(def-inst xor
   ((reg  i8)   (w 1) (x 6) (op 0x83))
   ((reg i32)   (w 1) (x 6) (op 0x81))
   ((reg reg)   (w 1)       (op 0x31)))
 
-(def-inst2 not
+(def-inst not
   ((reg)       (w 1) (x 2) (op 0xF7)))
 
 ;; Shifting
 
-(def-inst2 shl
+(def-inst shl
   ((reg i8)      (w 1) (x 4) (op 0xC1))
   ((reg)         (w 1) (x 4) (op 0xD1))
   ((reg (reg 1)) (w 1) (x 4) (op 0xD3)))
 
-(def-inst2 shr
+(def-inst shr
   ((reg i8)      (w 1) (x 5) (op 0xC1))
   ((reg)         (w 1) (x 5) (op 0xD1))
   ((reg (reg 1)) (w 1) (x 5) (op 0xD3)))
 
-(def-inst2 sar
+(def-inst sar
   ((reg i8)      (w 1) (x 7) (op 0xC1))
   ((reg)         (w 1) (x 7) (op 0xD1))
   ((reg (reg 1)) (w 1) (x 7) (op 0xD3)))
 
 ;; Comparison
 
-(def-inst2 cmp
+(def-inst cmp
   ((reg  i8)     (w 1) (x 7) (op 0x83))
   ((reg i32)     (w 1) (x 7) (op 0x81))
   ((reg reg)     (w 1)       (op 0x39)))
 
 ;; Stack
 
-(def-inst2 push
+(def-inst push
   ((reg)         (w 0) (op/reg 0x50)))
 
-(def-inst2 pop
+(def-inst pop
   ((reg)         (w 0) (op/reg 0x58)))
 
 ;; Jumping and calling
 
-(def-inst2 jmp
+(def-inst jmp
   ((d32)         (op 0xE9))
   ((reg)         (w 0) (op/reg 0xFF 0xE0)))
 
-(def-inst2 je
+(def-inst je
   ((d32)         (op 0x0F 0x84)))
 
-(def-inst2 jne
+(def-inst jne
   ((d32)         (op 0x0F 0x85)))
 
-(def-inst2 jl
+(def-inst jl
   ((d32)         (op 0x0F 0x8C)))
 
-(def-inst2 jle
+(def-inst jle
   ((d32)         (op 0x0F 0x8E)))
 
-(def-inst2 jg
+(def-inst jg
   ((d32)         (op 0x0F 0x8F)))
 
-(def-inst2 jge
+(def-inst jge
   ((d32)         (op 0x0F 0x8D)))
 
-(def-inst2 ja
+(def-inst ja
   ((d32)         (op 0x0F 0x87)))
 
-(def-inst2 jae
+(def-inst jae
   ((d32)         (op 0x0F 0x83)))
 
-(def-inst2 jb
+(def-inst jb
   ((d32)         (op 0x0F 0x82)))
 
-(def-inst2 jbe
+(def-inst jbe
   ((d32)         (op 0x0F 0x86)))
 
-(def-inst2 call
+(def-inst call
   ((d32)         (op 0xE8))
   ((reg)         (w 0) (op/reg 0xFF 0xD0)))
 
-(def-inst2 ret
+(def-inst ret
   (()            (w 0) (op 0xC3)))
 
 ;; Init
