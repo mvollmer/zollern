@@ -536,12 +536,10 @@
 
 ;; Comparison
 
-(def-inst (cmp reg imm)
-  (s8  1 7 0x83)
-  (s32 1 7 0x81))
-
-(def-inst (cmp reg _)
-  (reg 1 0x39))
+(def-inst2 cmp
+  ((reg  i8)     (w 1) (x 7) (op 0x83))
+  ((reg i32)     (w 1) (x 7) (op 0x81))
+  ((reg reg)     (w 1)       (op 0x39)))
 
 ;; Stack
 
