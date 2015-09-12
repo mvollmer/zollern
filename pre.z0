@@ -407,11 +407,25 @@
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name
+       ((reg)   (w ?w) (op/reg ?op1 ?op2))
+       . ?rest)
+  (def (?name (reg ??reg))
+       (rex-op (rex ?w 0 0 (>> ??reg 3)) (1 ?op1 (+ ?op2 (& ??reg 7)))))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
        ((reg (reg ?fixed))   (w ?w) (x ?x) (op . ?op))
        . ?rest)
   (def (?name (reg ??reg) (reg ?fixed))
        (rex-op (rex ?w 0 0 (>> ??reg 3)) (1 . ?op))
        (1 (mod/rm 3 ?x ??reg)))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
+       ((d32)   (op . ?op))
+       . ?rest)
+  (def (?name ??val)
+       (1 . ?op) (-4 ??val))
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-1 ?name
@@ -558,50 +572,46 @@
 
 ;; Jumping and calling
 
-(def (jmp ?addr)
-  (1 0xe9) (-4 ?addr))
+(def-inst2 jmp
+  ((d32)         (op 0xE9))
+  ((reg)         (w 0) (op/reg 0xFF 0xE0)))
 
-(def (jmp (reg ?reg))
-  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 0xFF (<<< 28 5 ?reg 3))))
+(def-inst2 je
+  ((d32)         (op 0x0F 0x84)))
 
-(def (je ?addr)
-  (1 0x0F 0x84) (-4 ?addr))
+(def-inst2 jne
+  ((d32)         (op 0x0F 0x85)))
 
-(def (jne ?addr)
-  (1 0x0F 0x85) (-4 ?addr))
+(def-inst2 jl
+  ((d32)         (op 0x0F 0x8C)))
 
-(def (jl ?addr)
-  (1 0x0F 0x8C) (-4 ?addr))
+(def-inst2 jle
+  ((d32)         (op 0x0F 0x8E)))
 
-(def (jle ?addr)
-  (1 0x0F 0x8E) (-4 ?addr))
+(def-inst2 jg
+  ((d32)         (op 0x0F 0x8F)))
 
-(def (jg ?addr)
-  (1 0x0F 0x8F) (-4 ?addr))
+(def-inst2 jge
+  ((d32)         (op 0x0F 0x8D)))
 
-(def (jge ?addr)
-  (1 0x0F 0x8D) (-4 ?addr))
+(def-inst2 ja
+  ((d32)         (op 0x0F 0x87)))
 
-(def (ja ?addr)
-  (1 0x0F 0x87) (-4 ?addr))
+(def-inst2 jae
+  ((d32)         (op 0x0F 0x83)))
 
-(def (jae ?addr)
-  (1 0x0F 0x83) (-4 ?addr))
+(def-inst2 jb
+  ((d32)         (op 0x0F 0x82)))
 
-(def (jb ?addr)
-  (1 0x0F 0x82) (-4 ?addr))
+(def-inst2 jbe
+  ((d32)         (op 0x0F 0x86)))
 
-(def (jbe ?addr)
-  (1 0x0F 0x86) (-4 ?addr))
+(def-inst2 call
+  ((d32)         (op 0xE8))
+  ((reg)         (w 0) (op/reg 0xFF 0xD0)))
 
-(def (call ?addr)
-  (1 0xe8) (-4 ?addr))
-
-(def (call (reg ?reg))
-  (rex-op (rex 0 0 0 (>> ?reg 3)) (1 0xFF (<<< 26 5 ?reg 3))))
-
-(def (ret)
-  (1 0xc3))
+(def-inst2 ret
+  (()            (w 0) (op 0xC3)))
 
 ;; Local variables
 
