@@ -321,6 +321,13 @@
 
 (def (def-inst-0 ?name
        ((reg i8) . ?op8)
+       . ?rest)
+  (def (?name (reg ??dst) ??val)
+       (inst2-ri 1 ??dst ??val . ?op8))
+  (def-inst-0 ?name . ?rest))
+
+(def (def-inst-0 ?name
+       ((reg i8) . ?op8)
        ((reg i32) . ?op32)
        . ?rest)
   (def (?name (reg ??dst) ??val)
@@ -388,6 +395,14 @@
        ((reg)   (w ?w) (x ?x) (op . ?op))
        . ?rest)
   (def (?name (reg ??reg))
+       (rex-op (rex ?w 0 0 (>> ??reg 3)) (1 . ?op))
+       (1 (mod/rm 3 ?x ??reg)))
+  (def-inst-1 ?name . ?rest))
+
+(def (def-inst-1 ?name
+       ((reg (reg ?fixed))   (w ?w) (x ?x) (op . ?op))
+       . ?rest)
+  (def (?name (reg ??reg) (reg ?fixed))
        (rex-op (rex ?w 0 0 (>> ??reg 3)) (1 . ?op))
        (1 (mod/rm 3 ?x ??reg)))
   (def-inst-1 ?name . ?rest))
@@ -484,58 +499,40 @@
 
 ;; Bit twiddling
 
-(def-inst (and reg imm)
-  (s8  1 4 0x83)
-  (s32 1 4 0x81))
+(def-inst2 and
+  ((reg  i8)   (w 1) (x 4) (op 0x83))
+  ((reg i32)   (w 1) (x 4) (op 0x81))
+  ((reg reg)   (w 1)       (op 0x21)))
 
-(def-inst (and reg _)
-  (reg 1 0x21))
+(def-inst2 or
+  ((reg  i8)   (w 1) (x 1) (op 0x83))
+  ((reg i32)   (w 1) (x 1) (op 0x81))
+  ((reg reg)   (w 1)       (op 0x09)))
 
-(def-inst (or reg imm)
-  (s8  1 1 0x83)
-  (s32 1 1 0x81))
+(def-inst2 xor
+  ((reg  i8)   (w 1) (x 6) (op 0x83))
+  ((reg i32)   (w 1) (x 6) (op 0x81))
+  ((reg reg)   (w 1)       (op 0x31)))
 
-(def-inst (or reg _)
-  (reg 1 0x09))
-
-(def-inst (xor reg imm)
-  (s8  1 6 0x83)
-  (s32 1 6 0x81))
-
-(def-inst (xor reg _)
-  (reg 1 0x31))
-
-(def (not (reg ?r))
-  (inst-rr 1 (1 0xf7) 2 ?r))
+(def-inst2 not
+  ((reg)       (w 1) (x 2) (op 0xF7)))
 
 ;; Shifting
 
-(def (shl (reg ?r))
-  (inst-rr 1 (1 0xd1) 4 ?r))
+(def-inst2 shl
+  ((reg i8)      (w 1) (x 4) (op 0xC1))
+  ((reg)         (w 1) (x 4) (op 0xD1))
+  ((reg (reg 1)) (w 1) (x 4) (op 0xD3)))
 
-(def (shl (reg ?r) ?val)
-  (inst-rr 1 (1 0xc1) 4 ?r) (1 ?val))
+(def-inst2 shr
+  ((reg i8)      (w 1) (x 5) (op 0xC1))
+  ((reg)         (w 1) (x 5) (op 0xD1))
+  ((reg (reg 1)) (w 1) (x 5) (op 0xD3)))
 
-(def (shl (reg ?r) (reg 1))
-  (inst-rr 1 (1 0xd3) 4 ?r))
-
-(def (shr (reg ?r))
-  (inst-rr 1 (1 0xd1) 5 ?r))
-
-(def (shr (reg ?r) ?val)
-  (inst-rr 1 (1 0xc1) 5 ?r) (1 ?val))
-
-(def (shr (reg ?r) (reg 1))
-  (inst-rr 1 (1 0xd3) 5 ?r))
-
-(def (sar (reg ?r))
-  (inst-rr 1 (1 0xd1) 7 ?r))
-
-(def (sar (reg ?r) ?val)
-  (inst-rr 1 (1 0xc1) 7 ?r) (1 ?val))
-
-(def (sar (reg ?r) (reg 1))
-  (inst-rr 1 (1 0xd3) 7 ?r))
+(def-inst2 sar
+  ((reg i8)      (w 1) (x 7) (op 0xC1))
+  ((reg)         (w 1) (x 7) (op 0xD1))
+  ((reg (reg 1)) (w 1) (x 7) (op 0xD3)))
 
 ;; Comparison
 
