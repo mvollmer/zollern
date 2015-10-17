@@ -696,31 +696,29 @@
 .syntax-error-string
   (1 "\nsyntax error\n" 0))
 
-(def (get-first-as-number ?exp ?res ?max)
+(def (assert-type ?exp ?type ?error)
   (cmp ?exp 0)
-  (je syntax)
-  (set ?res (exp-type ?exp))
-  (cmp ?res exp-type-pair)
-  (jne syntax)
-  (set ?res (exp-first ?exp))
-  (cmp ?res 0)
-  (je syntax)
-  (set ?res (exp-type ?res))
-  (cmp ?res exp-type-number)
-  (jne syntax)
-  (set ?res (exp-first ?exp))
+  (je ?error)
+  (cmp (exp-type ?exp) ?type)
+  (jne ?error))
+
+(def (parse-exp ?ptr ?res)
+  (parse-exp ?ptr ?res syntax))
+
+(def (parse-exp ?ptr ?res ?error)
+  (assert-type ?ptr exp-type-pair ?error)
+  (set ?res (exp-first ?ptr))
+  (set ?ptr (exp-rest ?ptr)))
+
+(def (parse-num ?ptr ?res ?max)
+  (parse-num ?ptr ?res ?max syntax))
+
+(def (parse-num ?ptr ?res ?max ?error)
+  (parse-exp ?ptr ?res ?error)
+  (assert-type ?res exp-type-number ?error)
   (set ?res (exp-num-val ?res))
   (cmp ?res ?max)
-  (jae syntax))
-
-(def (get-first-and-rest ?exp ?first ?rest)
-  (cmp ?exp 0)
-  (je syntax)
-  (set ?first (exp-type ?exp))
-  (cmp ?first exp-type-pair)
-  (jne syntax)
-  (set ?first (exp-first ?exp))
-  (set ?rest (exp-rest ?exp)))
+  (jae ?error))
 
 (code comp-exprs
   (cmp l1 0)
@@ -751,19 +749,19 @@
   (push x0)
   (push x1)
   (set x0 l1)
-  (get-first-and-rest x0 l1 x0)
+  (parse-exp x0 l1)
   (call comp-expr)
   (code-emit l0 (cmp l0 0))
   (code-emit l0 (je 0x1234))
   (set x1 l0)
-  (get-first-and-rest x0 l1 x0)
+  (parse-exp x0 l1)
   (call comp-expr)
   (code-emit l0 (jmp 0x1234))
   (set l1 l0)
   (sub l1 x1)
   (set (u32 x1 -4) l1)
   (set x1 l0)
-  (get-first-and-rest x0 l1 x0)
+  (parse-exp x0 l1)
   (call comp-expr)
   (set l1 l0)
   (sub l1 x1)
@@ -780,9 +778,8 @@
 (def comp-unop-table-size (>> (- comp-unop-table-end comp-unop-table) 3))
 
 (code comp-unop
-  (get-first-as-number l1 l2 comp-unop-table-size)
-  (set l1 (exp-rest l1))
-  (set l1 (exp-first l1))
+  (parse-num l1 l2 comp-unop-table-size)
+  (parse-exp l1 l1)
   (push l2)
   (call comp-expr)
   (pop l2)
@@ -810,10 +807,9 @@
 (code comp-polop
   (push x0)
   (push x1)
-  (get-first-as-number l1 l2 comp-polop-table-size)
+  (parse-num l1 l2 comp-polop-table-size)
   (set x0 comp-polop-table)
   (set x0 (u64 x0 l2))
-  (set l1 (exp-rest l1))
   (call comp-exprs)
   (set x1 l1)
   (jmp .test)
@@ -863,23 +859,17 @@
 (code comp-expr
   ;; l0 - codeptr
   ;; l1 - exp
-  (cmp l1 0)
-  (je syntax)
-  (set l2 (exp-type l1))
-  (cmp l2 exp-type-number)
-  (jne .not-number)
+  (assert-type l1 exp-type-number .not-number)
   (set l2 (exp-num-val l1))
   (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l2)
   (ret)
 .not-number
-  (get-first-as-number l1 l2 comp-expr-table-size)
-  (set l1 (exp-rest l1))
+  (parse-num l1 l2 comp-expr-table-size)
   (set l3 comp-expr-table)
   (set l3 (u64 l3 l2))
   (code-check l0)
-  (jmp l3)
-.not-list
-  (jmp syntax))
+  (jmp l3))
+
 
 ;; Main
 
