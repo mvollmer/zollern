@@ -245,18 +245,18 @@
   (def-inst-1 ?name . ?rest))
 
 (def (def-inst-0 ?name
-       ((?type i8) . ?op)
+       ((?type i8) (w ?w) (x ?x) (op . ?op))
        . ?rest)
   (def (?name (?type . ??addr) ??val)
-       (inst-rm ?op 0 ?type ??addr)
+       (inst-rm ((w ?w) (op . ?op)) ?x ?type ??addr)
        (1 ??val))
   (def-inst-0 ?name . ?rest))
 
 (def (def-inst-0 ?name
-       ((?type i32) . ?op)
+       ((?type i32) (w ?w) (x ?x) (op . ?op))
        . ?rest)
   (def (?name (?type . ??addr) ??val)
-       (inst-rm ?op 0 ?type ??addr)
+       (inst-rm ((w ?w) (op . ?op)) ?x ?type ??addr)
        (4 ??val))
   (def-inst-0 ?name . ?rest))
 
@@ -373,12 +373,12 @@
 (def-inst set
   ((reg i32)   (w 1) (x 0) (op     0xC7))
   ((reg i64)   (w 1)       (op/reg 0xB8))
-  (( u8  i8)   (w 0)       (op     0xC6))
-  ((u32 i32)   (w 0)       (op     0xC7))
-  ((u64 i32)   (w 1)       (op     0xC7))
-  (( s8  i8)   (w 0)       (op     0xC6))
-  ((s32 i32)   (w 0)       (op     0xC7))
-  ((s64 i32)   (w 1)       (op     0xC7))
+  (( u8  i8)   (w 0) (x 0) (op     0xC6))
+  ((u32 i32)   (w 0) (x 0) (op     0xC7))
+  ((u64 i32)   (w 1) (x 0) (op     0xC7))
+  (( s8  i8)   (w 0) (x 0) (op     0xC6))
+  ((s32 i32)   (w 0) (x 0) (op     0xC7))
+  ((s64 i32)   (w 1) (x 0) (op     0xC7))
   ((reg reg)   (w 1)       (op     0x89))
   ((reg  u8)   (w 0)       (op     0x0F 0xB6))
   ((reg u16)   (w 0)       (op     0x0F 0xB7))
@@ -491,6 +491,13 @@
 (def-inst cmp
   ((reg  i8)     (w 1) (x 7) (op 0x83))
   ((reg i32)     (w 1) (x 7) (op 0x81))
+  ((u8   i8)     (w 0) (x 7) (op 0x80))
+  ((u32 i32)     (w 0) (x 7) (op 0x81))
+  ((u64 i32)     (w 1) (x 7) (op 0x81))
+  ((s8   i8)     (w 0) (x 7) (op 0x80))
+  ((s32 i32)     (w 0) (x 7) (op 0x81))
+  ((s64 i32)     (w 1) (x 7) (op 0x81))
+  ((s8   i8)     (w 0) (x 7) (op 0x80))
   ((reg reg)     (w 1)       (op 0x39)))
 
 ;; Stack
