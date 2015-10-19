@@ -702,6 +702,13 @@
   (cmp (exp-type ?exp) ?type)
   (jne ?error))
 
+(def (parse-eol ?ptr)
+  (parse-eol ?ptr syntax))
+
+(def (parse-eol ?ptr ?error)
+  (cmp ?ptr 0)
+  (jne ?error))
+
 (def (parse-exp ?ptr ?res)
   (parse-exp ?ptr ?res syntax))
 
@@ -719,6 +726,13 @@
   (set ?res (exp-num-val ?res))
   (cmp ?res ?max)
   (jae ?error))
+
+(def (parse-symbol ?ptr ?res)
+  (parse-symbol ?ptr ?res  syntax))
+
+(def (parse-symbol ?ptr ?res ?error)
+  (parse-exp ?ptr ?res)
+  (assert-type ?res exp-type-symbol ?error))
 
 (code comp-exprs
   (cmp l1 0)
@@ -870,6 +884,36 @@
   (code-check l0)
   (jmp l3))
 
+(code comp-top-def
+  (parse-exp l1 l2)
+  (parse-symbol l2 l3)
+.arg-next
+  (cmp l2 0)
+  (je .arg-done)
+  (parse-symbol l2 l3)
+  (jmp .arg-next)
+.arg-done
+  (parse-exp l1 l2)
+  (parse-eol l1)
+  (set l1 l2)
+  (call comp-expr)
+  (code-emit l0 (ret))
+  (ret))
+
+(code comp-top-table
+  (8 comp-top-def)
+  comp-top-table-end)
+
+(def comp-top-table-size (>> (- comp-top-table-end comp-top-table) 3))
+
+(code comp-top
+  ;; l0 - codeptr
+  ;; l1 - exp
+  (parse-num l1 l2 comp-top-table-size)
+  (set l3 comp-top-table)
+  (set l3 (u64 l3 l2))
+  (code-check l0)
+  (jmp l3))
 
 ;; Main
 
@@ -890,8 +934,7 @@
   (call exp-read)
   (set l1 l0)
   (set l0 x0)
-  (call comp-expr)
-  (code-emit l0 (ret))
+  (call comp-top)
   (set l0 (cc-codebuf x5))
   (call l0)
   (jmp sys-exit)
