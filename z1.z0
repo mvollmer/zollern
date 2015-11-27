@@ -246,7 +246,6 @@
   (token-struct cc-token)
   (u64 cc-codebuf)
   (u64 cc-codebuf-end)
-  (u32 cc-stackoff)
   (u32 cc-next-frame-offset)
   (u8 cc-tokenbuf 1024))
 
@@ -775,8 +774,6 @@
   (je .done)
   (call comp-exprs)
   (code-emit l0 (push l0))
-  (set l2 8)
-  (add (cc-stackoff x5) l2)
   (set l2 l1)
 .done
   (pop l1)
@@ -869,8 +866,6 @@
   (jmp .test)
 .loop
   (code-emit l0 (pop l1))
-  (set l2 -8)
-  (add (cc-stackoff x5) l2)
   (call x0)
   (sub x1 1)
 .test
