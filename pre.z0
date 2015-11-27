@@ -405,6 +405,12 @@
 (def-inst add
   ((reg  i8)   (w 1) (x 0) (op 0x83))
   ((reg i32)   (w 1) (x 0) (op 0x81))
+  (( u8  i8)   (w 0) (x 0) (op 0x80))
+  ((u32 i32)   (w 0) (x 0) (op 0x81))
+  ((u64 i32)   (w 1) (x 0) (op 0x81))
+  (( s8  i8)   (w 0) (x 0) (op 0x80))
+  ((s32 i32)   (w 0) (x 0) (op 0x81))
+  ((s64 i32)   (w 1) (x 0) (op 0x81))
   ((reg reg)   (w 1)       (op 0x01))
   (( u8 reg)   (w 0)       (op 0x00))
   ((u16 reg)   (w 0)       (op 0x66 0x01))
