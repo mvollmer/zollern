@@ -905,6 +905,21 @@
   (exp-sym-define l2 exp-sym-type-local l3)
   (ret))
 
+(code comp-set
+  (push x0)
+  (parse-symbol l1 x0)
+  (set l2 (exp-sym-type x0))
+  (cmp l2 exp-sym-type-local)
+  (jne error-undef)
+  (parse-exp l1 l2)
+  (set l1 l2)
+  (call comp-expr)
+  (set l2 (exp-sym-val x0))
+  (neg l2)
+  (code-emit l0 (set (u64 x1 0xFFFF) l0) l2)
+  (pop x0)
+  (ret))
+
 (code comp-expr-table
   (8 comp-begin)
   (8 syntax)     ; 1 label
@@ -913,6 +928,7 @@
   (8 comp-unop)  ; 4
   (8 comp-polop) ; 5
   (8 comp-var)   ; 6
+  (8 comp-set)   ; 7
   comp-expr-table-end)
 
 (def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
