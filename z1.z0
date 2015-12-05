@@ -1051,11 +1051,26 @@
   (pop l1)
   (jmp error-undef)
 .not-symbol
-  (parse-num l1 l2 comp-expr-table-size)
+  (parse-exp l1 l2)
+  (assert-type l2 exp-type-number .call)
+  (set l2 (exp-num-val l2))
+  (cmp l2 comp-expr-table-size)
+  (jae syntax)
   (set l3 comp-expr-table)
   (set l3 (u64 l3 l2))
   (code-check l0)
-  (jmp l3))
+  (jmp l3)
+.call
+  (push l2)
+  (cmp l1 0)
+  (je .done)
+  (call comp-exprs)
+  (code-emit l0 (push l0))
+.done
+  (pop l1)
+  (call comp-expr)
+  (code-emit l0 (call l0))
+  (ret))
 
 (code comp-top-def
   (parse-exp l1 l2)
