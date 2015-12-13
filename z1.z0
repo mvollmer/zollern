@@ -764,6 +764,7 @@
   (set l1 x1)
   (add l1 (sizeof global))
   (add l1 l0)
+  (add l1 1)
   (set l2 (cc-globalsbuf-end x5))
   (cmp l1 l2)
   (ja .out-of-globals-mem)
