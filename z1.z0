@@ -1085,7 +1085,7 @@
   (pop l2)
   (pop l1)
   (pop l0)
-  (set l4 -8)
+  (set l4 -16)
 .arg-next
   (cmp l2 0)
   (je .arg-done)
@@ -1098,11 +1098,13 @@
   (parse-exp l1 l2)
   (parse-eol l1)
   (set l1 l2)
+  (code-emit l0 (push x1))
   (code-emit l0 (set x1 sp))
   (push l0)
   (code-emit l0 (sub sp 0x0FFFF) 0)
   (call comp-expr)
   (code-emit l0 (set sp x1))
+  (code-emit l0 (pop x1))
   (code-emit l0 (ret))
   (pop l2)
   (set l3 (cc-next-frame-offset x5))
@@ -1163,6 +1165,7 @@
   (cmp (glb-type l0) glb-type-func)
   (jne .main-not-func)
   (set l0 (glb-val l0))
+run
   (call l0)
   (jmp sys-exit)
 .main-not-func
