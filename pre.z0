@@ -38,10 +38,37 @@
 ;; Registerd l0-l8 must be saved by caller.  Registers x0-x5 and sp
 ;; must be saved by callee.  Arguments are passed in l0-l8.  Results
 ;; are returned in l0-l8.  Register sp is the stack pointer.
+;;
+;; "l0", for example, is the name for all 64 bits of register number
+;; zero, and "l0.8" is the name for the lest-significant 8 bits of
+;; that register.  Similar for "l0.16" and "l0.32"
 
-(deftypedenum reg
-  l0  l1  l2  x0  sp  x1  l3  l4
-  l5  l6  l7  l8  x2  x3  x4  x5)
+(def (defreg ?name ?num)
+  (def ?name (reg ?num)))
+
+(def (defreg (?name ?name.8 ?name.16 ?name.32) ?num)
+  (def ?name (reg ?num))
+  (def ?name.8 (reg ?num 8))
+  (def ?name.16 (reg ?num 16))
+  (def ?name.32 (reg ?num 32)))
+
+(seq defreg 0 1
+     (l0 l0.8 l0.16 l0.32)
+     (l1 l1.8 l1.16 l1.32)
+     (l2 l2.8 l2.16 l2.32)
+     (x0 x0.8 x0.16 x0.32)
+     sp
+     (x1 x1.8 x1.16 x1.32)
+     (l3 l3.8 l3.16 l3.32)
+     (l4 l4.8 l4.16 l4.32)
+     (l5 l5.8 l5.16 l5.32)
+     (l6 l6.8 l6.16 l6.32)
+     (l7 l7.8 l7.16 l7.32)
+     (l8 l8.8 l8.16 l8.32)
+     (x2 x2.8 x2.16 x2.32)
+     (x3 x3.8 x3.16 x3.32)
+     (x4 x4.8 x4.16 x4.32)
+     (x5 x5.8 x5.16 x5.32))
 
 ;; Characters
 
