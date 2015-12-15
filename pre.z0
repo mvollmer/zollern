@@ -427,6 +427,17 @@
 (def-inst let
   ((reg mem)   (w 1) (op 0x8D)))
 
+(def (defsetcc ?name ?op)
+  (def (?name (reg ??dst 8))
+       (rex-op (rex 0 0 0 (>> ??dst 3)) (1 0x0F ?op (+ 0xC0 (& ??dst 7))))))
+
+(defsetcc sete  0x94)
+(defsetcc setne 0x95)
+(defsetcc setl  0x9C)
+(defsetcc setle 0x9E)
+(defsetcc setg  0x9F)
+(defsetcc setge 0x9D)
+
 ;; Addition
 
 (def-inst add
