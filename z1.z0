@@ -276,11 +276,11 @@
 
 (def (exp-sym-define ?sym ?type ?val)
   (cmp (exp-sym-type ?sym) exp-sym-type-undef)
-  (jne error-redef)
+  (jne error-redef-exp)
   (set (exp-sym-type ?sym) ?type)
   (set (exp-sym-val ?sym) ?val))
 
-(code error-redef
+(code error-redef-exp
   (set l0 l1)
   (call exp-write)
   (let l0 (u8 .redef-error-string))
@@ -288,12 +288,12 @@
 .redef-error-string
   (1 "\nredefined\n" 0))
 
-(code error-undef
+(code error-undef-exp
   (set l0 l1)
   (call exp-write)
-  (let l0 (u8 .redef-error-string))
+  (let l0 (u8 .undef-error-string))
   (jmp abort)
-.redef-error-string
+.undef-error-string
   (1 "\nundefined\n" 0))
 
 (defstruct exp-string
@@ -794,6 +794,22 @@
   (pop x0)
   (ret))
 
+(code error-undef-global
+  (let l0 (u8 l0 (sizeof global)))
+  (call print)
+  (let l0 (u8 .undef-error-string))
+  (jmp abort)
+.undef-error-string
+  (1 " undefined\n" 0))
+
+(code error-redef-global
+  (let l0 (u8 l0 (sizeof global)))
+  (call print)
+  (let l0 (u8 .redef-error-string))
+  (jmp abort)
+.redef-error-string
+  (1 " redefined\n" 0))
+
 ;; Compilation
 
 (code syntax
@@ -1045,7 +1061,7 @@
   (parse-symbol l1 x0)
   (set l2 (exp-sym-type x0))
   (cmp l2 exp-sym-type-local)
-  (jne error-undef)
+  (jne error-undef-exp)
   (parse-exp l1 l2)
   (set l1 l2)
   (call comp-expr)
@@ -1093,16 +1109,12 @@
   (let l0 (u8 l1 (sizeof exp-symbol)))
   (call globals-lookup)
   (cmp (glb-type l0) glb-type-undef)
-  (je .undef)
+  (je error-undef-global)
   (set l1 (glb-val l0))
   (pop l0)
   (code-emit l0 (set l0 0x1234567812345678) l1)
   (pop l1)
   (ret)
-.undef
-  (pop l0)
-  (pop l1)
-  (jmp error-undef)
 .not-symbol
   (parse-exp l1 l2)
   (assert-type l2 exp-type-number .call)
@@ -1135,7 +1147,7 @@
   (let l0 (u8 l3 (sizeof exp-symbol)))
   (call globals-lookup)
   (cmp (glb-type l0) glb-type-undef)
-  (jne error-redef)
+  (jne error-redef-global)
   (set (glb-type l0) glb-type-func)
   (pop l1)
   (set (glb-val l0) l1)
