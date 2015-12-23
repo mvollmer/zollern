@@ -737,6 +737,7 @@
 
 (def glb-type-undef 0)
 (def glb-type-func  1)
+(def glb-type-macro 2)
 
 (code globals-alloc
   ;; l0 - size
@@ -1180,10 +1181,57 @@
   (code-emit l2 (sub sp 0xFFFF) l3)
   (ret))
 
+(code comp-top-macro
+  (push l0)
+  (push x0)
+  (push x1)
+  (push x2)
+  (push x3)
+  (parse-symbol l1 x0)
+  (parse-num    l1 x1 4)
+  (parse-symbol l1 x2)
+  (let l0 (u8 x0 (sizeof exp-symbol)))
+  (call globals-lookup)
+  (cmp (glb-type l0) glb-type-undef)
+  (jne .already-def)
+  (set (glb-type l0) glb-type-macro)
+  (set x3 l0)
+  (set l0 (* 4 8))
+  (call globals-alloc)
+  (set (glb-val x3) l0)
+  (set (u64 l0 0) 0)
+  (set (u64 l0 8) 0)
+  (set (u64 l0 16) 0)
+  (set (u64 l0 24) 0)
+  (jmp .define)
+.already-def
+  (cmp (glb-type l0) glb-type-macro)
+  (jne error-redef-global)
+  (set l2 (glb-val l0))
+  (set l1 (u64 l2 x1))
+  (cmp l1 0)
+  (jne error-redef-global)
+  (set l0 l2)
+.define
+  (push l0)
+  (let l0 (u8 x2 (sizeof exp-symbol)))
+  (call globals-lookup)
+  (cmp (glb-type l0) glb-type-func)
+  (jne error-undef-global)
+  (pop l1)
+  (set l0 (glb-val l0))
+  (set (u64 l1 x1) l0)
+  (pop x3)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (pop l0)
+  (ret))
+
 (code comp-top-table
   (8 syntax)
-  (8 comp-top-func) ; 1 func
-  (8 syntax)        ; 2 macro
+  (8 comp-top-func)  ; 1 func
+  (8 comp-top-macro) ; 2 macro
   comp-top-table-end)
 
 (def comp-top-table-size (>> (- comp-top-table-end comp-top-table) 3))
