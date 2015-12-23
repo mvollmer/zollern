@@ -926,6 +926,52 @@
   (parse-exp ?ptr ?res)
   (assert-type ?res exp-type-symbol ?error))
 
+(code comp-expand-form
+  ;; l0 - symbol
+  ;; l1 - form
+  ;; l2 - expander index
+  ;; ->
+  ;; l0 - changed
+  ;; l1 - form
+  (push l1)
+  (cmp (exp-sym-type l0) exp-sym-type-undef)
+  (jne .not-macro)
+  (let l0 (u8 l0 (sizeof exp-symbol)))
+  (push l2)
+  (call globals-lookup)
+  (pop l2)
+  (cmp (glb-type l0) glb-type-macro)
+  (jne .not-macro)
+  (set l0 (glb-val l0))
+  (set l0 (u64 l0 l2))
+  (cmp l0 0)
+  (je .not-macro)
+  (call l0)
+  (add sp 8)
+  (set l1 l0)
+  (set l0 1)
+  (ret)
+.not-macro
+  (pop l1)
+  (set l0 0)
+  (ret))
+
+(code comp-expand
+  ;; l0 - codeptr
+  ;; l1 - exp
+  (push l0)
+  (set (u64 comp-compiler-context) x5)
+.again
+  (assert-type l1 exp-type-symbol .not-symbol)
+  (set l0 l1)
+  (set l2 1)
+  (call comp-expand-form)
+  (cmp l0 0)
+  (jne .again)
+.not-symbol
+  (pop l0)
+  (ret))
+
 (code comp-exprs
   (cmp l1 0)
   (je syntax)
@@ -1158,6 +1204,7 @@
 (code comp-expr
   ;; l0 - codeptr
   ;; l1 - exp
+  (call comp-expand)
   (assert-type l1 exp-type-number .not-number)
   (set l2 (exp-num-val l1))
   (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l2)
