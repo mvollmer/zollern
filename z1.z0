@@ -738,6 +738,23 @@
 (def glb-type-undef 0)
 (def glb-type-func  1)
 
+(code globals-alloc
+  ;; l0 - size
+  (set l1 (cc-globalsbuf x5))
+  (set l2 l1)
+  (add l2 l0)
+  (set l3 (cc-globalsbuf-end x5))
+  (cmp l2 l3)
+  (ja .out-of-globals-mem)
+  (set (cc-globalsbuf x5) l2)
+  (set l0 l1)
+  (ret)
+.out-of-globals-mem
+  (let l0 (u8 .out-of-globals-mem-string))
+  (jmp abort)
+.out-of-globals-mem-string
+  (1 "too many globals!" 0))
+
 (code globals-lookup
   ;; l0 - name
   (push x0)
@@ -760,15 +777,10 @@
 .not-found
   (set l0 x0)
   (call strlen)
-  (set x1 (cc-globalsbuf x5))
-  (set l1 x1)
-  (add l1 (sizeof global))
-  (add l1 l0)
-  (add l1 1)
-  (set l2 (cc-globalsbuf-end x5))
-  (cmp l1 l2)
-  (ja .out-of-globals-mem)
-  (set (cc-globalsbuf x5) l1)
+  (add l0 1)
+  (add l0 (sizeof global))
+  (call globals-alloc)
+  (set x1 l0)
   (set (glb-type x1) glb-type-undef)
   (let l0 (u8 x1 (sizeof global)))
   (set l1 x0)
@@ -779,28 +791,6 @@
   (set l0 x1)
 .found
   (pop x1)
-  (pop x0)
-  (ret)
-.out-of-globals-mem
-  (let l0 (u8 .out-of-globals-mem-string))
-  (jmp abort)
-.out-of-globals-mem-string
-  (1 "too many globals!" 0))
-
-(code globals-def
-  ;; l0 - name
-  ;; l1 - value
-  (push x0)
-  (set x0 l1)
-  (call globals-lookup)
-  (cmp (glb-type l0) glb-type-func)
-  (je .ok)
-  (cmp (glb-type l0) glb-type-undef)
-  (je .ok)
-  (jmp error-redef)
-.ok
-  (set (glb-type l0) glb-type-func)
-  (set (glb-val l0) x0)
   (pop x0)
   (ret))
 
@@ -1141,9 +1131,14 @@
   (push l0)
   (push l1)
   (push l2)
-  (set l1 l0)
+  (push l0)
   (let l0 (u8 l3 (sizeof exp-symbol)))
-  (call globals-def)
+  (call globals-lookup)
+  (cmp (glb-type l0) glb-type-undef)
+  (jne error-redef)
+  (set (glb-type l0) glb-type-func)
+  (pop l1)
+  (set (glb-val l0) l1)
   (pop l2)
   (pop l1)
   (pop l0)
