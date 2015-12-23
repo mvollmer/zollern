@@ -811,6 +811,73 @@
 .redef-error-string
   (1 " redefined\n" 0))
 
+(data comp-compiler-context 64)
+
+(code comp-make-pair
+  (set l0 (u64 sp 8))
+  (set l1 (u64 sp 16))
+  (push x5)
+  (set x5 (u64 comp-compiler-context))
+  (call exp-make-pair)
+  (pop x5)
+  (ret))
+
+(code comp-make-number
+  (set l0 (u64 sp 8))
+  (push x5)
+  (set x5 (u64 comp-compiler-context))
+  (call exp-make-number)
+  (pop x5)
+  (ret))
+
+(code comp-make-string
+  (set l0 (u64 sp 8))
+  (push x5)
+  (set x5 (u64 comp-compiler-context))
+  (call exp-make-string)
+  (pop x5)
+  (ret))
+
+(code comp-intern
+  (set l0 (u64 sp 8))
+  (push x5)
+  (set x5 (u64 comp-compiler-context))
+  (call exp-intern)
+  (pop x5)
+  (ret))
+
+(code comp-export-table
+  (8 comp-make-pair .comp-make-pair-name)
+  (8 comp-make-number .comp-make-number-name)
+  (8 comp-make-string .comp-make-string-name)
+  (8 comp-intern .comp-intern-name)
+  comp-export-table-end
+.comp-make-pair-name
+  (1 "comp:make-pair" 0)
+.comp-make-number-name
+  (1 "comp:make-number" 0)
+.comp-make-string-name
+  (1 "comp:make-string" 0)
+.comp-intern-name
+  (1 "comp:intern" 0))
+
+(code globals-export-comp
+  (push x1)
+  (set x1 comp-export-table)
+  (jmp .test)
+.loop
+  (set l0 (u64 x1 8))
+  (call globals-lookup)
+  (set l1 (u64 x1))
+  (set (glb-type l0) glb-type-func)
+  (set (glb-val l0) l1)
+  (add x1 16)
+.test
+  (cmp x1 comp-export-table-end)
+  (jb .loop)
+  (pop x1)
+  (ret))
+
 ;; Compilation
 
 (code syntax
@@ -1259,6 +1326,7 @@
   (let l1 (u8 .boot-filename))
   (call file-open)
   (call globals-init)
+  (call globals-export-comp)
   (call code-init)
   (set x0 l0)
 .loop
