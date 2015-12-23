@@ -1067,14 +1067,16 @@
 
 (code comp-expr-table
   (8 comp-begin)
-  (8 syntax)     ; 1 label
-  (8 syntax)     ; 2 goto
-  (8 comp-if)    ; 3
-  (8 comp-unop)  ; 4
-  (8 comp-binop) ; 5
-  (8 comp-polop) ; 6
-  (8 comp-var)   ; 7
-  (8 comp-set)   ; 8
+  (8 syntax)     ; 1 func
+  (8 syntax)     ; 2 macro
+  (8 syntax)     ; 3 label
+  (8 syntax)     ; 4 goto
+  (8 comp-if)    ; 5
+  (8 comp-unop)  ; 6
+  (8 comp-binop) ; 7
+  (8 comp-polop) ; 8
+  (8 comp-var)   ; 9
+  (8 comp-set)   ; 10
   comp-expr-table-end)
 
 (def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
@@ -1133,7 +1135,7 @@
   (code-emit l0 (call l0))
   (ret))
 
-(code comp-top-def
+(code comp-top-func
   (parse-exp l1 l2)
   (parse-symbol l2 l3)
   (push l0)
@@ -1172,7 +1174,9 @@
   (ret))
 
 (code comp-top-table
-  (8 comp-top-def)
+  (8 syntax)
+  (8 comp-top-func) ; 1 func
+  (8 syntax)        ; 2 macro
   comp-top-table-end)
 
 (def comp-top-table-size (>> (- comp-top-table-end comp-top-table) 3))
