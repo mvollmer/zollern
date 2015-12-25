@@ -846,11 +846,23 @@
   (pop x5)
   (ret))
 
+(code comp-first
+  (set l0 (u64 sp 8))
+  (set l0 (exp-first l0))
+  (ret))
+
+(code comp-rest
+  (set l0 (u64 sp 8))
+  (set l0 (exp-rest l0))
+  (ret))
+
 (code comp-export-table
   (8 comp-make-pair .comp-make-pair-name)
   (8 comp-make-number .comp-make-number-name)
   (8 comp-make-string .comp-make-string-name)
   (8 comp-intern .comp-intern-name)
+  (8 comp-first .comp-first-name)
+  (8 comp-rest .comp-rest-name)
   comp-export-table-end
 .comp-make-pair-name
   (1 "comp:make-pair" 0)
@@ -859,7 +871,11 @@
 .comp-make-string-name
   (1 "comp:make-string" 0)
 .comp-intern-name
-  (1 "comp:intern" 0))
+  (1 "comp:intern" 0)
+.comp-first-name
+  (1 "comp:first" 0)
+.comp-rest-name
+  (1 "comp:rest" 0))
 
 (code globals-export-comp
   (push x1)
