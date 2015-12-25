@@ -514,6 +514,9 @@
   (cmp l3 :-)
   (jne .no-sign)
   (add l1 1)
+  (set l3 (u8 l1))
+  (cmp l3 0)
+  (je .symbol)
 .no-sign
   (set l2 0)
 .number-loop
