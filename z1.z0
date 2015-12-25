@@ -1381,6 +1381,7 @@
 (code comp-top
   ;; l0 - codeptr
   ;; l1 - exp
+  (call comp-expand)
   (parse-num l1 l2 comp-top-table-size)
   (set l3 comp-top-table)
   (set l3 (u64 l3 l2))
