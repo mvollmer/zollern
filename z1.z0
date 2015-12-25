@@ -1248,15 +1248,20 @@
   (code-check l0)
   (jmp l3)
 .call
+  (push x0)
   (push l2)
   (cmp l1 0)
   (je .done)
   (call comp-exprs)
+  (set x0 l1)
   (code-emit l0 (push l0))
 .done
   (pop l1)
   (call comp-expr)
   (code-emit l0 (call l0))
+  (mul x0 8)
+  (code-emit l0 (add sp 0x1234) x0)
+  (pop x0)
   (ret))
 
 (code comp-top-func
