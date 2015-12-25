@@ -965,10 +965,17 @@
   (assert-type l1 exp-type-symbol .not-symbol)
   (set l0 l1)
   (set l2 1)
+  (jmp .expand)
+.not-symbol
+  (assert-type l1 exp-type-pair .not-call)
+  (set l0 (exp-first l1))
+  (assert-type l0 exp-type-symbol .not-call)
+  (set l2 0)
+.expand
   (call comp-expand-form)
   (cmp l0 0)
   (jne .again)
-.not-symbol
+.not-call
   (pop l0)
   (ret))
 
