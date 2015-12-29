@@ -252,6 +252,13 @@
   (u64 cc-globalsbuf-end)
   (u8 cc-tokenbuf 1024))
 
+;; Definition types
+
+(def def-type-undef 0)
+(def def-type-func  1)
+(def def-type-macro 2)
+(def def-type-local 3)
+
 ;; Expressions
 
 (def EXP-POOL-SIZE (* 10 1024 1024))
@@ -271,11 +278,8 @@
   (u64 exp-sym-val)
   (u8  exp-sym-type))
 
-(def exp-sym-type-undef 0)
-(def exp-sym-type-local 1)
-
 (def (exp-sym-define ?sym ?type ?val)
-  (cmp (exp-sym-type ?sym) exp-sym-type-undef)
+  (cmp (exp-sym-type ?sym) def-type-undef)
   (jne error-redef-exp)
   (set (exp-sym-type ?sym) ?type)
   (set (exp-sym-val ?sym) ?val))
@@ -288,13 +292,13 @@
 .redef-error-string
   (1 "\nredefined\n" 0))
 
-(code error-undef-exp
+(code error-not-local-exp
   (set l0 l1)
   (call exp-write)
-  (let l0 (u8 .undef-error-string))
+  (let l0 (u8 .not-local-error-string))
   (jmp abort)
-.undef-error-string
-  (1 "\nundefined\n" 0))
+.not-local-error-string
+  (1 "\nnot a local variable\n" 0))
 
 (defstruct exp-string
   (exp-base base))
@@ -439,7 +443,7 @@
   (set l1 (sizeof exp-symbol))
   (call exp-make-with-string)
   (set (exp-type l0) exp-type-symbol)
-  (set (exp-sym-type l0) exp-sym-type-undef)
+  (set (exp-sym-type l0) def-type-undef)
   (set l1 (cc-symbols x5))
   (set l2 (u64 l1 x1))
   (set (exp-sym-link l0) l2)
@@ -738,10 +742,6 @@
   (u64 glb-val)
   (u8  glb-type))
 
-(def glb-type-undef 0)
-(def glb-type-func  1)
-(def glb-type-macro 2)
-
 (code globals-alloc
   ;; l0 - size
   (set l1 (cc-globalsbuf x5))
@@ -785,7 +785,7 @@
   (add l0 (sizeof global))
   (call globals-alloc)
   (set x1 l0)
-  (set (glb-type x1) glb-type-undef)
+  (set (glb-type x1) def-type-undef)
   (let l0 (u8 x1 (sizeof global)))
   (set l1 x0)
   (call strcpy)
@@ -888,7 +888,7 @@
   (set l0 (u64 x1 8))
   (call globals-lookup)
   (set l1 (u64 x1))
-  (set (glb-type l0) glb-type-func)
+  (set (glb-type l0) def-type-func)
   (set (glb-val l0) l1)
   (add x1 16)
 .test
@@ -953,13 +953,13 @@
   ;; l0 - changed
   ;; l1 - form
   (push l1)
-  (cmp (exp-sym-type l0) exp-sym-type-undef)
+  (cmp (exp-sym-type l0) def-type-undef)
   (jne .not-macro)
   (let l0 (u8 l0 (sizeof exp-symbol)))
   (push l2)
   (call globals-lookup)
   (pop l2)
-  (cmp (glb-type l0) glb-type-macro)
+  (cmp (glb-type l0) def-type-macro)
   (jne .not-macro)
   (set l0 (glb-val l0))
   (set l0 (u64 l0 l2))
@@ -1193,15 +1193,15 @@
   (set l3 (cc-next-frame-offset x5))
   (add l3 8)
   (set (cc-next-frame-offset x5) l3)
-  (exp-sym-define l2 exp-sym-type-local l3)
+  (exp-sym-define l2 def-type-local l3)
   (ret))
 
 (code comp-set
   (push x0)
   (parse-symbol l1 x0)
   (set l2 (exp-sym-type x0))
-  (cmp l2 exp-sym-type-local)
-  (jne error-undef-exp)
+  (cmp l2 def-type-local)
+  (jne error-not-local-exp)
   (parse-exp l1 l2)
   (set l1 l2)
   (call comp-expr)
@@ -1238,7 +1238,7 @@
 .not-number
   (assert-type l1 exp-type-symbol .not-symbol)
   (set l2 (exp-sym-type l1))
-  (cmp l2 exp-sym-type-local)
+  (cmp l2 def-type-local)
   (jne .not-local)
   (set l2 (exp-sym-val l1))
   (neg l2)
@@ -1249,7 +1249,7 @@
   (push l0)
   (let l0 (u8 l1 (sizeof exp-symbol)))
   (call globals-lookup)
-  (cmp (glb-type l0) glb-type-func)
+  (cmp (glb-type l0) def-type-func)
   (jne error-undef-global)
   (set l1 (glb-val l0))
   (pop l0)
@@ -1292,9 +1292,9 @@
   (push l0)
   (let l0 (u8 l3 (sizeof exp-symbol)))
   (call globals-lookup)
-  (cmp (glb-type l0) glb-type-undef)
+  (cmp (glb-type l0) def-type-undef)
   (jne error-redef-global)
-  (set (glb-type l0) glb-type-func)
+  (set (glb-type l0) def-type-func)
   (pop l1)
   (set (glb-val l0) l1)
   (pop l2)
@@ -1305,7 +1305,7 @@
   (cmp l2 0)
   (je .arg-done)
   (parse-symbol l2 l3)
-  (exp-sym-define l3 exp-sym-type-local l4)
+  (exp-sym-define l3 def-type-local l4)
   (sub l4 8)
   (jmp .arg-next)
 .arg-done
@@ -1337,9 +1337,9 @@
   (parse-symbol l1 x2)
   (let l0 (u8 x0 (sizeof exp-symbol)))
   (call globals-lookup)
-  (cmp (glb-type l0) glb-type-undef)
+  (cmp (glb-type l0) def-type-undef)
   (jne .already-def)
-  (set (glb-type l0) glb-type-macro)
+  (set (glb-type l0) def-type-macro)
   (set x3 l0)
   (set l0 (* 4 8))
   (call globals-alloc)
@@ -1350,7 +1350,7 @@
   (set (u64 l0 24) 0)
   (jmp .define)
 .already-def
-  (cmp (glb-type l0) glb-type-macro)
+  (cmp (glb-type l0) def-type-macro)
   (jne error-redef-global)
   (set l2 (glb-val l0))
   (set l1 (u64 l2 x1))
@@ -1361,7 +1361,7 @@
   (push l0)
   (let l0 (u8 x2 (sizeof exp-symbol)))
   (call globals-lookup)
-  (cmp (glb-type l0) glb-type-func)
+  (cmp (glb-type l0) def-type-func)
   (jne error-undef-global)
   (pop l1)
   (set l0 (glb-val l0))
@@ -1428,7 +1428,7 @@
   (push l0)
   (set l0 .main-name)
   (call globals-lookup)
-  (cmp (glb-type l0) glb-type-func)
+  (cmp (glb-type l0) def-type-func)
   (jne .main-not-func)
   (set l0 (glb-val l0))
 run
