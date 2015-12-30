@@ -250,6 +250,7 @@
   (u64 cc-globals)
   (u64 cc-globalsbuf)
   (u64 cc-globalsbuf-end)
+  (u32 cc-level)
   (u8 cc-tokenbuf 1024))
 
 ;; Definition types
@@ -1211,79 +1212,8 @@
   (pop x0)
   (ret))
 
-(code comp-expr-table
-  (8 comp-begin)
-  (8 syntax)     ; 1 func
-  (8 syntax)     ; 2 macro
-  (8 syntax)     ; 3 label
-  (8 syntax)     ; 4 goto
-  (8 comp-if)    ; 5
-  (8 comp-unop)  ; 6
-  (8 comp-binop) ; 7
-  (8 comp-polop) ; 8
-  (8 comp-var)   ; 9
-  (8 comp-set)   ; 10
-  comp-expr-table-end)
-
-(def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
-
-(code comp-expr
-  ;; l0 - codeptr
-  ;; l1 - exp
-  (call comp-expand)
-  (assert-type l1 exp-type-number .not-number)
-  (set l2 (exp-num-val l1))
-  (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l2)
-  (ret)
-.not-number
-  (assert-type l1 exp-type-symbol .not-symbol)
-  (set l2 (exp-sym-type l1))
-  (cmp l2 def-type-local)
-  (jne .not-local)
-  (set l2 (exp-sym-val l1))
-  (neg l2)
-  (code-emit l0 (set l0 (u64 x1 0xFFFF)) l2)
-  (ret)
-.not-local
-  (push l1)
-  (push l0)
-  (let l0 (u8 l1 (sizeof exp-symbol)))
-  (call globals-lookup)
-  (cmp (glb-type l0) def-type-func)
-  (jne error-undef-global)
-  (set l1 (glb-val l0))
-  (pop l0)
-  (code-emit l0 (set l0 0x1234567812345678) l1)
-  (pop l1)
-  (ret)
-.not-symbol
-  (parse-exp l1 l2)
-  (assert-type l2 exp-type-number .call)
-  (set l2 (exp-num-val l2))
-  (cmp l2 comp-expr-table-size)
-  (jae syntax)
-  (set l3 comp-expr-table)
-  (set l3 (u64 l3 l2))
-  (code-check l0)
-  (jmp l3)
-.call
-  (push x0)
-  (push l2)
-  (cmp l1 0)
-  (je .done)
-  (call comp-exprs)
-  (set x0 l1)
-  (code-emit l0 (push l0))
-.done
-  (pop l1)
-  (call comp-expr)
-  (code-emit l0 (call l0))
-  (mul x0 8)
-  (code-emit l0 (add sp 0x1234) x0)
-  (pop x0)
-  (ret))
-
-(code comp-top-func
+(code comp-func
+  (set (cc-level x5) 1)
   (parse-exp l1 l2)
   (parse-symbol l2 l3)
   (push l0)
@@ -1324,9 +1254,10 @@
   (pop l2)
   (set l3 (cc-next-frame-offset x5))
   (code-emit l2 (sub sp 0xFFFF) l3)
+  (set (cc-level x5) 0)
   (ret))
 
-(code comp-top-macro
+(code comp-macro
   (push l0)
   (push x0)
   (push x1)
@@ -1373,23 +1304,86 @@
   (pop l0)
   (ret))
 
-(code comp-top-table
-  (8 syntax)
-  (8 comp-top-func)  ; 1 func
-  (8 comp-top-macro) ; 2 macro
-  comp-top-table-end)
+(code comp-expr-table
+  (8 comp-begin) ; 0
+  (8 comp-func)  ; 1
+  (8 comp-macro) ; 2
+  (8 syntax)     ; 3 label
+  (8 syntax)     ; 4 goto
+  (8 comp-if)    ; 5
+  (8 comp-unop)  ; 6
+  (8 comp-binop) ; 7
+  (8 comp-polop) ; 8
+  (8 comp-var)   ; 9
+  (8 comp-set)   ; 10
+  comp-expr-table-end)
 
-(def comp-top-table-size (>> (- comp-top-table-end comp-top-table) 3))
+(def comp-first-local-only 3)
 
-(code comp-top
+(def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
+
+(code comp-expr
   ;; l0 - codeptr
   ;; l1 - exp
   (call comp-expand)
-  (parse-num l1 l2 comp-top-table-size)
-  (set l3 comp-top-table)
+  (assert-type l1 exp-type-number .not-number)
+  (set l2 (exp-num-val l1))
+  (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l2)
+  (ret)
+.not-number
+  (assert-type l1 exp-type-symbol .not-symbol)
+  (set l2 (exp-sym-type l1))
+  (cmp l2 def-type-local)
+  (jne .not-local)
+  (set l2 (exp-sym-val l1))
+  (neg l2)
+  (code-emit l0 (set l0 (u64 x1 0xFFFF)) l2)
+  (ret)
+.not-local
+  (push l1)
+  (push l0)
+  (let l0 (u8 l1 (sizeof exp-symbol)))
+  (call globals-lookup)
+  (cmp (glb-type l0) def-type-func)
+  (jne error-undef-global)
+  (set l1 (glb-val l0))
+  (pop l0)
+  (code-emit l0 (set l0 0x1234567812345678) l1)
+  (pop l1)
+  (ret)
+.not-symbol
+  (parse-exp l1 l2)
+  (assert-type l2 exp-type-number .call)
+  (set l2 (exp-num-val l2))
+  (cmp l2 comp-expr-table-size)
+  (jae syntax)
+  (cmp (cc-level x5) 0)
+  (ja .in-function)
+  (cmp l2 comp-first-local-only)
+  (jae syntax)
+.in-function
+  (set l3 comp-expr-table)
   (set l3 (u64 l3 l2))
   (code-check l0)
-  (jmp l3))
+  (jmp l3)
+.call
+  (cmp (cc-level x5) 0)
+  (je syntax)
+  (push x0)
+  (push l2)
+  (cmp l1 0)
+  (je .done)
+  (call comp-exprs)
+  (set x0 l1)
+  (code-emit l0 (push l0))
+.done
+  (pop l1)
+  (call comp-expr)
+  (code-emit l0 (call l0))
+  (mul x0 8)
+  (code-emit l0 (add sp 0x1234) x0)
+  (pop x0)
+  (ret))
 
 ;; Main
 
@@ -1399,6 +1393,7 @@
 
 (code main
   (let x5 (compiler-context cc))
+  (set (cc-level x5) 0)
   (call exp-init)
   (set x1 fbuf)
   (set l0 x1)
@@ -1415,7 +1410,7 @@
   (je .done)
   (set l1 l0)
   (set l0 x0)
-  (call comp-top)
+  (call comp-expr)
   (set x0 l0)
   (call exp-reset)
   (jmp .loop)
