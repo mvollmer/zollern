@@ -1213,6 +1213,8 @@
   (ret))
 
 (code comp-func
+  (cmp (cc-level x5) 0)
+  (jne syntax)
   (set (cc-level x5) 1)
   (parse-exp l1 l2)
   (parse-symbol l2 l3)
@@ -1258,6 +1260,8 @@
   (ret))
 
 (code comp-macro
+  (cmp (cc-level x5) 0)
+  (jne syntax)
   (push l0)
   (push x0)
   (push x1)
