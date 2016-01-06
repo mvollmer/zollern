@@ -898,6 +898,51 @@
   (pop x1)
   (ret))
 
+;; Scopes
+
+;; There are only two scopes, global and local.  The local definition
+;; of a symbol is stored directly in the symbol structure, the global
+;; definition is stored in the compiler context.
+;;
+;; If a name has a global definition, this definition is copied into
+;; the local scope on the first lookup.  This helps with repeated
+;; lookups (which we do because it leads to simpler code), and
+;; prevents a name to be defined locally after it has already been
+;; looked up globally.
+;;
+;; A unsuccessful lookup will terminate the compilation. Thus
+;; def-type-undef is never returned.
+
+(code lookup
+  ;; l0 - symbol
+  ;; ->
+  ;; l0 - type
+  ;; l1 - value
+  (push x0)
+  (set x0 l0)
+  (cmp (exp-sym-type x0) def-type-undef)
+  (jne .check)
+  (let l0 (u8 x0 (sizeof exp-symbol)))
+  (call globals-lookup)
+  (set l1 (glb-val l0))
+  (set l0 (glb-type l0))
+  (set (exp-sym-type x0) l0)
+  (set (exp-sym-val x0) l1)
+.check
+  (set l0 (exp-sym-type x0))
+  (set l1 (exp-sym-val x0))
+  (cmp l0 def-type-undef)
+  (je .error-undef)
+  (pop x0)
+  (ret)
+.error-undef
+  (let l0 (u8 x0 (sizeof exp-symbol)))
+  (call print)
+  (let l0 (u8 .undef-error-string))
+  (jmp abort)
+.undef-error-string
+  (1 " undefined\n" 0))
+
 ;; Compilation
 
 (code syntax
@@ -954,16 +999,12 @@
   ;; l0 - changed
   ;; l1 - form
   (push l1)
-  (cmp (exp-sym-type l0) def-type-undef)
-  (jne .not-macro)
-  (let l0 (u8 l0 (sizeof exp-symbol)))
   (push l2)
-  (call globals-lookup)
+  (call lookup)
   (pop l2)
-  (cmp (glb-type l0) def-type-macro)
+  (cmp l0 def-type-macro)
   (jne .not-macro)
-  (set l0 (glb-val l0))
-  (set l0 (u64 l0 l2))
+  (set l0 (u64 l1 l2))
   (cmp l0 0)
   (je .not-macro)
   (call l0)
@@ -1294,12 +1335,12 @@
   (set l0 l2)
 .define
   (push l0)
-  (let l0 (u8 x2 (sizeof exp-symbol)))
-  (call globals-lookup)
-  (cmp (glb-type l0) def-type-func)
-  (jne error-undef-global)
+  (set l0 x2)
+  (call lookup)
+  (cmp l0 def-type-func)
+  (jne syntax)
+  (set l0 l1)
   (pop l1)
-  (set l0 (glb-val l0))
   (set (u64 l1 x1) l0)
   (pop x3)
   (pop x2)
@@ -1336,24 +1377,18 @@
   (ret)
 .not-number
   (assert-type l1 exp-type-symbol .not-symbol)
-  (set l2 (exp-sym-type l1))
-  (cmp l2 def-type-local)
+  (push l0)
+  (set l0 l1)
+  (call lookup)
+  (cmp l0 def-type-local)
   (jne .not-local)
-  (set l2 (exp-sym-val l1))
-  (neg l2)
-  (code-emit l0 (set l0 (u64 x1 0xFFFF)) l2)
+  (neg l1)
+  (pop l0)
+  (code-emit l0 (set l0 (u64 x1 0xFFFF)) l1)
   (ret)
 .not-local
-  (push l1)
-  (push l0)
-  (let l0 (u8 l1 (sizeof exp-symbol)))
-  (call globals-lookup)
-  (cmp (glb-type l0) def-type-func)
-  (jne error-undef-global)
-  (set l1 (glb-val l0))
   (pop l0)
   (code-emit l0 (set l0 0x1234567812345678) l1)
-  (pop l1)
   (ret)
 .not-symbol
   (parse-exp l1 l2)
