@@ -1257,6 +1257,23 @@
   (cmp (cc-level x5) 0)
   (jne syntax)
   (set (cc-level x5) 1)
+  (set l2 (cc-symbols x5))
+  (set l3 (- EXP-HASH-SIZE 1))
+  (jmp .clear-locals-test)
+.clear-locals-loop
+  (set l4 (u64 l2 l3))
+  (jmp .clear-locals-chain-test)
+.clear-locals-chain-loop
+  (set (exp-sym-type l4) def-type-undef)
+  (set (exp-sym-val l4) 0)
+  (set l4 (exp-sym-link l4))
+.clear-locals-chain-test
+  (cmp l4 0)
+  (jne .clear-locals-chain-loop)
+  (sub l3 1)
+.clear-locals-test
+  (cmp l3 0)
+  (jl .clear-locals-loop)
   (parse-exp l1 l2)
   (parse-symbol l2 l3)
   (push l0)
