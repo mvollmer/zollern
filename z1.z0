@@ -1384,6 +1384,23 @@
 
 (def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
 
+(code comp-string-literal
+  (add l1 (sizeof exp-string))
+  (code-emit l0 (jmp 0x1234))
+  (set l2 l0)
+.loop
+  (set l3 (u8 l1))
+  (set (u8 l0) l3)
+  (add l0 1)
+  (add l1 1)
+  (cmp l3 0)
+  (jne .loop)
+  (set l1 l0)
+  (sub l1 l2)
+  (set (u32 l2 -4) l1)
+  (code-emit l0 (set l0 0x12345678) l2)
+  (ret))
+
 (code comp-expr
   ;; l0 - codeptr
   ;; l1 - exp
@@ -1408,6 +1425,9 @@
   (code-emit l0 (set l0 0x1234567812345678) l1)
   (ret)
 .not-symbol
+  (assert-type l1 exp-type-string .not-string)
+  (jmp comp-string-literal)
+.not-string
   (parse-exp l1 l2)
   (assert-type l2 exp-type-number .call)
   (set l2 (exp-num-val l2))
