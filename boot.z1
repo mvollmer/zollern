@@ -1,0 +1,92 @@
+(1 ($fun form)
+   (0
+    (9 head)
+    (10 head (comp:first (comp:rest form)))
+    (9 body)
+    (10 body (comp:rest (comp:rest form)))
+    (comp:make-pair (comp:make-number 1)
+                    (comp:make-pair head
+                                    (comp:make-pair (comp:make-pair (comp:make-number 0)
+                                                                    body)
+                                                    0)))))
+(2 fun 0 $fun)
+
+(fun ($cons1 a b)       (comp:make-pair a b))
+(fun ($cons2 a b c)     (comp:make-pair a ($cons1 b c)))
+(fun ($cons3 a b c d)   (comp:make-pair a ($cons2 b c d)))
+(fun ($cons4 a b c d e) (comp:make-pair a ($cons3 b c d e)))
+
+(fun ($list1 a)       ($cons1 a 0))
+(fun ($list2 a b)     ($cons2 a b 0))
+(fun ($list3 a b c)   ($cons3 a b c 0))
+(fun ($list4 a b c d) ($cons4 a b c d 0))
+
+(fun ($prim a form) ($cons1 (comp:make-number a)
+                            (comp:rest form)))
+
+(fun ($prim2 a b form) ($cons2 (comp:make-number a)
+                               (comp:make-number b)
+                               (comp:rest form)))
+
+(fun ($begin form) ($prim 0 form))
+(2 begin 0 $begin)
+
+(fun ($set form) ($prim 10 form))
+(2 set 0 $set)
+
+(fun ($if form) ($prim 5 form))
+(2 if 0 $if)
+
+(fun ($var form)
+     (begin
+       (9 name)
+       (set name (comp:first (comp:rest form)))
+       (9 decl)
+       (set decl ($list2 (comp:make-number 9) name))
+       (9 maybe-init)
+       (set maybe-init (comp:rest (comp:rest form)))
+       (if maybe-init
+           ($list3 (comp:intern "begin")
+                   decl
+                   ($list3 (comp:intern "set")
+                           name
+                           (comp:first maybe-init)))
+           decl)))
+(2 var 0 $var)
+
+(fun ($mac form)
+     (var head (comp:first (comp:rest form)))
+     (var name (comp:first head))
+     (var args (comp:rest head))
+     (var body (comp:rest (comp:rest form)))
+     (var $name (comp:gensym))
+     ;; (begin
+     ;;   (fun (,$name ,@args) ,@body)
+     ;;   (2 ,name 0 ,$name))
+     ...)
+
+(begin
+  (fun ($+ form) ($prim2 8 0 form))
+  (2 + 0 $+))
+
+(begin
+  (fun ($- form) ($prim2 8 1 form))
+  (2 - 0 $-))
+
+(begin
+  (fun ($* form) ($prim2 8 2 form))
+  (2 * 0 $*))
+
+(begin
+  (fun ($< form) ($prim2 7 2 form))
+  (2 < 0 $<))
+
+(fun (fac n)
+     (if (< n 2)
+         n
+         (* n (fac (- n 1)))))
+
+(fun (main)
+   (begin
+     (var n 5)
+     (fac n)))
