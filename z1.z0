@@ -251,6 +251,7 @@
   (u64 cc-globalsbuf)
   (u64 cc-globalsbuf-end)
   (u32 cc-level)
+  (u32 cc-gensym)
   (u8 cc-tokenbuf 1024))
 
 ;; Definition types
@@ -860,6 +861,37 @@
   (set l0 (exp-rest l0))
   (ret))
 
+(data strbuf 30)
+
+(code strint
+  ;; l0: n
+  (set l1 (+ strbuf 29))
+  (set l2 0)
+  (set l3 10)
+  (set (u8 l1) l2)
+.loop
+  (sub l1 1)
+  (sign-extend)
+  (udiv l3)
+  (add l2 :0)
+  (set (u8 l1) l2)
+  (cmp l0 0)
+  (jne .loop)
+  (set l0 l1)
+  (ret))
+
+(code comp-gensym
+  (push x5)
+  (set x5 (u64 comp-compiler-context))
+  (set l0 (cc-gensym x5))
+  (add (cc-gensym x5) 1)
+  (call strint)
+  (sub l0 1)
+  (set (u8 l0) :$)
+  (call exp-intern)
+  (pop x5)
+  (ret))
+
 (code comp-show
   (set l0 (u64 sp 8))
   (push l0)
@@ -875,6 +907,7 @@
   (8 comp-intern .comp-intern-name)
   (8 comp-first .comp-first-name)
   (8 comp-rest .comp-rest-name)
+  (8 comp-gensym .comp-gensym-name)
   (8 comp-show .comp-show-name)
   comp-export-table-end
 .comp-make-pair-name
@@ -889,6 +922,8 @@
   (1 "comp:first" 0)
 .comp-rest-name
   (1 "comp:rest" 0)
+.comp-gensym-name
+  (1 "comp:gensym" 0)
 .comp-show-name
   (1 "comp:show" 0))
 
@@ -1457,6 +1492,7 @@
   (cmp (cc-level x5) 0)
   (je syntax)
   (push x0)
+  (set x0 0)
   (push l2)
   (cmp l1 0)
   (je .done)
@@ -1481,6 +1517,7 @@
 (code main
   (let x5 (compiler-context cc))
   (set (cc-level x5) 0)
+  (set (cc-gensym x5) 0)
   (call exp-init)
   (set x1 fbuf)
   (set l0 x1)
