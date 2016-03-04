@@ -761,7 +761,7 @@
 .out-of-globals-mem-string
   (1 "too many globals!" 0))
 
-(code globals-lookup
+(code globals-search
   ;; l0 - name
   (push x0)
   (push x1)
@@ -772,15 +772,26 @@
   (set x1 (glb-link x1))
 .test
   (cmp x1 0)
-  (je .not-found)
+  (je .done)
   (set l0 x0)
   (let l1 (u8 x1 (sizeof global)))
   (call streq)
   (cmp l0 0)
   (je .loop)
+.done
   (set l0 x1)
-  (jmp .found)
-.not-found
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code globals-lookup
+  ;; l0 - name
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (call globals-search)
+  (cmp l0 0)
+  (jne .done)
   (set l0 x0)
   (call strlen)
   (add l0 1)
@@ -795,7 +806,7 @@
   (set (glb-link x1) l1)
   (set (cc-globals x5) x1)
   (set l0 x1)
-.found
+.done
   (pop x1)
   (pop x0)
   (ret))
