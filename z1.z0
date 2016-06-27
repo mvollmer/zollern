@@ -261,6 +261,7 @@
 (def def-type-func  1)
 (def def-type-macro 2)
 (def def-type-local 3)
+(def def-type-label 4)
 
 ;; Expressions
 
@@ -302,6 +303,14 @@
   (jmp abort)
 .not-local-error-string
   (1 "\nnot a local variable\n" 0))
+
+(code error-not-label-exp
+  (set l0 l1)
+  (call exp-write)
+  (let l0 (u8 .not-label-error-string))
+  (jmp abort)
+.not-label-error-string
+  (1 "\nnot a label\n" 0))
 
 (defstruct exp-string
   (exp-base base))
@@ -1490,12 +1499,45 @@
   (pop l0)
   (ret))
 
+(code comp-label
+  (parse-symbol l1 l2)
+  (exp-sym-define l2 def-type-label l0)
+  (ret))
+
+(code comp-goto
+  (code-emit l0 (jmp 0x1234))
+  (push l0)
+  (push l1)
+  (push l0)
+  (call fixup-alloc)
+  (set (fx-func l0) fixup-func-goto)
+  (pop l1)
+  (sub l1 4)
+  (set (fx-ptr l0) l1)
+  (pop l1)
+  (parse-symbol l1 l2)
+  (set (fx-val l0) l2)
+  (pop l0)
+  (ret))
+
+(code fixup-func-goto
+  (set l1 (fx-val x0))
+  (set l0 (exp-sym-type l1))
+  (cmp l0 def-type-label)
+  (jne error-not-label-exp)
+  (set l0 (fx-ptr x0))
+  (set l2 (exp-sym-val l1))
+  (sub l2 l0)
+  (sub l2 4)
+  (set (u32 l0) l2)
+  (ret))
+
 (code comp-expr-table
   (8 comp-begin) ; 0
   (8 comp-func)  ; 1
   (8 comp-macro) ; 2
-  (8 syntax)     ; 3 label
-  (8 syntax)     ; 4 goto
+  (8 comp-label) ; 3
+  (8 comp-goto)  ; 4
   (8 comp-if)    ; 5
   (8 comp-unop)  ; 6
   (8 comp-binop) ; 7

@@ -32,7 +32,6 @@
     (9 name-cell) (10 name-cell (comp:rest form))
     (9 a-cell) (10 a-cell (comp:rest name-cell))
     (9 b-cell) (10 b-cell (comp:rest a-cell))
-    (comp:show
     (comp:make-pair
      (comp:make-number 0)
      (comp:make-pair
@@ -68,7 +67,7 @@
            gensym
            0)))
         0)
-       0))))))
+       0)))))
 (2 defprim 0 $defprim)
 
 ;; Primitives
@@ -79,6 +78,8 @@
 (defprim begin      0)
 (defprim prim-fun   1)
 (defprim prim-mac   2)
+(defprim label      3)
+(defprim goto       4)
 (defprim if         5)
 (defprim prim-var   9)
 (defprim set       10)
@@ -149,4 +150,6 @@
 (prim-fun (main)
   (begin
     (var n 5)
-    (fac n)))
+    (fac n)
+    (goto foo)
+    (label foo)))
