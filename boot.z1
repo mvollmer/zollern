@@ -83,6 +83,16 @@
 (defprim if         5)
 (defprim prim-var   9)
 (defprim set       10)
+(defprim loc       11)
+
+(defprim  u8     12 0)
+(defprim u16     12 1)
+(defprim u32     12 2)
+(defprim u64     12 3)
+(defprim  s8     12 4)
+(defprim s16     12 5)
+(defprim s32     12 6)
+(defprim s64     12 7)
 
 (defprim prim-neg   6 0)
 (defprim not        6 1)
@@ -150,6 +160,7 @@
 (prim-fun (main)
   (begin
     (var n 5)
-    (fac n)
+    (var m (loc n))
+    (fac (s64 m))
     (goto foo)
     (label foo)))

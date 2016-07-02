@@ -1366,6 +1366,55 @@
   (pop x0)
   (ret))
 
+(code comp-loc
+  (parse-symbol l1 l2)
+  (parse-eol l1)
+  (cmp (exp-sym-type l2) def-type-local)
+  (jne error-not-local-exp)
+  (set l2 (exp-sym-val l2))
+  (neg l2)
+  (code-emit l0 (let l0 (u64 x1 0xFFFF)) l2)
+  (ret))
+
+(code comp-mem-table
+  (8 comp-mem-u8)   ; 0
+  (8 comp-mem-u16)  ; 1
+  (8 comp-mem-u32)  ; 2
+  (8 comp-mem-u64)  ; 3
+  (8 comp-mem-s8)   ; 4
+  (8 comp-mem-s16)  ; 5
+  (8 comp-mem-s32)  ; 6
+  (8 comp-mem-s64)  ; 7
+  comp-mem-table-end)
+
+(def comp-mem-table-size (>> (- comp-mem-table-end comp-mem-table) 3))
+
+(code comp-mem
+  (parse-num l1 l2 comp-mem-table-size)
+  (parse-exp l1 l3)
+  (parse-eol l1)
+  (push l2)
+  (set l1 l3)
+  (call comp-expr)
+  (set l1 comp-mem-table)
+  (pop l2)
+  (set l1 (u64 l1 l2))
+  (jmp l1))
+
+(def (def-comp-mem ?name ?type)
+  (code ?name
+     (code-emit l0 (set l0 (?type l0)))
+     (ret)))
+
+(def-comp-mem comp-mem-u8   u8)
+(def-comp-mem comp-mem-u16 u16)
+(def-comp-mem comp-mem-u32 u32)
+(def-comp-mem comp-mem-u64 u64)
+(def-comp-mem comp-mem-s8   s8)
+(def-comp-mem comp-mem-s16 s16)
+(def-comp-mem comp-mem-s32 s32)
+(def-comp-mem comp-mem-s64 s64)
+
 (code comp-func
   (cmp (cc-level x5) 0)
   (jne syntax)
@@ -1544,6 +1593,8 @@
   (8 comp-polop) ; 8
   (8 comp-var)   ; 9
   (8 comp-set)   ; 10
+  (8 comp-loc)   ; 11
+  (8 comp-mem)   ; 12
   comp-expr-table-end)
 
 (def comp-first-local-only 3)
