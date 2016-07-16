@@ -1376,44 +1376,89 @@
   (code-emit l0 (let l0 (u64 x1 0xFFFF)) l2)
   (ret))
 
-(code comp-mem-table
-  (8 comp-mem-u8)   ; 0
-  (8 comp-mem-u16)  ; 1
-  (8 comp-mem-u32)  ; 2
-  (8 comp-mem-u64)  ; 3
-  (8 comp-mem-s8)   ; 4
-  (8 comp-mem-s16)  ; 5
-  (8 comp-mem-s32)  ; 6
-  (8 comp-mem-s64)  ; 7
-  comp-mem-table-end)
+(code comp-memref-table
+  (8 comp-memref-u8)   ; 0
+  (8 comp-memref-u16)  ; 1
+  (8 comp-memref-u32)  ; 2
+  (8 comp-memref-u64)  ; 3
+  (8 comp-memref-s8)   ; 4
+  (8 comp-memref-s16)  ; 5
+  (8 comp-memref-s32)  ; 6
+  (8 comp-memref-s64)  ; 7
+  comp-memref-table-end)
 
-(def comp-mem-table-size (>> (- comp-mem-table-end comp-mem-table) 3))
+(def comp-memref-table-size (>> (- comp-memref-table-end comp-memref-table) 3))
 
-(code comp-mem
-  (parse-num l1 l2 comp-mem-table-size)
+(code comp-memref
+  (parse-num l1 l2 comp-memref-table-size)
   (parse-exp l1 l3)
   (parse-eol l1)
   (push l2)
   (set l1 l3)
   (call comp-expr)
-  (set l1 comp-mem-table)
+  (set l1 comp-memref-table)
   (pop l2)
   (set l1 (u64 l1 l2))
   (jmp l1))
 
-(def (def-comp-mem ?name ?type)
+(def (def-comp-memref ?name ?type)
   (code ?name
      (code-emit l0 (set l0 (?type l0)))
      (ret)))
 
-(def-comp-mem comp-mem-u8   u8)
-(def-comp-mem comp-mem-u16 u16)
-(def-comp-mem comp-mem-u32 u32)
-(def-comp-mem comp-mem-u64 u64)
-(def-comp-mem comp-mem-s8   s8)
-(def-comp-mem comp-mem-s16 s16)
-(def-comp-mem comp-mem-s32 s32)
-(def-comp-mem comp-mem-s64 s64)
+(def-comp-memref comp-memref-u8   u8)
+(def-comp-memref comp-memref-u16 u16)
+(def-comp-memref comp-memref-u32 u32)
+(def-comp-memref comp-memref-u64 u64)
+(def-comp-memref comp-memref-s8   s8)
+(def-comp-memref comp-memref-s16 s16)
+(def-comp-memref comp-memref-s32 s32)
+(def-comp-memref comp-memref-s64 s64)
+
+(code comp-memset-table
+  (8 comp-memset-u8)   ; 0
+  (8 comp-memset-u16)  ; 1
+  (8 comp-memset-u32)  ; 2
+  (8 comp-memset-u64)  ; 3
+  (8 comp-memset-s8)   ; 4
+  (8 comp-memset-s16)  ; 5
+  (8 comp-memset-s32)  ; 6
+  (8 comp-memset-s64)  ; 7
+  comp-memset-table-end)
+
+(def comp-memset-table-size (>> (- comp-memset-table-end comp-memset-table) 3))
+
+(code comp-memset
+  (parse-num l1 l2 comp-memset-table-size)
+  (parse-exp l1 l3)
+  (parse-exp l1 l4)
+  (parse-eol l1)
+  (push l2)
+  (push l4)
+  (set l1 l3)
+  (call comp-expr)
+  (code-emit l0 (push l0))
+  (pop l1)
+  (call comp-expr)
+  (code-emit l0 (pop l1))
+  (set l1 comp-memset-table)
+  (pop l2)
+  (set l1 (u64 l1 l2))
+  (jmp l1))
+
+(def (def-comp-memset ?name ?type)
+  (code ?name
+     (code-emit l0 (set (?type l1) l0))
+     (ret)))
+
+(def-comp-memset comp-memset-u8   u8)
+(def-comp-memset comp-memset-u16 u16)
+(def-comp-memset comp-memset-u32 u32)
+(def-comp-memset comp-memset-u64 u64)
+(def-comp-memset comp-memset-s8   s8)
+(def-comp-memset comp-memset-s16 s16)
+(def-comp-memset comp-memset-s32 s32)
+(def-comp-memset comp-memset-s64 s64)
 
 (code comp-func
   (cmp (cc-level x5) 0)
@@ -1582,19 +1627,20 @@
   (ret))
 
 (code comp-expr-table
-  (8 comp-begin) ; 0
-  (8 comp-func)  ; 1
-  (8 comp-macro) ; 2
-  (8 comp-label) ; 3
-  (8 comp-goto)  ; 4
-  (8 comp-if)    ; 5
-  (8 comp-unop)  ; 6
-  (8 comp-binop) ; 7
-  (8 comp-polop) ; 8
-  (8 comp-var)   ; 9
-  (8 comp-set)   ; 10
-  (8 comp-loc)   ; 11
-  (8 comp-mem)   ; 12
+  (8 comp-begin)  ; 0
+  (8 comp-func)   ; 1
+  (8 comp-macro)  ; 2
+  (8 comp-label)  ; 3
+  (8 comp-goto)   ; 4
+  (8 comp-if)     ; 5
+  (8 comp-unop)   ; 6
+  (8 comp-binop)  ; 7
+  (8 comp-polop)  ; 8
+  (8 comp-var)    ; 9
+  (8 comp-set)    ; 10
+  (8 comp-loc)    ; 11
+  (8 comp-memref) ; 12
+  (8 comp-memset) ; 13
   comp-expr-table-end)
 
 (def comp-first-local-only 3)
