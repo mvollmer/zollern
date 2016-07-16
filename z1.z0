@@ -1367,11 +1367,14 @@
   (ret))
 
 (code comp-loc
-  (parse-symbol l1 l2)
+  (parse-exp l1 l2)
   (parse-eol l1)
-  (cmp (exp-sym-type l2) def-type-local)
+  (set l1 l2)
+  (call comp-expand)
+  (assert-type l1 exp-type-symbol syntax)
+  (cmp (exp-sym-type l1) def-type-local)
   (jne error-not-local-exp)
-  (set l2 (exp-sym-val l2))
+  (set l2 (exp-sym-val l1))
   (neg l2)
   (code-emit l0 (let l0 (u64 x1 0xFFFF)) l2)
   (ret))
