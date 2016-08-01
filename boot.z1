@@ -70,6 +70,68 @@
        0)))))
 (2 defprim 0 $defprim)
 
+;; And another similar macro for defining primitive setters.
+;;
+;; (defprim-setter NAME A)
+;; =>
+;; (0
+;;   (1 ($nn form val) ($prim-set form val A))
+;;   (2 NAME 2 $nn))
+
+(1 ($prim-set form val a)
+   (comp:make-pair
+    (comp:make-number 13)
+    (comp:make-pair
+     (comp:make-number a)
+     (comp:make-pair
+      (comp:first (comp:rest form))
+      (comp:make-pair
+       val
+       0)))))
+
+(1 ($defprim-set form)
+   (0
+    (9 gensym) (10 gensym (comp:gensym))
+    (9 name-cell) (10 name-cell (comp:rest form))
+    (9 a-cell) (10 a-cell (comp:rest name-cell))
+    (comp:make-pair
+     (comp:make-number 0)
+     (comp:make-pair
+      (comp:make-pair
+       (comp:make-number 1)
+       (comp:make-pair
+        (comp:make-pair
+         gensym
+         (comp:make-pair
+          (comp:intern "form")
+          (comp:make-pair
+           (comp:intern "val")
+           0))))
+       (comp:make-pair
+        (comp:make-pair
+         (comp:intern "$prim-set")
+         (comp:make-pair
+          (comp:intern "form")
+          (comp:make-pair
+           (comp:intern "val")
+           (comp:make-pair
+            (comp:first a-cell)
+            0))))
+        0))
+      (comp:make-pair
+       (comp:make-pair
+        (comp:make-number 2)
+        (comp:make-pair
+         (comp:first name-cell)
+         (comp:make-pair
+          (comp:make-number 2)
+          (comp:make-pair
+           gensym
+           0)))
+        0)
+       0)))))
+(2 defprim-set 0 $defprim-set)
+
 ;; Primitives
 ;;
 ;; Some primitives are okay for direct use, but some need to be
@@ -94,14 +156,14 @@
 (defprim s32     12 6)
 (defprim s64     12 7)
 
-(defprim  set-u8 13 0)
-(defprim set-u16 13 1)
-(defprim set-u32 13 2)
-(defprim set-u64 13 3)
-(defprim  set-s8 13 4)
-(defprim set-s16 13 5)
-(defprim set-s32 13 6)
-(defprim set-s64 13 7)
+(defprim-set  u8 0)
+(defprim-set u16 1)
+(defprim-set u32 2)
+(defprim-set u64 3)
+(defprim-set  s8 4)
+(defprim-set s16 5)
+(defprim-set s32 6)
+(defprim-set s64 7)
 
 (defprim prim-neg   6 0)
 (defprim not        6 1)
@@ -170,7 +232,7 @@
   (begin
     (var n 10)
     (var m (loc n))
-    (set-s64 m 5)
+    (set (s64 m) 5)
     (fac (s64 m))
     (goto foo)
     (label foo)))
