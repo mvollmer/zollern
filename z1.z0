@@ -1568,6 +1568,7 @@
   (set l3 (cc-next-frame-offset x5))
   (code-emit l2 (sub sp 0xFFFF) l3)
   (push x0)
+  (push l0)
   (set x0 (cc-fixups x5))
   (jmp .fixup-test)
 .fixup-loop
@@ -1577,6 +1578,7 @@
 .fixup-test
   (cmp x0 0)
   (jne .fixup-loop)
+  (pop l0)
   (pop x0)
   (set (cc-level x5) 0)
   (ret))
