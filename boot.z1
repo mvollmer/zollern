@@ -180,6 +180,88 @@
 (defprim *          8 2)
 (defprim /          8 3)
 
+;; Syntax templates, aka quasi-quote
+
+(prim-fun ($rcons* n tail)
+  (begin
+    (prim-var result)
+    (prim-var next)
+    (set result tail)
+    (set next (+ (loc tail) 8))
+    (label loop)
+    (prim-if (== n 0)
+             (goto done)
+             12)
+    (set result (comp:make-pair (u64 next) result))
+    (set next (+ next 8))
+    (set n (- n 1))
+    (goto loop)
+    (label done)
+    result))
+
+(prim-fun (expand-template form meta)
+  (begin
+    (prim-var result)
+    (prim-var result-length)
+    (prim-var first)
+    (prim-var type)
+    (prim-var arg)
+    (set result 0)
+    (set result-length 0)
+    (label loop)
+    (prim-if form
+             (begin)
+             (goto done))
+    (set first (comp:first form))
+    (set type (comp:type first))
+    (set arg 0)
+    (prim-if (== type 0) ;; pair
+             (prim-if (== (comp:first first) meta)
+                      (set arg (comp:first (comp:rest first)))
+                      (set arg (expand-template first meta)))
+             (begin))
+    (prim-if (== type 1) ;; symbol
+             ;; `(comp:intern ,(comp:make-string (comp:symbol-name first))
+             (set arg (comp:make-pair
+                       (comp:intern "comp:intern")
+                       (comp:make-pair
+                        (comp:make-string (comp:symbol-name first))
+                        0)))
+             (begin))
+    (prim-if (== type 2) ;; string
+             (set arg (comp:make-pair
+                       (comp:intern "comp:make-string")
+                       (comp:make-pair
+                        first
+                        0)))
+             (begin))
+    (prim-if (== type 3) ;; number
+             (set arg (comp:make-pair
+                       (comp:intern "comp:make-number")
+                       (comp:make-pair
+                        first
+                        0)))
+             (begin))
+    (prim-if arg
+             (begin
+               (set result (comp:make-pair arg result))
+               (set result-length (+ result-length 1)))
+             (begin))
+    (set form (comp:rest form))
+    (goto loop)
+    (label done)
+    (comp:make-pair
+     (comp:intern "$rcons*")
+     (comp:make-pair
+      (comp:make-number result-length)
+      (comp:make-pair
+       (comp:make-number 0)
+       result)))))
+
+(prim-fun ($syntax-expand form)
+          (expand-template (comp:first (comp:rest form)) (comp:intern "meta")))
+(prim-mac syntax-expand 0 $syntax-expand)
+
 ;; Enhanced versions of some primitives
 
 ;; (var NAME)
@@ -194,31 +276,12 @@
 
 (prim-fun ($var form)
   (begin
-    (prim-var name)
-    (set name (comp:first (comp:rest form)))
-    (prim-var decl)
-    (set decl (comp:make-pair
-               (comp:intern "prim-var")
-               (comp:make-pair
-                name
-                0)))
-    (prim-var maybe-init)
-    (set maybe-init (comp:rest (comp:rest form)))
-    (prim-if maybe-init
-             (comp:make-pair
-              (comp:intern "begin")
-              (comp:make-pair
-               decl
-               (comp:make-pair
-                (comp:make-pair
-                 (comp:intern "set")
-                 (comp:make-pair
-                  name
-                  (comp:make-pair
-                   (comp:first maybe-init)
-                   0)))
-                0)))
-             decl)))
+    (prim-var name)      (set name      (comp:first (comp:rest form)))
+    (prim-var init-cell) (set init-cell (comp:rest (comp:rest form)))
+    (prim-if init-cell
+             (syntax-expand (begin (prim-var ?name)
+                                   (set ?name ?(comp:first init-cell))))
+             (syntax-expand (prim-var ?name)))))
 (prim-mac var 0 $var)
 
 ;; Main
@@ -230,9 +293,5 @@
 
 (prim-fun (main)
   (begin
-    (var n 10)
-    (var m (loc n))
-    (set (s64 m) 5)
-    (fac (s64 m))
-    (goto foo)
-    (label foo)))
+    (var m 5)
+    (fac m)))
