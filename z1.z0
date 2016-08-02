@@ -1153,6 +1153,7 @@
 (code comp-begin
   (push x0)
   (set x0 l1)
+  (jmp .test)
 .loop
   (parse-exp x0 l1)
   (call comp-expr)
