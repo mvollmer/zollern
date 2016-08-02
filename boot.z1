@@ -142,7 +142,7 @@
 (defprim prim-mac   2)
 (defprim label      3)
 (defprim goto       4)
-(defprim if         5)
+(defprim prim-if    5)
 (defprim prim-var   9)
 (defprim set       10)
 (defprim loc       11)
@@ -204,29 +204,29 @@
                 0)))
     (prim-var maybe-init)
     (set maybe-init (comp:rest (comp:rest form)))
-    (if maybe-init
-        (comp:make-pair
-         (comp:intern "begin")
-         (comp:make-pair
-          decl
-          (comp:make-pair
-           (comp:make-pair
-            (comp:intern "set")
-            (comp:make-pair
-             name
+    (prim-if maybe-init
              (comp:make-pair
-              (comp:first maybe-init)
-              0)))
-           0)))
-        decl)))
+              (comp:intern "begin")
+              (comp:make-pair
+               decl
+               (comp:make-pair
+                (comp:make-pair
+                 (comp:intern "set")
+                 (comp:make-pair
+                  name
+                  (comp:make-pair
+                   (comp:first maybe-init)
+                   0)))
+                0)))
+             decl)))
 (prim-mac var 0 $var)
 
 ;; Main
 
 (prim-fun (fac n)
-  (if (< n 2)
-      n
-      (* n (fac (- n 1)))))
+  (prim-if (< n 2)
+           n
+           (* n (fac (- n 1)))))
 
 (prim-fun (main)
   (begin
