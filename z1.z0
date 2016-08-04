@@ -856,6 +856,26 @@
 
 (data comp-compiler-context 64)
 
+(code comp-type
+  (set l0 (u64 sp 8))
+  (set l0 (exp-type l0))
+  (ret))
+
+(code comp-first
+  (set l0 (u64 sp 8))
+  (set l0 (exp-first l0))
+  (ret))
+
+(code comp-rest
+  (set l0 (u64 sp 8))
+  (set l0 (exp-rest l0))
+  (ret))
+
+(code comp-symbol-name
+  (set l0 (u64 sp 8))
+  (add l0 (sizeof exp-symbol))
+  (ret))
+
 (code comp-make-pair
   (set l0 (u64 sp 8))
   (set l1 (u64 sp 16))
@@ -887,16 +907,6 @@
   (set x5 (u64 comp-compiler-context))
   (call exp-intern)
   (pop x5)
-  (ret))
-
-(code comp-first
-  (set l0 (u64 sp 8))
-  (set l0 (exp-first l0))
-  (ret))
-
-(code comp-rest
-  (set l0 (u64 sp 8))
-  (set l0 (exp-rest l0))
   (ret))
 
 (data strbuf 30)
@@ -939,15 +949,25 @@
   (ret))
 
 (code comp-export-table
+  (8 comp-type .comp-type-name)
+  (8 comp-first .comp-first-name)
+  (8 comp-rest .comp-rest-name)
+  (8 comp-symbol-name .comp-symbol-name-name)
   (8 comp-make-pair .comp-make-pair-name)
   (8 comp-make-number .comp-make-number-name)
   (8 comp-make-string .comp-make-string-name)
   (8 comp-intern .comp-intern-name)
-  (8 comp-first .comp-first-name)
-  (8 comp-rest .comp-rest-name)
   (8 comp-gensym .comp-gensym-name)
   (8 comp-show .comp-show-name)
   comp-export-table-end
+.comp-type-name
+  (1 "comp:type" 0)
+.comp-first-name
+  (1 "comp:first" 0)
+.comp-rest-name
+  (1 "comp:rest" 0)
+.comp-symbol-name-name
+  (1 "comp:symbol-name" 0)
 .comp-make-pair-name
   (1 "comp:make-pair" 0)
 .comp-make-number-name
@@ -956,10 +976,6 @@
   (1 "comp:make-string" 0)
 .comp-intern-name
   (1 "comp:intern" 0)
-.comp-first-name
-  (1 "comp:first" 0)
-.comp-rest-name
-  (1 "comp:rest" 0)
 .comp-gensym-name
   (1 "comp:gensym" 0)
 .comp-show-name
