@@ -131,11 +131,12 @@
   (u8  tk-unused-2)
   (u8  tk-unused-3))
 
-(def tk-kind-eof    0)
-(def tk-kind-open   1)
-(def tk-kind-close  2)
-(def tk-kind-symbol 3)
-(def tk-kind-string 4)
+(def tk-kind-eof           0)
+(def tk-kind-open          1)
+(def tk-kind-close         2)
+(def tk-kind-symbol        3)
+(def tk-kind-string        4)
+(def tk-kind-question-mark 5)
 
 (def (getchar ?dst ?ptr ?end ?eof-label)
   (cmp ?ptr ?end)
@@ -173,6 +174,11 @@
   (set l5 tk-kind-close)
   (jmp .out)
 .not-close
+  (cmp l4 :?)
+  (jne .not-question-mark)
+  (set l5 tk-kind-question-mark)
+  (jmp .out)
+.not-question-mark
   (cmp l4 :dq)
   (jne .not-string)
   (set l5 (tk-buf l1))
@@ -566,6 +572,22 @@
   (set l0 0)
   (ret)
 .not-eof
+  (cmp l0 tk-kind-question-mark)
+  (jne .not-question-mark)
+  (set l0 x0)
+  (set l1 x1)
+  (call next-token)
+  (call .read1)
+  (set l1 0)
+  (call exp-make-pair)
+  (push l0)
+  (set l0 .meta-name)
+  (call exp-intern)
+  (pop l1)
+  (jmp exp-make-pair)
+.meta-name
+  (1 "meta" 0)
+.not-question-mark
   (set l0 (tk-buf x1))
   (jmp exp-make-string))
 
