@@ -199,13 +199,15 @@
     (label done)
     result))
 
-(prim-fun (expand-template form meta)
+(prim-fun (expand-template form meta dot)
   (begin
+    (prim-var tail)
     (prim-var result)
     (prim-var result-length)
     (prim-var first)
     (prim-var type)
     (prim-var arg)
+    (set tail (comp:make-number 0))
     (set result 0)
     (set result-length 0)
     (label loop)
@@ -216,17 +218,24 @@
     (set type (comp:type first))
     (set arg 0)
     (prim-if (== type 0) ;; pair
-             (prim-if (== (comp:first first) meta)
-                      (set arg (comp:first (comp:rest first)))
-                      (set arg (expand-template first meta)))
+             (set arg (expand-template first meta dot))
              (begin))
     (prim-if (== type 1) ;; symbol
-             ;; `(comp:intern ,(comp:make-string (comp:symbol-name first))
-             (set arg (comp:make-pair
-                       (comp:intern "comp:intern")
-                       (comp:make-pair
-                        (comp:make-string (comp:symbol-name first))
-                        0)))
+             (prim-if (== first meta)
+                      (begin
+                        (comp:first (comp:rest form))
+                        (goto out))
+                      (prim-if (== first dot)
+                               (begin
+                                 (set tail (expand-template (comp:first (comp:rest form))
+                                                            meta dot))
+                                 (goto done))
+                               ;; `(comp:intern ,(comp:make-string (comp:symbol-name first))
+                               (set arg (comp:make-pair
+                                         (comp:intern "comp:intern")
+                                         (comp:make-pair
+                                          (comp:make-string (comp:symbol-name first))
+                                          0)))))
              (begin))
     (prim-if (== type 2) ;; string
              (set arg (comp:make-pair
@@ -255,11 +264,13 @@
      (comp:make-pair
       (comp:make-number result-length)
       (comp:make-pair
-       (comp:make-number 0)
-       result)))))
+       tail
+       result)))
+    (label out)))
 
 (prim-fun ($syntax-expand form)
-          (expand-template (comp:first (comp:rest form)) (comp:intern "meta")))
+          (expand-template (comp:first (comp:rest form))
+                           (comp:intern "meta") (comp:intern ".")))
 (prim-mac syntax-expand 0 $syntax-expand)
 
 ;; Enhanced versions of some primitives
@@ -284,14 +295,42 @@
              (syntax-expand (prim-var ?name)))))
 (prim-mac var 0 $var)
 
+;; (fun HEAD . BODY)
+;; =>
+;; (prim-fun HEAD (begin . BODY))
+
+(prim-fun ($fun form)
+  (begin
+    (var head (comp:first (comp:rest form)))
+    (var body (comp:rest (comp:rest form)))
+    (syntax-expand
+     (prim-fun ?head (begin . ?body)))))
+(prim-mac fun 0 $fun)
+
+;; (if COND THEN ELSE)
+;; =>
+;; (prim-if COND THEN ELSE)
+;;
+;; (if COND THEN)
+;; =>
+;; (prim-if COND THEN (begin))
+
+(fun ($if form)
+  (var cond (comp:first (comp:rest form)))
+  (var then (comp:first (comp:rest (comp:rest form))))
+  (var else-cell (comp:rest (comp:rest (comp:rest form))))
+  (prim-if else-cell
+           (syntax-expand (prim-if ?cond ?then ?(comp:first else-cell)))
+           (syntax-expand (prim-if ?cond ?then (begin)))))
+(prim-mac if 0 $if)
+
 ;; Main
 
-(prim-fun (fac n)
-  (prim-if (< n 2)
-           n
-           (* n (fac (- n 1)))))
+(fun (fac n)
+  (if (< n 2)
+      n
+      (* n (fac (- n 1)))))
 
-(prim-fun (main)
-  (begin
-    (var m 5)
-    (fac m)))
+(fun (main)
+  (var m 5)
+  (fac m))
