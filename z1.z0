@@ -259,6 +259,7 @@
   (u32 cc-level)
   (u32 cc-gensym)
   (u64 cc-fixups)
+  (u64 cc-curexp)
   (u8 cc-tokenbuf 1024))
 
 ;; Definition types
@@ -295,7 +296,7 @@
   (set (exp-sym-val ?sym) ?val))
 
 (code error-redef-exp
-  (set l0 l1)
+  (set l0 (cc-curexp x5))
   (call exp-write)
   (let l0 (u8 .redef-error-string))
   (jmp abort)
@@ -303,7 +304,7 @@
   (1 "\nredefined\n" 0))
 
 (code error-not-local-exp
-  (set l0 l1)
+  (set l0 (cc-curexp x5))
   (call exp-write)
   (let l0 (u8 .not-local-error-string))
   (jmp abort)
@@ -311,7 +312,7 @@
   (1 "\nnot a local variable\n" 0))
 
 (code error-not-label-exp
-  (set l0 l1)
+  (set l0 (cc-curexp x5))
   (call exp-write)
   (let l0 (u8 .not-label-error-string))
   (jmp abort)
@@ -1068,7 +1069,7 @@
 ;; Compilation
 
 (code syntax
-  (set l0 l1)
+  (set l0 (cc-curexp x5))
   (call exp-write)
   (let l0 (u8 .syntax-error-string))
   (jmp abort)
@@ -1744,11 +1745,14 @@
 (code comp-expr
   ;; l0 - codeptr
   ;; l1 - exp
+  (set l2 (cc-curexp x5))
+  (push l2)
+  (set (cc-curexp x5) l1)
   (call comp-expand)
   (assert-type l1 exp-type-number .not-number)
   (set l2 (exp-num-val l1))
   (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l2)
-  (ret)
+  (jmp .return)
 .not-number
   (assert-type l1 exp-type-symbol .not-symbol)
   (push l0)
@@ -1759,14 +1763,15 @@
   (neg l1)
   (pop l0)
   (code-emit l0 (set l0 (u64 x1 0xFFFF)) l1)
-  (ret)
+  (jmp .return)
 .not-local
   (pop l0)
   (code-emit l0 (set l0 0x1234567812345678) l1)
-  (ret)
+  (jmp .return)
 .not-symbol
   (assert-type l1 exp-type-string .not-string)
-  (jmp comp-string-literal)
+  (call comp-string-literal)
+  (jmp .return)
 .not-string
   (parse-exp l1 l2)
   (assert-type l2 exp-type-number .call)
@@ -1781,7 +1786,8 @@
   (set l3 comp-expr-table)
   (set l3 (u64 l3 l2))
   (code-check l0)
-  (jmp l3)
+  (call l3)
+  (jmp .return)
 .call
   (cmp (cc-level x5) 0)
   (je syntax)
@@ -1800,6 +1806,9 @@
   (mul x0 8)
   (code-emit l0 (add sp 0x1234) x0)
   (pop x0)
+.return
+  (pop l2)
+  (set (cc-curexp x5) l2)
   (ret))
 
 ;; Main
