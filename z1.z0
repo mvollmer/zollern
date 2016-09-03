@@ -295,27 +295,28 @@
   (set (exp-sym-type ?sym) ?type)
   (set (exp-sym-val ?sym) ?val))
 
-(code error-redef-exp
+(code error
+  (push l0)
   (set l0 (cc-curexp x5))
   (call exp-write)
+  (pop l0)
+  (jmp abort))
+
+(code error-redef-exp
   (let l0 (u8 .redef-error-string))
-  (jmp abort)
+  (jmp error)
 .redef-error-string
   (1 "\nredefined\n" 0))
 
 (code error-not-local-exp
-  (set l0 (cc-curexp x5))
-  (call exp-write)
   (let l0 (u8 .not-local-error-string))
-  (jmp abort)
+  (jmp error)
 .not-local-error-string
   (1 "\nnot a local variable\n" 0))
 
 (code error-not-label-exp
-  (set l0 (cc-curexp x5))
-  (call exp-write)
   (let l0 (u8 .not-label-error-string))
-  (jmp abort)
+  (jmp error)
 .not-label-error-string
   (1 "\nnot a label\n" 0))
 
@@ -1069,10 +1070,8 @@
 ;; Compilation
 
 (code syntax
-  (set l0 (cc-curexp x5))
-  (call exp-write)
   (let l0 (u8 .syntax-error-string))
-  (jmp abort)
+  (jmp error)
 .syntax-error-string
   (1 "\nsyntax error\n" 0))
 
