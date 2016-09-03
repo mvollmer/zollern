@@ -42,20 +42,20 @@
          gensym
          (comp:make-pair
           (comp:intern "form")
-          0)))
-       (comp:make-pair
+          0))
         (comp:make-pair
-         (5 b-cell (comp:intern "$prim-2") (comp:intern "$prim-1"))
          (comp:make-pair
-          (comp:intern "form")
+          (5 b-cell (comp:intern "$prim-2") (comp:intern "$prim-1"))
           (comp:make-pair
-           (comp:first a-cell)
-           (5 b-cell
-              (comp:make-pair
-               (comp:first b-cell)
-               0)
-              0))))
-        0))
+           (comp:intern "form")
+           (comp:make-pair
+            (comp:first a-cell)
+            (5 b-cell
+               (comp:make-pair
+                (comp:first b-cell)
+                0)
+               0))))
+         0)))
       (comp:make-pair
        (comp:make-pair
         (comp:make-number 2)
