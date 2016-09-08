@@ -696,6 +696,12 @@
 .unknown-string
   (1 "<unknown>" 0))
 
+(def (assert-type ?exp ?type ?error)
+  (cmp ?exp 0)
+  (je ?error)
+  (cmp (exp-type ?exp) ?type)
+  (jne ?error))
+
 ;; Code generation
 
 (data
@@ -887,16 +893,19 @@
 
 (code comp-first
   (set l0 (u64 sp 8))
+  (assert-type l0 exp-type-pair syntax)
   (set l0 (exp-first l0))
   (ret))
 
 (code comp-rest
   (set l0 (u64 sp 8))
+  (assert-type l0 exp-type-pair syntax)
   (set l0 (exp-rest l0))
   (ret))
 
 (code comp-symbol-name
   (set l0 (u64 sp 8))
+  (assert-type l0 exp-type-symbol syntax)
   (add l0 (sizeof exp-symbol))
   (ret))
 
@@ -1074,12 +1083,6 @@
   (jmp error)
 .syntax-error-string
   (1 "\nsyntax error\n" 0))
-
-(def (assert-type ?exp ?type ?error)
-  (cmp ?exp 0)
-  (je ?error)
-  (cmp (exp-type ?exp) ?type)
-  (jne ?error))
 
 (def (parse-eol ?ptr)
   (parse-eol ?ptr syntax))
