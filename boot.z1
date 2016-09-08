@@ -273,6 +273,89 @@
                            (comp:intern "meta") (comp:intern ".")))
 (prim-mac syntax-expand 0 $syntax-expand)
 
+;; Simple destructuring
+
+;; (parse-exp PTR VAR)
+;; =>
+;; (begin
+;;   (prim-var VAR)
+;;   (set VAR (comp:first PTR))
+;;   (set PTR (comp:rest PTR)))
+
+;; (parse-opt PTR VAR DEF)
+;; =>
+;; (begin
+;;   (prim-var VAR)
+;;   (prim-if PTR
+;;     (begin
+;;       (set VAR (comp:first PTR)
+;;       (set PTR (comp:rest PTR)))
+;;     (set VAR (syntax-expand DEF)))
+
+;; (parse-eol PTR)
+;; =>
+;; (prim-if PTR
+;;   (begin)
+;;   (comp:syntax))
+
+;; (parse-rst PTR VAR)
+;; =>
+;; (begin
+;;   (prim-var VAR)
+;;   (set VAR PTR))
+
+(prim-fun ($parse-exp form)
+  (begin
+    (prim-var ptr-sym) (set ptr-sym (comp:first (comp:rest form)))
+    (prim-var var-sym) (set var-sym (comp:first (comp:rest (comp:rest form))))
+    (prim-if (comp:rest (comp:rest (comp:rest form))) (comp:syntax) (begin))
+    (syntax-expand (begin (prim-var ?var-sym)
+                          (set ?var-sym (comp:first ?ptr-sym))
+                          (set ?ptr-sym (comp:rest ?ptr-sym))))))
+(prim-mac parse-exp 0 $parse-exp)
+
+(prim-fun ($parse-opt form)
+  (begin
+    (parse-exp form _)
+    (parse-exp form ptr-sym)
+    (parse-exp form var-sym)
+    (prim-var def-exp)
+    (prim-if form
+             (begin
+               (set def-exp (syntax-expand (syntax-expand ?(comp:first form))))
+               (set form (comp:rest form)))
+             (begin
+               (set def-exp (comp:make-number 0))))
+    (prim-if form (comp:syntax) (begin))
+    (syntax-expand (begin
+                     (prim-var ?var-sym)
+                     (prim-if ?ptr-sym
+                              (begin
+                                (set ?var-sym (comp:first ?ptr-sym))
+                                (set ?ptr-sym (comp:rest ?ptr-sym)))
+                              (begin
+                                (set ?var-sym ?def-exp)))))))
+(prim-mac parse-opt 0 $parse-opt)
+
+(prim-fun ($parse-eol form)
+  (begin
+    (parse-exp form _)
+    (parse-exp form ptr-sym)
+    (prim-if form (comp:syntax) (begin))
+    (syntax-expand (prim-if ?ptr-sym (comp:syntax) (begin)))))
+(prim-mac parse-eol 0 $parse-eol)
+
+(prim-fun ($parse-rst form)
+  (begin
+    (parse-exp form _)
+    (parse-exp form ptr-sym)
+    (parse-exp form var-sym)
+    (parse-eol form)
+    (syntax-expand (begin
+                     (prim-var ?var-sym)
+                     (set ?var-sym ?ptr-sym)))))
+(prim-mac parse-rst 0 $parse-rst)
+
 ;; Enhanced versions of some primitives
 
 ;; (var NAME)
@@ -287,11 +370,13 @@
 
 (prim-fun ($var form)
   (begin
-    (prim-var name)      (set name      (comp:first (comp:rest form)))
-    (prim-var init-cell) (set init-cell (comp:rest (comp:rest form)))
-    (prim-if init-cell
+    (parse-exp form _)
+    (parse-exp form name)
+    (parse-opt form init)
+    (parse-eol form)
+    (prim-if init
              (syntax-expand (begin (prim-var ?name)
-                                   (set ?name ?(comp:first init-cell))))
+                                   (set ?name ?init)))
              (syntax-expand (prim-var ?name)))))
 (prim-mac var 0 $var)
 
@@ -301,8 +386,9 @@
 
 (prim-fun ($fun form)
   (begin
-    (var head (comp:first (comp:rest form)))
-    (var body (comp:rest (comp:rest form)))
+    (parse-exp form _)
+    (parse-exp form head)
+    (parse-rst form body)
     (syntax-expand
      (prim-fun ?head (begin . ?body)))))
 (prim-mac fun 0 $fun)
@@ -316,18 +402,18 @@
 ;; (prim-if COND THEN (begin))
 
 (fun ($if form)
-  (var cond (comp:first (comp:rest form)))
-  (var then (comp:first (comp:rest (comp:rest form))))
-  (var else-cell (comp:rest (comp:rest (comp:rest form))))
-  (prim-if else-cell
-           (syntax-expand (prim-if ?cond ?then ?(comp:first else-cell)))
-           (syntax-expand (prim-if ?cond ?then (begin)))))
+  (parse-exp form _)
+  (parse-exp form cond)
+  (parse-exp form then)
+  (parse-opt form else (begin))
+  (parse-eol form)
+  (syntax-expand (prim-if ?cond ?then ?else)))
 (prim-mac if 0 $if)
 
 ;; Main
 
 (fun (fac n)
-  (if (< n 2)
+     (if (< n 2)
       n
       (* n (fac (- n 1)))))
 
