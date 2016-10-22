@@ -973,6 +973,10 @@
   (pop x5)
   (ret))
 
+(code comp-reverse
+  (set l0 (u64 sp 8))
+  (jmp exp-list-reverse))
+
 (code comp-syntax
   (push x5)
   (set x5 (u64 comp-compiler-context))
@@ -996,6 +1000,7 @@
   (8 comp-make-string .comp-make-string-name)
   (8 comp-intern .comp-intern-name)
   (8 comp-gensym .comp-gensym-name)
+  (8 comp-reverse .comp-reverse-name)
   (8 comp-syntax .comp-syntax-name)
   (8 comp-show .comp-show-name)
   comp-export-table-end
@@ -1017,6 +1022,8 @@
   (1 "comp:intern" 0)
 .comp-gensym-name
   (1 "comp:gensym" 0)
+.comp-reverse-name
+  (1 "comp:reverse" 0)
 .comp-syntax-name
   (1 "comp:syntax" 0)
 .comp-show-name
