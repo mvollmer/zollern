@@ -356,6 +356,70 @@
                      (set ?var-sym ?ptr-sym)))))
 (prim-mac parse-rst 0 $parse-rst)
 
+;; (syntax-parse PTR PATTERN)
+
+(prim-fun ($syntax-parse form)
+  (begin
+    (prim-var result)
+    (prim-var first)
+    (prim-var tmp)
+    (prim-var underscore)
+    (prim-var dot)
+    (prim-var meta)
+    (parse-exp form _)
+    (parse-exp form ptr)
+    (parse-exp form pattern)
+    (parse-eol form)
+    (set result 0)
+    (set underscore (comp:intern "_"))
+    (set dot (comp:intern "."))
+    (set meta (comp:intern "meta"))
+    (label loop)
+    (prim-if pattern
+             (begin)
+             (goto done))
+    (set first (comp:first pattern))
+    (prim-if (== first underscore)
+             (set result (comp:make-pair
+                          (syntax-expand (set ?ptr (comp:rest ?ptr)))
+                          result))
+             (prim-if (== first dot)
+                      (begin
+                        (set tmp (comp:first (comp:rest pattern))) ; (meta var)
+                        (set result (comp:make-pair
+                                     (syntax-expand (parse-rst ?ptr ?(comp:first (comp:rest tmp))))
+                                     result))
+                        (goto done-no-eol-check))
+                      (prim-if (== (comp:type first) 0)
+                               (prim-if (== (comp:first first) meta)
+                                        (begin
+                                          (set tmp (comp:first (comp:rest first)))
+                                          (prim-if (== (comp:type tmp) 0)
+                                                   (begin
+                                                     (set result (comp:make-pair
+                                                                  (syntax-expand
+                                                                   (parse-opt ?ptr . ?tmp))
+                                                                  result)))
+                                                   (set result (comp:make-pair
+                                                                (syntax-expand (parse-exp ?ptr ?tmp))
+                                                                result))))
+                                        (begin
+                                          (set tmp (comp:gensym))
+                                          (set result (comp:make-pair
+                                                       (syntax-expand (begin
+                                                                        (parse-exp ?ptr ?tmp)
+                                                                        (syntax-parse ?tmp ?first)))
+                                                       result))))
+                               (comp:syntax))))
+    (set pattern (comp:rest pattern))
+    (goto loop)
+    (label done)
+    (set result (comp:make-pair (syntax-expand (parse-eol ?ptr))
+                                result))
+    (label done-no-eol-check)
+    (syntax-expand (begin . ?(comp:reverse result)))))
+(prim-mac syntax-parse 0 $syntax-parse)
+
 ;; Enhanced versions of some primitives
 
 ;; (var NAME)
@@ -370,10 +434,7 @@
 
 (prim-fun ($var form)
   (begin
-    (parse-exp form _)
-    (parse-exp form name)
-    (parse-opt form init)
-    (parse-eol form)
+    (syntax-parse form (_ ?name ?(init)))
     (prim-if init
              (syntax-expand (begin (prim-var ?name)
                                    (set ?name ?init)))
@@ -386,9 +447,7 @@
 
 (prim-fun ($fun form)
   (begin
-    (parse-exp form _)
-    (parse-exp form head)
-    (parse-rst form body)
+    (syntax-parse form (_ ?head . ?body))
     (syntax-expand
      (prim-fun ?head (begin . ?body)))))
 (prim-mac fun 0 $fun)
@@ -402,11 +461,7 @@
 ;; (prim-if COND THEN (begin))
 
 (fun ($if form)
-  (parse-exp form _)
-  (parse-exp form cond)
-  (parse-exp form then)
-  (parse-opt form else (begin))
-  (parse-eol form)
+  (syntax-parse form (_ ?cond ?then ?(else (begin))))
   (syntax-expand (prim-if ?cond ?then ?else)))
 (prim-mac if 0 $if)
 
