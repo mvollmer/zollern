@@ -420,7 +420,42 @@
     (syntax-expand (begin . ?(comp:reverse result)))))
 (prim-mac syntax-parse 0 $syntax-parse)
 
+;; (mac (NAME . ARGS) . BODY)
+;; =>
+;; (begin
+;;   (prim-fun ($$ form)
+;;     (syntax-parse form (_ . ARGS))
+;;     . BODY)
+;;   (prim-mac NAME 0 $$))
+
+(prim-fun ($mac form)
+  (begin
+    (prim-var $name)
+    (set $name (comp:gensym))
+    (syntax-parse form (_ (?name . ?args) . ?body))
+    (syntax-expand
+     (begin
+       (prim-fun (?$name form)
+                 (begin
+                   (syntax-parse form (_ . ?args))
+                   . ?body))
+       (prim-mac ?name 0 ?$name)))))
+(prim-mac mac 0 $mac)
+
 ;; Enhanced versions of some primitives
+
+;; (if COND THEN ELSE)
+;; =>
+;; (prim-if COND THEN ELSE)
+;;
+;; (if COND THEN)
+;; =>
+;; (prim-if COND THEN (begin))
+
+(mac (if ?cond ?then ?(else))
+  (prim-if else
+           (syntax-expand (prim-if ?cond ?then ?else))
+           (syntax-expand (prim-if ?cond ?then (begin)))))
 
 ;; (var NAME)
 ;; =>
@@ -432,43 +467,24 @@
 ;;  (prim-var NAME)
 ;;  (set NAME INIT))
 
-(prim-fun ($var form)
-  (begin
-    (syntax-parse form (_ ?name ?(init)))
-    (prim-if init
-             (syntax-expand (begin (prim-var ?name)
-                                   (set ?name ?init)))
-             (syntax-expand (prim-var ?name)))))
-(prim-mac var 0 $var)
+(mac (var ?name ?(init))
+  (if init
+      (syntax-expand (begin (prim-var ?name)
+                            (set ?name ?init)))
+      (syntax-expand (prim-var ?name))))
 
 ;; (fun HEAD . BODY)
 ;; =>
 ;; (prim-fun HEAD (begin . BODY))
 
-(prim-fun ($fun form)
-  (begin
-    (syntax-parse form (_ ?head . ?body))
-    (syntax-expand
-     (prim-fun ?head (begin . ?body)))))
-(prim-mac fun 0 $fun)
-
-;; (if COND THEN ELSE)
-;; =>
-;; (prim-if COND THEN ELSE)
-;;
-;; (if COND THEN)
-;; =>
-;; (prim-if COND THEN (begin))
-
-(fun ($if form)
-  (syntax-parse form (_ ?cond ?then ?(else (begin))))
-  (syntax-expand (prim-if ?cond ?then ?else)))
-(prim-mac if 0 $if)
+(mac (fun ?head . ?body)
+     (syntax-expand
+      (prim-fun ?head (begin . ?body))))
 
 ;; Main
 
 (fun (fac n)
-     (if (< n 2)
+  (if (< n 2)
       n
       (* n (fac (- n 1)))))
 
