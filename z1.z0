@@ -244,7 +244,7 @@
 
 ;;; Compiler context
 
-;; All functions that use a compiler context expect it in x5.
+;; All functions that use a compiler context expect it in cp.
 
 (defstruct compiler-context
   (mem-pool cc-pool)
@@ -295,7 +295,7 @@
 
 (code error
   (push l0)
-  (set l0 (cc-curexp x5))
+  (set l0 (cc-curexp cp))
   (call exp-write)
   (pop l0)
   (jmp abort))
@@ -331,18 +331,18 @@
   (s64 exp-num-val))
 
 (code exp-init
-  (let l0 (cc-pool x5))
+  (let l0 (cc-pool cp))
   (set l1 EXP-POOL-SIZE)
   (call mem-pool-init)
   (jmp exp-reset))
 
 (code exp-reset
-  (let l0 (cc-pool x5))
+  (let l0 (cc-pool cp))
   (set l1 (mp-start l0))
   (set (mp-next l1) l0)
   (set l1 (* EXP-HASH-SIZE (sizeof u64)))
   (call mem-pool-alloc)
-  (set (cc-symbols x5) l0)
+  (set (cc-symbols cp) l0)
   (set l1 EXP-HASH-SIZE)
   (set l2 0)
   (jmp .test)
@@ -360,7 +360,7 @@
   (push x1)
   (set x0 l0)
   (set x1 l1)
-  (let l0 (cc-pool x5))
+  (let l0 (cc-pool cp))
   (set l1 (sizeof exp-pair))
   (call mem-pool-alloc)
   (set l1 exp-type-pair)
@@ -374,7 +374,7 @@
 (code exp-make-number
   (push x0)
   (set x0 l0)
-  (let l0 (cc-pool x5))
+  (let l0 (cc-pool cp))
   (set l1 (sizeof exp-number))
   (call mem-pool-alloc)
   (set l1 exp-type-number)
@@ -395,7 +395,7 @@
   (add l0 1)
   (add l0 x1)
   (set l1 l0)
-  (let l0 (cc-pool x5))
+  (let l0 (cc-pool cp))
   (call mem-pool-alloc)
   (set x2 l0)
   (add l0 x1)
@@ -437,7 +437,7 @@
   (set l1 EXP-HASH-SIZE)
   (sdiv l1)
   (set x1 l2)
-  (set l0 (cc-symbols x5))
+  (set l0 (cc-symbols cp))
   (set x2 (u64 l0 x1))
   (jmp .find-test)
 .find-loop
@@ -462,7 +462,7 @@
   (call exp-make-with-string)
   (set (exp-type l0) exp-type-symbol)
   (set (exp-sym-type l0) def-type-undef)
-  (set l1 (cc-symbols x5))
+  (set l1 (cc-symbols cp))
   (set l2 (u64 l1 x1))
   (set (exp-sym-link l0) l2)
   (set (u64 l1 x1) l0)
@@ -486,8 +486,8 @@
   (ret))
 
 (code exp-read
-  (let l1 (cc-token x5))
-  (let l2 (cc-tokenbuf x5))
+  (let l1 (cc-token cp))
+  (let l2 (cc-tokenbuf cp))
   (set (tk-buf l1) l2)
   (push x0)
   (push x1)
@@ -708,9 +708,9 @@
 
 (code code-init
   (let l0 (u8 codebuf))
-  (set (cc-codebuf x5) l0)
+  (set (cc-codebuf cp) l0)
   (let l1 (u8 (- codebuf-end 100)))
-  (set (cc-codebuf-end x5) l1)
+  (set (cc-codebuf-end cp) l1)
   (ret))
 
 (def (size-to-type  1) u8)
@@ -752,7 +752,7 @@
 
 (def (code-check ?ptr)
   (push l1)
-  (set l1 (cc-codebuf-end x5))
+  (set l1 (cc-codebuf-end cp))
   (cmp ?ptr l1)
   (jae too-much-code)
   (pop l1))
@@ -776,7 +776,7 @@
 ;; Globals
 
 (code globals-init
-  (set (cc-globals x5) 0)
+  (set (cc-globals cp) 0)
   (ret))
 
 (defstruct global
@@ -789,7 +789,7 @@
   (push x0)
   (push x1)
   (set x0 l0)
-  (set x1 (cc-globals x5))
+  (set x1 (cc-globals cp))
   (jmp .test)
 .loop
   (set x1 (glb-link x1))
@@ -822,9 +822,9 @@
   (let l0 (u8 x1 (sizeof global)))
   (set l1 x0)
   (call strcpy)
-  (set l0 (cc-globals x5))
+  (set l0 (cc-globals cp))
   (set (glb-link x1) l0)
-  (set (cc-globals x5) x1)
+  (set (cc-globals cp) x1)
   (set l0 x1)
   (pop x1)
   (pop x0)
@@ -855,15 +855,13 @@
   (u64 fx-val))
 
 (code fixup-alloc
-  (let l0 (cc-pool x5))
+  (let l0 (cc-pool cp))
   (set l1 (sizeof fixup))
   (call mem-pool-alloc)
-  (set l1 (cc-fixups x5))
+  (set l1 (cc-fixups cp))
   (set (fx-link l0) l1)
-  (set (cc-fixups x5) l0)
+  (set (cc-fixups cp) l0)
   (ret))
-
-(data comp-compiler-context (sizeof u64))
 
 (code comp-type
   (set l0 (u64 sp 8))
@@ -891,34 +889,22 @@
 (code comp-make-pair
   (set l0 (u64 sp 8))
   (set l1 (u64 sp 16))
-  (push x5)
-  (set x5 (u64 comp-compiler-context))
   (call exp-make-pair)
-  (pop x5)
   (ret))
 
 (code comp-make-number
   (set l0 (u64 sp 8))
-  (push x5)
-  (set x5 (u64 comp-compiler-context))
   (call exp-make-number)
-  (pop x5)
   (ret))
 
 (code comp-make-string
   (set l0 (u64 sp 8))
-  (push x5)
-  (set x5 (u64 comp-compiler-context))
   (call exp-make-string)
-  (pop x5)
   (ret))
 
 (code comp-intern
   (set l0 (u64 sp 8))
-  (push x5)
-  (set x5 (u64 comp-compiler-context))
   (call exp-intern)
-  (pop x5)
   (ret))
 
 (data strbuf 30)
@@ -941,15 +927,12 @@
   (ret))
 
 (code comp-gensym
-  (push x5)
-  (set x5 (u64 comp-compiler-context))
-  (set l0 (cc-gensym x5))
-  (add (cc-gensym x5) 1)
+  (set l0 (cc-gensym cp))
+  (add (cc-gensym cp) 1)
   (call strint)
   (sub l0 1)
   (set (u8 l0) :$)
   (call exp-intern)
-  (pop x5)
   (ret))
 
 (code comp-reverse
@@ -957,8 +940,6 @@
   (jmp exp-list-reverse))
 
 (code comp-syntax
-  (push x5)
-  (set x5 (u64 comp-compiler-context))
   (jmp syntax))
 
 (code comp-show
@@ -1147,7 +1128,6 @@
   (ret))
 
 (code comp-expand
-  (set (u64 comp-compiler-context) x5)
 .again
   (assert-type l0 exp-type-symbol .not-symbol)
   (set l1 l0)
@@ -1392,9 +1372,9 @@
   (parse-symbol l0 l1)
   (parse-eol l0)
   (set l0 l1)
-  (set l1 (cc-next-frame-offset x5))
+  (set l1 (cc-next-frame-offset cp))
   (add l1 8)
-  (set (cc-next-frame-offset x5) l1)
+  (set (cc-next-frame-offset cp) l1)
   (call locals-define)
   (ret))
 
@@ -1408,7 +1388,6 @@
   (set l1 l0)
   (set l2 3)
   (set l3 (u64 sp 8))
-  (set (u64 comp-compiler-context) x5)
   (call comp-expand-form)
   (cmp l1 0)
   (je .set-symbol)
@@ -1432,7 +1411,6 @@
   (assert-type l1 exp-type-symbol syntax)
   (set l2 2)
   (set l3 (u64 sp 8))
-  (set (u64 comp-compiler-context) x5)
   (call comp-expand-form)
   (cmp l1 0)
   (je syntax)
@@ -1537,11 +1515,11 @@
 (def-comp-memset comp-memset-s64 s64)
 
 (code comp-func
-  (cmp (cc-level x5) 0)
+  (cmp (cc-level cp) 0)
   (jne syntax)
-  (set (cc-level x5) 1)
-  (set (cc-fixups x5) 0)
-  (set l1 (cc-symbols x5))
+  (set (cc-level cp) 1)
+  (set (cc-fixups cp) 0)
+  (set l1 (cc-symbols cp))
   (set l2 (- EXP-HASH-SIZE 1))
   (jmp .clear-locals-test)
 .clear-locals-loop
@@ -1588,7 +1566,7 @@
   (jmp .arg-next)
 .arg-done
   (pop l0)
-  (set (cc-next-frame-offset x5) 0)
+  (set (cc-next-frame-offset cp) 0)
   (parse-exp l0 l1)
   (parse-eol l0)
   (set l0 l1)
@@ -1601,10 +1579,10 @@
   (code-emit x4 (pop x1))
   (code-emit x4 (ret))
   (pop l1)
-  (set l2 (cc-next-frame-offset x5))
+  (set l2 (cc-next-frame-offset cp))
   (code-emit l1 (sub sp 0xFFFF) l2)
   (push x0)
-  (set x0 (cc-fixups x5))
+  (set x0 (cc-fixups cp))
   (jmp .fixup-test)
 .fixup-loop
   (set l0 (fx-func x0))
@@ -1614,11 +1592,11 @@
   (cmp x0 0)
   (jne .fixup-loop)
   (pop x0)
-  (set (cc-level x5) 0)
+  (set (cc-level cp) 0)
   (ret))
 
 (code comp-macro
-  (cmp (cc-level x5) 0)
+  (cmp (cc-level cp) 0)
   (jne syntax)
   (push x0)
   (push x1)
@@ -1733,9 +1711,9 @@
   (ret))
 
 (code comp-expr
-  (set l1 (cc-curexp x5))
+  (set l1 (cc-curexp cp))
   (push l1)
-  (set (cc-curexp x5) l0)
+  (set (cc-curexp cp) l0)
   (call comp-expand)
   (assert-type l0 exp-type-number .not-number)
   (set l1 (exp-num-val l0))
@@ -1762,7 +1740,7 @@
   (set l1 (exp-num-val l1))
   (cmp l1 comp-expr-table-size)
   (jae syntax)
-  (cmp (cc-level x5) 0)
+  (cmp (cc-level cp) 0)
   (ja .in-function)
   (cmp l1 comp-first-local-only)
   (jae syntax)
@@ -1773,7 +1751,7 @@
   (call l2)
   (jmp .return)
 .call
-  (cmp (cc-level x5) 0)
+  (cmp (cc-level cp) 0)
   (je syntax)
   (push x0)
   (set x0 0)
@@ -1792,7 +1770,7 @@
   (pop x0)
 .return
   (pop l1)
-  (set (cc-curexp x5) l1)
+  (set (cc-curexp cp) l1)
   (ret))
 
 ;; Main
@@ -1802,9 +1780,9 @@
   cc (sizeof compiler-context))
 
 (code main
-  (let x5 (compiler-context cc))
-  (set (cc-level x5) 0)
-  (set (cc-gensym x5) 0)
+  (let cp (compiler-context cc))
+  (set (cc-level cp) 0)
+  (set (cc-gensym cp) 0)
   (call exp-init)
   (set x1 fbuf)
   (set l0 x1)

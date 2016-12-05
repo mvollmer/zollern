@@ -35,12 +35,14 @@
 
 ;; Registers and calling convention
 ;;
-;; Registerd l0-l8 must be saved by caller.  Registers x0-x5 and sp
-;; must be saved by callee.  Arguments are passed in l0-l8.  Results
-;; are returned in l0-l8.  Register sp is the stack pointer.
+;; Registerd l0-l8 must be saved by caller.  Registers x0-x4 and sp
+;; must be saved by callee.  Register cp must be passed on unchanged
+;; to all called functions.  Arguments are passed in l0-l8.  Results
+;; are returned in l0-l8.  Register sp is the stack pointer, and cp is
+;; the context pointer.
 ;;
 ;; "l0", for example, is the name for all 64 bits of register number
-;; zero, and "l0.8" is the name for the lest-significant 8 bits of
+;; zero, and "l0.8" is the name for the least-significant 8 bits of
 ;; that register.  Similar for "l0.16" and "l0.32"
 
 (def (defreg ?name ?num)
@@ -58,17 +60,17 @@
      (l2 l2.8 l2.16 l2.32)
      (x0 x0.8 x0.16 x0.32)
      sp
-     (x1 x1.8 x1.16 x1.32)
+     cp
      (l3 l3.8 l3.16 l3.32)
      (l4 l4.8 l4.16 l4.32)
      (l5 l5.8 l5.16 l5.32)
      (l6 l6.8 l6.16 l6.32)
      (l7 l7.8 l7.16 l7.32)
      (l8 l8.8 l8.16 l8.32)
+     (x1 x1.8 x1.16 x1.32)
      (x2 x2.8 x2.16 x2.32)
      (x3 x3.8 x3.16 x3.32)
-     (x4 x4.8 x4.16 x4.32)
-     (x5 x5.8 x5.16 x5.32))
+     (x4 x4.8 x4.16 x4.32))
 
 ;; Characters
 
