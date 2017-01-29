@@ -257,11 +257,11 @@
 ;; All functions that use a compiler context expect it in (ctxt-comp cp).
 
 (defstruct compiler-context
-  (mem-pool cc-pool)
+  (mem-pool cc-tmp-pool)
+  (mem-pool cc-code-pool)
   (u64 cc-symbols)
   (token-struct cc-token)
-  (u64 cc-codebuf)
-  (u64 cc-codebuf-end)
+  (u64 cc-code-fence)
   (u32 cc-next-frame-offset)
   (u64 cc-globals)
   (u32 cc-level)
@@ -343,7 +343,7 @@
 
 (code exp-init
   (set l0 (ctxt-comp cp))
-  (let l0 (cc-pool l0))
+  (let l0 (cc-tmp-pool l0))
   (set l1 EXP-POOL-SIZE)
   (call mem-pool-init)
   (jmp exp-reset))
@@ -351,7 +351,7 @@
 (code exp-reset
   (push x0)
   (set x0 (ctxt-comp cp))
-  (let l0 (cc-pool x0))
+  (let l0 (cc-tmp-pool x0))
   (set l1 (mp-start l0))
   (set (mp-next l1) l0)
   (set l1 (* EXP-HASH-SIZE (sizeof u64)))
@@ -376,7 +376,7 @@
   (set x0 l0)
   (set x1 l1)
   (set l0 (ctxt-comp cp))
-  (let l0 (cc-pool l0))
+  (let l0 (cc-tmp-pool l0))
   (set l1 (sizeof exp-pair))
   (call mem-pool-alloc)
   (set l1 exp-type-pair)
@@ -391,7 +391,7 @@
   (push x0)
   (set x0 l0)
   (set l0 (ctxt-comp cp))
-  (let l0 (cc-pool l0))
+  (let l0 (cc-tmp-pool l0))
   (set l1 (sizeof exp-number))
   (call mem-pool-alloc)
   (set l1 exp-type-number)
@@ -413,7 +413,7 @@
   (add l0 x1)
   (set l1 l0)
   (set l0 (ctxt-comp cp))
-  (let l0 (cc-pool l0))
+  (let l0 (cc-tmp-pool l0))
   (call mem-pool-alloc)
   (set x2 l0)
   (add l0 x1)
@@ -725,16 +725,20 @@
 
 ;; Code generation
 
-(data
-  codebuf (* 1024 1024)
-  codebuf-end)
+(def CODE-POOL-SIZE (* 1024 1024))
 
 (code code-init
-  (let l0 (u8 codebuf))
-  (set l1 (ctxt-comp cp))
-  (set (cc-codebuf l1) l0)
-  (let l2 (u8 (- codebuf-end 100)))
-  (set (cc-codebuf-end l1) l2)
+  (push x0)
+  (set x0 (ctxt-comp cp))
+  (let l0 (cc-code-pool x0))
+  (set l1 CODE-POOL-SIZE)
+  (call mem-pool-init)
+  (let l0 (cc-code-pool x0))
+  (set l2 (mp-end l0))
+  (sub l2 100)
+  (set (cc-code-fence x0) l2)
+  (set l0 (mp-start l0))
+  (pop x0)
   (ret))
 
 (def (size-to-type  1) u8)
@@ -777,7 +781,7 @@
 (def (code-check ?ptr)
   (push l1)
   (set l1 (ctxt-comp cp))
-  (set l1 (cc-codebuf-end l1))
+  (set l1 (cc-code-fence l1))
   (cmp ?ptr l1)
   (jae too-much-code)
   (pop l1))
@@ -885,7 +889,7 @@
 (code fixup-alloc
   (push x0)
   (set x0 (ctxt-comp cp))
-  (let l0 (cc-pool x0))
+  (let l0 (cc-tmp-pool x0))
   (set l1 (sizeof fixup))
   (call mem-pool-alloc)
   (set l1 (cc-fixups x0))
