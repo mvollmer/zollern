@@ -1755,12 +1755,12 @@
 (def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
 
 (code comp-string-literal
-  (code-emit x4 (set l0 0xFFFFFFFFFFFFFFFF) 0)
+  (code-emit x4 (let l0 (u8 0x1234)))
   (push l0)
   (call fixup-alloc)
   (set (fx-func l0) fixup-func-string-literal)
   (set l1 x4)
-  (sub l1 8)
+  (sub l1 4)
   (set (fx-ptr l0) l1)
   (pop l1)
   (set (fx-val l0) l1)
@@ -1768,7 +1768,10 @@
 
 (code fixup-func-string-literal
   (set l0 (fx-ptr x0))
-  (set (u64 l0) x4)
+  (set l1 x4)
+  (sub l1 l0)
+  (sub l1 4)
+  (set (u32 l0) l1)
   (set l0 (fx-val x0))
   (add l0 (sizeof exp-string))
 .loop
