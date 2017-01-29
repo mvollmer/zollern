@@ -757,7 +757,7 @@
   (begin))
 
 (def (code-emit-1 ?ptr (?size ?first . ?rest) ?repl)
-  (sel (== ?size 8) (error "can't emit 64 bit literals")
+  (sel (== ?size 8) ("error: can't emit 64 bit literals")
                     (begin))
   (set ((size-to-type ?size) ?ptr) ?first)
   (add ?ptr (size-to-offset ?size))
@@ -786,7 +786,7 @@
   (let l0 (u8 .too-big-string))
   (jmp abort)
 .too-big-string
-  (1 "too much code!" 0))
+  (1 "too much code!\n" 0))
 
 (code code-alloc
   ;; l0 - size
@@ -1192,6 +1192,7 @@
   (cmp l0 0)
   (je .done)
   (call comp-exprs)
+  (code-check x4)
   (code-emit x4 (push l0))
   (set l2 l0)
 .done
@@ -1222,11 +1223,13 @@
   (set x0 l0)
   (parse-exp x0 l0)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (cmp l0 0))
   (code-emit x4 (je 0x1234))
   (set x1 x4)
   (parse-exp x0 l0)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (jmp 0x1234))
   (set l0 x4)
   (sub l0 x1)
@@ -1262,10 +1265,12 @@
   (jmp l0))
 
 (code comp-unop-neg
+  (code-check x4)
   (code-emit x4 (neg l0))
   (ret))
 
 (code comp-unop-not
+  (code-check x4)
   (code-emit x4 (not l0))
   (ret))
 
@@ -1287,12 +1292,14 @@
   (push l0)
   (set l0 l2)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (push l0))
   (pop l0)
   (parse-exp l0 l2)
   (parse-eol l0)
   (set l0 l2)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (pop l1))
   (pop l1)
   (set l0 comp-binop-table)
@@ -1300,6 +1307,7 @@
   (jmp l0))
 
 (def (comp-emit-setcc ?ins)
+  (code-check x4)
   (code-emit x4 (set l2 l0))
   (code-emit x4 (xor l0 l0))
   (code-emit x4 (cmp l1 l2))
@@ -1348,6 +1356,7 @@
   (set x1 l0)
   (jmp .test)
 .loop
+  (code-check x4)
   (code-emit x4 (pop l1))
   (call x0)
   (sub x1 1)
@@ -1359,18 +1368,22 @@
   (ret))
 
 (code comp-polop-add
+  (code-check x4)
   (code-emit x4 (add l0 l1))
   (ret))
 
 (code comp-polop-sub
+  (code-check x4)
   (code-emit x4 (sub l0 l1))
   (ret))
 
 (code comp-polop-mul
+  (code-check x4)
   (code-emit x4 (mul l0 l1))
   (ret))
 
 (code comp-polop-div
+  (code-check x4)
   (code-emit x4 (sign-extend))
   (code-emit x4 (sdiv l1))
   (ret))
@@ -1436,6 +1449,7 @@
   (push l1)
   (call comp-expr)
   (pop l1)
+  (code-check x4)
   (code-emit x4 (set (u64 x1 0xFFFF) l0) l1)
   (ret)
 .not-symbol
@@ -1460,6 +1474,7 @@
   (jne error-not-local-exp)
   (set l1 (exp-sym-val l0))
   (neg l1)
+  (code-check x4)
   (code-emit x4 (let l0 (u64 x1 0xFFFF)) l1)
   (ret))
 
@@ -1490,6 +1505,7 @@
 
 (def (def-comp-memref ?name ?type)
   (code ?name
+     (code-check x4)
      (code-emit x4 (set l0 (?type l0)))
      (ret)))
 
@@ -1524,9 +1540,11 @@
   (push l3)
   (set l0 l2)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (push l0))
   (pop l0)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (pop l1))
   (set l0 comp-memset-table)
   (pop l1)
@@ -1535,6 +1553,7 @@
 
 (def (def-comp-memset ?name ?type)
   (code ?name
+     (code-check x4)
      (code-emit x4 (set (?type l1) l0))
      (ret)))
 
@@ -1605,11 +1624,13 @@
   (parse-exp l0 l1)
   (parse-eol l0)
   (set l0 l1)
+  (code-check x4)
   (code-emit x4 (push x1))
   (code-emit x4 (set x1 sp))
   (push x4)
   (code-emit x4 (sub sp 0x0FFFF) 0)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (set sp x1))
   (code-emit x4 (pop x1))
   (code-emit x4 (ret))
@@ -1686,6 +1707,7 @@
   (ret))
 
 (code comp-goto
+  (code-check x4)
   (code-emit x4 (jmp 0x1234))
   (push l0)
   (call fixup-alloc)
@@ -1733,20 +1755,30 @@
 (def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
 
 (code comp-string-literal
-  (add l0 (sizeof exp-string))
-  (code-emit x4 (jmp 0x1234))
+  (code-emit x4 (set l0 0xFFFFFFFFFFFFFFFF) 0)
+  (push l0)
+  (call fixup-alloc)
+  (set (fx-func l0) fixup-func-string-literal)
   (set l1 x4)
+  (sub l1 8)
+  (set (fx-ptr l0) l1)
+  (pop l1)
+  (set (fx-val l0) l1)
+  (ret))
+
+(code fixup-func-string-literal
+  (set l0 (fx-ptr x0))
+  (set (u64 l0) x4)
+  (set l0 (fx-val x0))
+  (add l0 (sizeof exp-string))
 .loop
-  (set l2 (u8 l0))
-  (set (u8 x4) l2)
+  (code-check x4)
+  (set l1 (u8 l0))
+  (set (u8 x4) l1)
   (add x4 1)
   (add l0 1)
-  (cmp l2 0)
+  (cmp l1 0)
   (jne .loop)
-  (set l0 x4)
-  (sub l0 l1)
-  (set (u32 l1 -4) l0)
-  (code-emit x4 (set l0 0x12345678) l1)
   (ret))
 
 (code comp-expr
@@ -1758,6 +1790,7 @@
   (call comp-expand)
   (assert-type l0 exp-type-number .not-number)
   (set l1 (exp-num-val l0))
+  (code-check x4)
   (code-emit x4 (set l0 0xFFFFFFFFFFFFFFFF) l1)
   (jmp .return)
 .not-number
@@ -1766,9 +1799,11 @@
   (cmp l0 def-type-local)
   (jne .not-local)
   (neg l1)
+  (code-check x4)
   (code-emit x4 (set l0 (u64 x1 0xFFFF)) l1)
   (jmp .return)
 .not-local
+  (code-check x4)
   (code-emit x4 (set l0 0x1234567812345678) l1)
   (jmp .return)
 .not-symbol
@@ -1789,7 +1824,6 @@
 .in-function
   (set l2 comp-expr-table)
   (set l2 (u64 l2 l1))
-  (code-check x4)
   (call l2)
   (jmp .return)
 .call
@@ -1803,10 +1837,12 @@
   (je .done)
   (call comp-exprs)
   (set x0 l0)
+  (code-check x4)
   (code-emit x4 (push l0))
 .done
   (pop l0)
   (call comp-expr)
+  (code-check x4)
   (code-emit x4 (call l0))
   (mul x0 8)
   (code-emit x4 (add sp 0x1234) x0)
