@@ -79,6 +79,7 @@
 (defsyscall sys-fstat        5  2)
 (defsyscall sys-mmap         9  6)
 (defsyscall sys-munmap      11  2)
+(defsyscall sys-brk         12  1)
 (defsyscall sys-exit        60  1)
 (defsyscall sys-ftruncate   77  2)
 

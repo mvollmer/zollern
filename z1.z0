@@ -17,30 +17,60 @@
 
 ;; Memory
 ;;
-;; At the lowest level, memory is mostly allocated in *pages* of 16 KiB.
+;; At the lowest level, memory is mostly allocated in *pages* of 16
+;; KiB.  We get more memory from the OS via the brk syscall in chunks
+;; of 2 MiB, which is then carved up into pages.  When pages are
+;; returned, they go on a free list and are reused for the next
+;; request.
+
+(data
+  mem-free-pages 8
+  mem-next 8
+  mem-brk 8)
+
+(code mem-init
+  (set l0 0)
+  (call sys-brk)
+  (set (u64 mem-brk) l0)
+  (set (u64 mem-next) l0)
+  (ret))
 
 (def PAGE_SIZE (* 16 1024))
 
 (code page-get
-  (set l0 0)
-  (set l1 PAGE_SIZE)
-  (set l2 3) ; PROT_READ | PROT_WRITE
-  (set l3 0x22) ; MAP_ANONYMOUS | MAP_PRIVATE
-  (set l4 0)
-  (set l5 0)
-  (call sys-mmap)
+  (set l0 (u64 mem-free-pages))
   (cmp l0 0)
-  (jl .err)
+  (je .make-page)
+  (set l1 (u64 l0))
+  (set (u64 mem-free-pages) l1)
   (ret)
-.err
+.make-page
+  (set l0 (u64 mem-next))
+  (set l1 (u64 mem-brk))
+  (cmp l0 l1)
+  (je .get-mem)
+  (set l1 l0)
+  (add l1 PAGE_SIZE)
+  (set (u64 mem-next) l1)
+  (ret)
+.get-mem
+  (add l1 (* 2 1024 1024))
+  (set (u64 mem-brk) l1)
+  (set l0 l1)
+  (call sys-brk)
+  (set l1 (u64 mem-brk))
+  (cmp l1 l0)
+  (je .make-page)
   (let l0 (u8 .message))
   (jmp abort)
 .message
   (1 "Can't get memory\n" 0))
 
 (code page-put
-  (set l1 PAGE_SIZE)
-  (jmp sys-munmap))
+  (set l1 (u64 mem-free-pages))
+  (set (u64 l0) l1)
+  (set (u64 mem-free-pages) l0)
+  (ret))
 
 ;; (data p (sizeof mem-pool))
 ;;
@@ -1959,6 +1989,7 @@
   ctxt context)
 
 (code main
+  (call mem-init)
   (let cp (context ctxt))
   (let l0 (compiler-context cc))
   (set (ctxt-comp cp) l0)
