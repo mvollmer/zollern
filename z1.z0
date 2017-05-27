@@ -311,18 +311,27 @@
 .eof-in-string-message
   (1 "Unexpected end of file in string\n" 0))
 
+;;; Books
+
+;; What elsewhere is called a library or a module, we call a book.
+;; (And a collection of books is a library.)
+
+(defstruct book
+  (u64 bk-name)
+  (u64 bk-globals))
+
 ;;; Compiler context
 
 ;; All functions that use a compiler context expect it in (ctxt-comp cp).
 
 (defstruct compiler-context
+  (u64 cc-book)
   (mem-pool cc-tmp-pool)
   (u64 cc-symbols)
   (token-struct cc-token)
   (u64 cc-code-ptr)
   (u64 cc-code-end)
   (u32 cc-next-frame-offset)
-  (u64 cc-globals)
   (u32 cc-level)
   (u32 cc-gensym)
   (u64 cc-fixups)
@@ -786,6 +795,15 @@
   (set l0 (ctxt-comp cp))
   (jmp code-new-page))
 
+(code book-init
+  (set l0 (sizeof book))
+  (call code-alloc)
+  (set (bk-name l0) 0)
+  (set (bk-globals l0) 0)
+  (set l1 (ctxt-comp cp))
+  (set (cc-book l1) l0)
+  (ret))
+
 (code code-new-page
   (call page-get)
   (set l1 (ctxt-comp cp))
@@ -890,11 +908,6 @@
 
 ;; Globals
 
-(code globals-init
-  (set l0 (ctxt-comp cp))
-  (set (cc-globals l0) 0)
-  (ret))
-
 (defstruct global
   (u64 glb-link)
   (u64 glb-val)
@@ -906,7 +919,8 @@
   (push x1)
   (set x0 l0)
   (set x1 (ctxt-comp cp))
-  (set x1 (cc-globals x1))
+  (set x1 (cc-book x1))
+  (set x1 (bk-globals x1))
   (jmp .test)
 .loop
   (set x1 (glb-link x1))
@@ -940,9 +954,10 @@
   (set l1 x0)
   (call strcpy)
   (set l1 (ctxt-comp cp))
-  (set l0 (cc-globals l1))
+  (set l1 (cc-book l1))
+  (set l0 (bk-globals l1))
   (set (glb-link x1) l0)
-  (set (cc-globals l1) x1)
+  (set (bk-globals l1) x1)
   (set l0 x1)
   (pop x1)
   (pop x0)
@@ -2000,8 +2015,8 @@
   (set l0 x1)
   (let l1 (u8 .boot-filename))
   (call file-open)
-  (call globals-init)
   (call code-init)
+  (call book-init)
   (call globals-export-comp)
 .loop
   (set l0 x1)
