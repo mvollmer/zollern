@@ -10,9 +10,11 @@
 ;; This struct is pointed to by the 'cp' register and carries some
 ;; context pointers that would otherwise have to be passed explicitly.
 ;;
+;; ctxt-books is the list of compiled books
 ;; ctxt-comp is the current compiler-context.
 
 (defstruct context
+  (u64 ctxt-books)
   (u64 ctxt-comp))
 
 ;; Memory
@@ -318,6 +320,7 @@
 
 (defstruct book
   (u64 bk-name)
+  (u64 bk-next)
   (u64 bk-globals))
 
 ;;; Compiler context
@@ -326,6 +329,7 @@
 
 (defstruct compiler-context
   (u64 cc-book)
+  (u64 cc-lang-book)
   (mem-pool cc-tmp-pool)
   (u64 cc-symbols)
   (token-struct cc-token)
@@ -413,6 +417,11 @@
   (let l0 (cc-tmp-pool l0))
   (call mem-pool-init)
   (jmp exp-reset))
+
+(code exp-fini
+  (set l0 (ctxt-comp cp))
+  (let l0 (cc-tmp-pool l0))
+  (jmp mem-pool-reset))
 
 (code exp-reset
   (push x0)
@@ -795,15 +804,6 @@
   (set l0 (ctxt-comp cp))
   (jmp code-new-page))
 
-(code book-init
-  (set l0 (sizeof book))
-  (call code-alloc)
-  (set (bk-name l0) 0)
-  (set (bk-globals l0) 0)
-  (set l1 (ctxt-comp cp))
-  (set (cc-book l1) l0)
-  (ret))
-
 (code code-new-page
   (call page-get)
   (set l1 (ctxt-comp cp))
@@ -811,6 +811,57 @@
   (add l0 PAGE_SIZE)
   (set (cc-code-end l1) l0)
   (ret))
+
+(code book-init
+  ;; l0 - name
+  (push x0)
+  (push l0)
+  (set l0 (sizeof book))
+  (call code-alloc)
+  (set (bk-globals l0) 0)
+  (set x0 l0)
+  (pop l0)
+  (push l0)
+  (call strlen)
+  (add l0 1)
+  (call code-alloc)
+  (set (bk-name x0) l0)
+  (pop l1)
+  (call strcpy)
+  (set l1 (ctxt-comp cp))
+  (set (cc-book l1) x0)
+  (set l1 (ctxt-books cp))
+  (set (bk-next x0) l1)
+  (set (ctxt-books cp) x0)
+  (pop x0)
+  (ret))
+
+(code compiler-init
+  ;; l0 - book name
+  (push l0)
+  (set l0 (ctxt-comp cp))
+  (set (cc-level l0) 0)
+  (set (cc-gensym l0) 0)
+  (call exp-init)
+  (call code-init)
+  (pop l0)
+  (call book-init)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (set l0 (bk-next l0))
+  (cmp l0 0)
+  (je .no-lang-book)
+  (let l0 (u8 .lang-name))
+  (call book-find)
+  (set l1 (ctxt-comp cp))
+  (set (cc-lang-book l1) l0)
+.no-lang-book
+  (ret)
+.lang-name
+  (1 "lang/." 0))
+
+(code compiler-fini
+  (jmp exp-fini))
 
 (def (size-to-type  1) u8)
 (def (size-to-type  4) u32)
@@ -913,29 +964,151 @@
   (u64 glb-val)
   (u8  glb-type))
 
-(code globals-search
-  ;; l0 - name
+(code skip-book-prefix
+  ;; l0 - full name
+  ;; ->
+  ;; l0 - full name
+  ;; l1 - suffix
+  (set l1 l0)
+  (set l2 l0)
+.loop
+  (set l3 (u8 l2))
+  (cmp l3 0)
+  (je .done)
+  (cmp l3 :/)
+  (jne .next)
+  (set l3 (u8 l2 1))
+  (cmp l3 0)
+  (je .next)
+  (set l1 l2)
+.next
+  (add l2 1)
+  (jmp .loop)
+.done
+  (ret))
+
+(code book-find
+  ;; l0 - full name
+  ;; ->
+  ;; l0 - book
+  ;; l1 - suffix
+  (call skip-book-prefix)
+  (cmp l0 l1)
+  (jne .search)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-lang-book l0))
+  (ret)
+.search
+  (sub l1 l0)
   (push x0)
   (push x1)
+  (push x2)
   (set x0 l0)
-  (set x1 (ctxt-comp cp))
-  (set x1 (cc-book x1))
-  (set x1 (bk-globals x1))
+  (set x1 l1)
+  (set x2 (ctxt-books cp))
   (jmp .test)
 .loop
-  (set x1 (glb-link x1))
+  (set x2 (bk-next x2))
 .test
-  (cmp x1 0)
-  (je .done)
+  (cmp x2 0)
+  (je .not-found)
+  (set l0 (bk-name x2))
+  (set l1 x0)
+  (set l2 x1)
+  (call strneq)
+  (cmp l0 0)
+  (je .loop)
+  (set l0 x2)
+  (set l1 x0)
+  (add l1 x1)
+  (add l1 1) ;; skip '/'
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret)
+.not-found
   (set l0 x0)
-  (let l1 (u8 x1 (sizeof global)))
+  (call print)
+  (let l0 (u8 .book-not-found-string))
+  (jmp abort)
+.book-not-found-string
+  (1 ": no such book\n" 0))
+
+(code book-check-current
+  ;; l0 - full name
+  ;; ->
+  ;; l0 - book
+  ;; l1 - suffix
+  (call skip-book-prefix)
+  (cmp l0 l1)
+  (je .error-not-global)
+  (push l0)
+  (push l1)
+  (set l2 l1)
+  (sub l2 l0)
+  (set l1 l0)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (set l0 (bk-name l0))
+  (call strneq)
+  (cmp l0 0)
+  (je .error-not-current-book)
+  (pop l1)
+  (pop l0)
+  (add l1 1) ;; skip '/'
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (ret)
+.error-not-global
+  (call print)
+  (let l0 (u8 .not-global-string))
+  (jmp abort)
+.not-global-string
+  (1 " not global\n" 0)
+.error-not-current-book
+  (pop l1)
+  (pop l0)
+  (call print)
+  (let l0 (u8 .not-current-book-string))
+  (jmp abort)
+.not-current-book-string
+  (1 " not in current book\n" 0))
+
+(code book-search
+  ;; l0 - book
+  ;; l1 - name (suffix)
+  ;; ->
+  ;; l0 - global
+  (push x0)
+  (push x1)
+  (set x0 (bk-globals l0))
+  (set x1 l1)
+  (jmp .test)
+.loop
+  (set x0 (glb-link x0))
+.test
+  (cmp x0 0)
+  (je .done)
+  (set l0 x1)
+  (let l1 (u8 x0 (sizeof global)))
   (call streq)
   (cmp l0 0)
   (je .loop)
 .done
-  (set l0 x1)
+  (set l0 x0)
   (pop x1)
   (pop x0)
+  (ret))
+
+(code globals-search
+  ;; l0 - name (full name)
+  ;; ->
+  ;; l0 - global
+  (call book-find)
+  (cmp l0 0)
+  (je .done)
+  (call book-search)
+.done
   (ret))
 
 (code globals-define
@@ -1072,6 +1245,40 @@
   (call exp-intern)
   (ret))
 
+(code comp-global
+  (set l0 (u64 sp 8))
+  (push x0)
+  (push x1)
+  (push x2)
+  (let x0 (u8 l0 (sizeof exp-symbol)))
+  (set x1 (ctxt-comp cp))
+  (set x1 (cc-book x1))
+  (set x1 (bk-name x1))
+  (set l0 x1)
+  (call strlen)
+  (push l0)
+  (set l0 x0)
+  (call strlen)
+  (pop l1)
+  (add l0 l1)
+  (add l0 2)
+  (set x2 sp)
+  (sub sp l0)
+  (set l0 sp)
+  (set l1 x1)
+  (call strcpy)
+  (set (u8 l0) :/)
+  (add l0 1)
+  (set l1 x0)
+  (call strcpy)
+  (set l0 sp)
+  (call exp-intern)
+  (set sp x2)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret))
+
 (code comp-reverse
   (set l0 (u64 sp 8))
   (jmp exp-list-reverse))
@@ -1097,36 +1304,39 @@
   (8 comp-make-string .comp-make-string-name)
   (8 comp-intern .comp-intern-name)
   (8 comp-gensym .comp-gensym-name)
+  (8 comp-global .comp-global-name)
   (8 comp-reverse .comp-reverse-name)
   (8 comp-syntax .comp-syntax-name)
   (8 comp-show .comp-show-name)
   comp-export-table-end
 .comp-type-name
-  (1 "comp:type" 0)
+  (1 "type" 0)
 .comp-first-name
-  (1 "comp:first" 0)
+  (1 "first" 0)
 .comp-rest-name
-  (1 "comp:rest" 0)
+  (1 "rest" 0)
 .comp-symbol-name-name
-  (1 "comp:symbol-name" 0)
+  (1 "symbol-name" 0)
 .comp-make-pair-name
-  (1 "comp:make-pair" 0)
+  (1 "make-pair" 0)
 .comp-make-number-name
-  (1 "comp:make-number" 0)
+  (1 "make-number" 0)
 .comp-make-string-name
-  (1 "comp:make-string" 0)
+  (1 "make-string" 0)
 .comp-intern-name
-  (1 "comp:intern" 0)
+  (1 "intern" 0)
 .comp-gensym-name
-  (1 "comp:gensym" 0)
+  (1 "gensym" 0)
+.comp-global-name
+  (1 "global" 0)
 .comp-reverse-name
-  (1 "comp:reverse" 0)
+  (1 "reverse" 0)
 .comp-syntax-name
-  (1 "comp:syntax" 0)
+  (1 "syntax" 0)
 .comp-show-name
-  (1 "comp:show" 0))
+  (1 "show" 0))
 
-(code globals-export-comp
+(code export-exp-globals
   (push x1)
   (set x1 comp-export-table)
   (jmp .test)
@@ -1147,7 +1357,7 @@
 
 ;; There are only two scopes, global and local.  The local definition
 ;; of a symbol is stored directly in the symbol structure, the global
-;; definition is stored in the compiler context.
+;; definition is stored in a book.
 ;;
 ;; If a name has a global definition, this definition is copied into
 ;; the local scope on the first lookup.  This helps with repeated
@@ -1504,6 +1714,7 @@
   (cmp (exp-sym-type l0) def-type-undef)
   (jne .redefined)
   (let l0 (u8 l0 (sizeof exp-symbol)))
+  ;; XXX - reject if symbol has book part, search the core book otherwise
   (call globals-search)
   (cmp l0 0)
   (jne .redefined)
@@ -1708,8 +1919,9 @@
   (push l0)
   (push l1)
   (let l0 (u8 l2 (sizeof exp-symbol)))
-  (push l0)
-  (call globals-search)
+  (call book-check-current)
+  (push l1)
+  (call book-search)
   (cmp l0 0)
   (jne error-redef-global)
   (pop l0)
@@ -1787,10 +1999,12 @@
   (parse-symbol l0 x2)
   (parse-eol    l0)
   (let l0 (u8 x0 (sizeof exp-symbol)))
-  (call globals-search)
+  (call book-check-current)
+  (push l1)
+  (call book-search)
   (cmp l0 0)
   (jne .already-def)
-  (let l0 (u8 x0 (sizeof exp-symbol)))
+  (pop l0)
   (call globals-define)
   (set (glb-type l0) def-type-macro)
   (push l0)
@@ -1805,6 +2019,7 @@
   (set l0 l1)
   (jmp .define)
 .already-def
+  (pop l1)
   (cmp (glb-type l0) def-type-macro)
   (jne error-redef-global)
   (set l2 (glb-val l0))
@@ -2008,16 +2223,16 @@
   (let cp (context ctxt))
   (let l0 (compiler-context cc))
   (set (ctxt-comp cp) l0)
-  (set (cc-level l0) 0)
-  (set (cc-gensym l0) 0)
-  (call exp-init)
+  (set l0 .exp-name)
+  (call compiler-init)
+  (call export-exp-globals)
+  (call compiler-fini)
+  (set l0 .lang-name)
+  (call compiler-init)
   (set x1 fbuf)
   (set l0 x1)
-  (let l1 (u8 .boot-filename))
+  (let l1 (u8 .lang-filename))
   (call file-open)
-  (call code-init)
-  (call book-init)
-  (call globals-export-comp)
 .loop
   (set l0 x1)
   (call exp-read)
@@ -2033,8 +2248,10 @@
   (push l0)
   (set l0 1)
   (push l0)
-  (set l0 .main-name)
-  (call globals-search)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (set l1 .main-name)
+  (call book-search)
   (cmp l0 0)
   (je .main-undefined)
   (cmp (glb-type l0) def-type-func)
@@ -2043,14 +2260,20 @@
 run
   (call l0)
   (jmp sys-exit)
+.empty-name
+  (1 "<empty>" 0)
+.exp-name
+  (1 "exp" 0)
 .main-undefined
   (set l0 .main-undefined-message)
   (jmp abort)
 .main-not-func
   (set l0 .main-not-func-message)
   (jmp abort)
-.boot-filename
-  (1 "boot.z1" 0)
+.lang-filename
+  (1 "lang.z1" 0)
+.lang-name
+  (1 "lang" 0)
 .main-name
   (1 "main" 0)
 .main-undefined-message

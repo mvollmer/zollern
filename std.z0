@@ -13,11 +13,13 @@
   (ret))
 
 (code strcpy
+  (jmp .test)
 .loop
-  (set l2 (u8 l1))
-  (set (u8 l0) l2)
   (add l0 1)
   (add l1 1)
+.test
+  (set l2 (u8 l1))
+  (set (u8 l0) l2)
   (cmp l2 0)
   (jne .loop)
   (ret))
@@ -40,6 +42,35 @@
   (set l0 1)
   (ret))
 
+(code strneq
+  ;; l0 - nul-terminated string
+  ;; l1 - counted string
+  ;; l2 - length of counted string
+  (jmp .test)
+.loop
+  (add l0 1)
+  (add l1 1)
+  (sub l2 1)
+.test
+  (set l3 (u8 l0))
+  (cmp l2 0)
+  (jne .cmp)
+  (cmp l3 0)
+  (jne .not-eq)
+  (set l0 1)
+  (ret)
+.cmp
+  (set l4 (u8 l1))
+  (cmp l3 l4)
+  (je .eq)
+.not-eq
+  (set l0 0)
+  (ret)
+.eq
+  (cmp l3 0)
+  (jne .loop)
+  (set l0 1)
+  (ret))
 
 ;; Syscalls
 

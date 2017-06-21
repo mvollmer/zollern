@@ -1,0 +1,493 @@
+;; A macro for defining primitives.
+;;
+;; We have to write this without any convenience helpers...
+;;
+;; (defprim NAME A)
+;; =>
+;; (0
+;;   (1 ($nn form) ($prim-1 form A))
+;;   (2 NAME 0 $nn))
+;;
+;; (defprim NAME A B)
+;; =>
+;; (0
+;;   (1 ($nn form) ($prim-2 form A B))
+;;   (2 NAME 0 $nn))
+
+(1 (lang/$prim-1 form a)
+   (exp/make-pair
+    (exp/make-number a)
+    (exp/rest form)))
+
+(1 (lang/$prim-2 form a b)
+   (exp/make-pair
+    (exp/make-number a)
+    (exp/make-pair
+     (exp/make-number b)
+     (exp/rest form))))
+
+(1 (lang/$defprim form)
+   (0
+    (9 gensym) (10 gensym (exp/global (exp/gensym)))
+    (9 name-cell) (10 name-cell (exp/rest form))
+    (9 a-cell) (10 a-cell (exp/rest name-cell))
+    (9 b-cell) (10 b-cell (exp/rest a-cell))
+    (exp/make-pair
+     (exp/make-number 0)
+     (exp/make-pair
+      (exp/make-pair
+       (exp/make-number 1)
+       (exp/make-pair
+        (exp/make-pair
+         gensym
+         (exp/make-pair
+          (exp/intern "form")
+          0))
+        (exp/make-pair
+         (exp/make-pair
+          (5 b-cell (exp/intern "$prim-2") (exp/intern "$prim-1"))
+          (exp/make-pair
+           (exp/intern "form")
+           (exp/make-pair
+            (exp/first a-cell)
+            (5 b-cell
+               (exp/make-pair
+                (exp/first b-cell)
+                0)
+               0))))
+         0)))
+      (exp/make-pair
+       (exp/make-pair
+        (exp/make-number 2)
+        (exp/make-pair
+         (exp/first name-cell)
+         (exp/make-pair
+          (exp/make-number 0)
+          (exp/make-pair
+           gensym
+           0)))
+        0)
+       0)))))
+(2 lang/defprim 0 lang/$defprim)
+
+;; And another similar macro for defining primitive setters.
+;;
+;; (defprim-setter NAME A)
+;; =>
+;; (0
+;;   (1 ($nn form val) ($prim-set form val A))
+;;   (2 NAME 2 $nn))
+
+(1 (lang/$prim-set form val a)
+   (exp/make-pair
+    (exp/make-number 13)
+    (exp/make-pair
+     (exp/make-number a)
+     (exp/make-pair
+      (exp/first (exp/rest form))
+      (exp/make-pair
+       val
+       0)))))
+
+(1 (lang/$defprim-set form)
+   (0
+    (9 gensym) (10 gensym (exp/global (exp/gensym)))
+    (9 name-cell) (10 name-cell (exp/rest form))
+    (9 a-cell) (10 a-cell (exp/rest name-cell))
+    (exp/make-pair
+     (exp/make-number 0)
+     (exp/make-pair
+      (exp/make-pair
+       (exp/make-number 1)
+       (exp/make-pair
+        (exp/make-pair
+         gensym
+         (exp/make-pair
+          (exp/intern "form")
+          (exp/make-pair
+           (exp/intern "val")
+           0))))
+       (exp/make-pair
+        (exp/make-pair
+         (exp/intern "$prim-set")
+         (exp/make-pair
+          (exp/intern "form")
+          (exp/make-pair
+           (exp/intern "val")
+           (exp/make-pair
+            (exp/first a-cell)
+            0))))
+        0))
+      (exp/make-pair
+       (exp/make-pair
+        (exp/make-number 2)
+        (exp/make-pair
+         (exp/first name-cell)
+         (exp/make-pair
+          (exp/make-number 2)
+          (exp/make-pair
+           gensym
+           0)))
+        0)
+       0)))))
+(2 lang/defprim-set 0 lang/$defprim-set)
+
+;; Primitives
+;;
+;; Some primitives are okay for direct use, but some need to be
+;; wrapped in nicer clothing, like 'fun' and 'var'.
+
+(defprim lang/begin      0)
+(defprim lang/prim-fun   1)
+(defprim lang/prim-mac   2)
+(defprim lang/label      3)
+(defprim lang/goto       4)
+(defprim lang/prim-if    5)
+(defprim lang/prim-var   9)
+(defprim lang/set       10)
+(defprim lang/loc       11)
+
+(defprim  lang/u8     12 0)
+(defprim lang/u16     12 1)
+(defprim lang/u32     12 2)
+(defprim lang/u64     12 3)
+(defprim  lang/s8     12 4)
+(defprim lang/s16     12 5)
+(defprim lang/s32     12 6)
+(defprim lang/s64     12 7)
+
+(defprim-set  lang/u8 0)
+(defprim-set lang/u16 1)
+(defprim-set lang/u32 2)
+(defprim-set lang/u64 3)
+(defprim-set  lang/s8 4)
+(defprim-set lang/s16 5)
+(defprim-set lang/s32 6)
+(defprim-set lang/s64 7)
+
+(defprim lang/prim-neg   6 0)
+(defprim lang/not        6 1)
+
+(defprim lang/==         7 0)
+(defprim lang/!=         7 1)
+(defprim lang/<          7 2)
+(defprim lang/<=         7 3)
+(defprim lang/>          7 4)
+(defprim lang/>=         7 5)
+
+(defprim lang/+          8 0)
+(defprim lang/-          8 1)
+(defprim lang/*          8 2)
+(defprim lang//          8 3)
+
+;; Syntax templates, aka quasi-quote
+
+(prim-fun (lang/$rcons* n tail)
+  (begin
+    (prim-var result)
+    (prim-var next)
+    (set result tail)
+    (set next (+ (loc tail) 8))
+    (label loop)
+    (prim-if (== n 0)
+             (goto done)
+             12)
+    (set result (exp/make-pair (u64 next) result))
+    (set next (+ next 8))
+    (set n (- n 1))
+    (goto loop)
+    (label done)
+    result))
+
+(prim-fun (lang/expand-template form meta dot)
+  (begin
+    (prim-var tail)
+    (prim-var result)
+    (prim-var result-length)
+    (prim-var first)
+    (prim-var type)
+    (prim-var arg)
+    (set tail (exp/make-number 0))
+    (set result 0)
+    (set result-length 0)
+    (label loop)
+    (prim-if form
+                  (begin)
+                  (goto done))
+    (set first (exp/first form))
+    (set type (exp/type first))
+    (set arg 0)
+    (prim-if (== type 0) ;; pair
+             (set arg (expand-template first meta dot))
+             (begin))
+    (prim-if (== type 1) ;; symbol
+             (prim-if (== first meta)
+                      (begin
+                        (exp/first (exp/rest form))
+                        (goto out))
+                      (prim-if (== first dot)
+                               (begin
+                                 (set tail (expand-template (exp/first (exp/rest form))
+                                                            meta dot))
+                                 (goto done))
+                               ;; `(exp/intern ,(exp/make-string (exp/symbol-name first))
+                               (set arg (exp/make-pair
+                                         (exp/intern "exp/intern")
+                                         (exp/make-pair
+                                          (exp/make-string (exp/symbol-name first))
+                                          0)))))
+             (begin))
+    (prim-if (== type 2) ;; string
+             (set arg (exp/make-pair
+                       (exp/intern "exp/make-string")
+                       (exp/make-pair
+                        first
+                        0)))
+             (begin))
+    (prim-if (== type 3) ;; number
+             (set arg (exp/make-pair
+                       (exp/intern "exp/make-number")
+                       (exp/make-pair
+                        first
+                        0)))
+             (begin))
+    (prim-if arg
+             (begin
+               (set result (exp/make-pair arg result))
+               (set result-length (+ result-length 1)))
+             (begin))
+    (set form (exp/rest form))
+    (goto loop)
+    (label done)
+    (exp/make-pair
+     (exp/intern "$rcons*")
+     (exp/make-pair
+      (exp/make-number result-length)
+      (exp/make-pair
+       tail
+       result)))
+    (label out)))
+
+(prim-fun (lang/$syntax-expand form)
+  (expand-template (exp/first (exp/rest form))
+                   (exp/intern "meta") (exp/intern ".")))
+(prim-mac lang/syntax-expand 0 lang/$syntax-expand)
+
+;; Simple destructuring
+
+;; (parse-exp PTR VAR)
+;; =>
+;; (begin
+;;   (prim-var VAR)
+;;   (set VAR (exp/first PTR))
+;;   (set PTR (exp/rest PTR)))
+
+;; (parse-opt PTR VAR DEF)
+;; =>
+;; (begin
+;;   (prim-var VAR)
+;;   (prim-if PTR
+;;     (begin
+;;       (set VAR (exp/first PTR)
+;;       (set PTR (exp/rest PTR)))
+;;     (set VAR (syntax-expand DEF)))
+
+;; (parse-eol PTR)
+;; =>
+;; (prim-if PTR
+;;   (begin)
+;;   (exp/syntax))
+
+;; (parse-rst PTR VAR)
+;; =>
+;; (begin
+;;   (prim-var VAR)
+;;   (set VAR PTR))
+
+(prim-fun (lang/$parse-exp form)
+  (begin
+    (prim-var ptr-sym) (set ptr-sym (exp/first (exp/rest form)))
+    (prim-var var-sym) (set var-sym (exp/first (exp/rest (exp/rest form))))
+    (prim-if (exp/rest (exp/rest (exp/rest form))) (exp/syntax) (begin))
+    (syntax-expand (begin (prim-var ?var-sym)
+                          (set ?var-sym (exp/first ?ptr-sym))
+                          (set ?ptr-sym (exp/rest ?ptr-sym))))))
+(prim-mac lang/parse-exp 0 lang/$parse-exp)
+
+(prim-fun (lang/$parse-opt form)
+  (begin
+    (parse-exp form _)
+    (parse-exp form ptr-sym)
+    (parse-exp form var-sym)
+    (prim-var def-exp)
+    (prim-if form
+             (begin
+               (set def-exp (syntax-expand (syntax-expand ?(exp/first form))))
+               (set form (exp/rest form)))
+             (begin
+               (set def-exp (exp/make-number 0))))
+    (prim-if form (exp/syntax) (begin))
+    (syntax-expand (begin
+                     (prim-var ?var-sym)
+                     (prim-if ?ptr-sym
+                              (begin
+                                (set ?var-sym (exp/first ?ptr-sym))
+                                (set ?ptr-sym (exp/rest ?ptr-sym)))
+                              (begin
+                                (set ?var-sym ?def-exp)))))))
+(prim-mac lang/parse-opt 0 lang/$parse-opt)
+
+(prim-fun (lang/$parse-eol form)
+  (begin
+    (parse-exp form _)
+    (parse-exp form ptr-sym)
+    (prim-if form (exp/syntax) (begin))
+    (syntax-expand (prim-if ?ptr-sym (exp/syntax) (begin)))))
+(prim-mac lang/parse-eol 0 lang/$parse-eol)
+
+(prim-fun (lang/$parse-rst form)
+  (begin
+    (parse-exp form _)
+    (parse-exp form ptr-sym)
+    (parse-exp form var-sym)
+    (parse-eol form)
+    (syntax-expand (begin
+                     (prim-var ?var-sym)
+                     (set ?var-sym ?ptr-sym)))))
+(prim-mac lang/parse-rst 0 lang/$parse-rst)
+
+;; (syntax-parse PTR PATTERN)
+
+(prim-fun (lang/$syntax-parse form)
+  (begin
+    (prim-var result)
+    (prim-var first)
+    (prim-var tmp)
+    (prim-var underscore)
+    (prim-var dot)
+    (prim-var meta)
+    (parse-exp form _)
+    (parse-exp form ptr)
+    (parse-exp form pattern)
+    (parse-eol form)
+    (set result 0)
+    (set underscore (exp/intern "_"))
+    (set dot (exp/intern "."))
+    (set meta (exp/intern "meta"))
+    (label loop)
+    (prim-if pattern
+             (begin)
+             (goto done))
+    (set first (exp/first pattern))
+    (prim-if (== first underscore)
+             (set result (exp/make-pair
+                          (syntax-expand (set ?ptr (exp/rest ?ptr)))
+                          result))
+             (prim-if (== first dot)
+                      (begin
+                        (set tmp (exp/first (exp/rest pattern))) ; (meta var)
+                        (set result (exp/make-pair
+                                     (syntax-expand (parse-rst ?ptr ?(exp/first (exp/rest tmp))))
+                                     result))
+                        (goto done-no-eol-check))
+                      (prim-if (== (exp/type first) 0)
+                               (prim-if (== (exp/first first) meta)
+                                        (begin
+                                          (set tmp (exp/first (exp/rest first)))
+                                          (prim-if (== (exp/type tmp) 0)
+                                                   (begin
+                                                     (set result (exp/make-pair
+                                                                  (syntax-expand
+                                                                   (parse-opt ?ptr . ?tmp))
+                                                                  result)))
+                                                   (set result (exp/make-pair
+                                                                (syntax-expand (parse-exp ?ptr ?tmp))
+                                                                result))))
+                                        (begin
+                                          (set tmp (exp/gensym))
+                                          (set result (exp/make-pair
+                                                       (syntax-expand (begin
+                                                                        (parse-exp ?ptr ?tmp)
+                                                                        (syntax-parse ?tmp ?first)))
+                                                       result))))
+                               (exp/syntax))))
+    (set pattern (exp/rest pattern))
+    (goto loop)
+    (label done)
+    (set result (exp/make-pair (syntax-expand (parse-eol ?ptr))
+                                result))
+    (label done-no-eol-check)
+    (syntax-expand (begin . ?(exp/reverse result)))))
+(prim-mac lang/syntax-parse 0 lang/$syntax-parse)
+
+;; (mac (NAME . ARGS) . BODY)
+;; =>
+;; (begin
+;;   (prim-fun ($$ form)
+;;     (syntax-parse form (_ . ARGS))
+;;     . BODY)
+;;   (prim-mac NAME 0 $$))
+
+(prim-fun (lang/$mac form)
+  (begin
+    (prim-var $name)
+    (set $name (exp/global (exp/gensym)))
+    (syntax-parse form (_ (?name . ?args) . ?body))
+    (syntax-expand
+     (begin
+       (prim-fun (?$name form)
+                 (begin
+                   (syntax-parse form (_ . ?args))
+                   . ?body))
+       (prim-mac ?name 0 ?$name)))))
+(prim-mac lang/mac 0 lang/$mac)
+
+;; Enhanced versions of some primitives
+
+;; (if COND THEN ELSE)
+;; =>
+;; (prim-if COND THEN ELSE)
+;;
+;; (if COND THEN)
+;; =>
+;; (prim-if COND THEN (begin))
+
+(mac (lang/if ?cond ?then ?(else))
+  (prim-if else
+           (syntax-expand (prim-if ?cond ?then ?else))
+           (syntax-expand (prim-if ?cond ?then (begin)))))
+
+;; (var NAME)
+;; =>
+;; (prim-var NAME)
+;;
+;; (var NAME INIT)
+;; =>
+;; (begin
+;;  (prim-var NAME)
+;;  (set NAME INIT))
+
+(mac (lang/var ?name ?(init))
+  (if init
+      (syntax-expand (begin (prim-var ?name)
+                            (set ?name ?init)))
+      (syntax-expand (prim-var ?name))))
+
+;; (fun HEAD . BODY)
+;; =>
+;; (prim-fun HEAD (begin . BODY))
+
+(mac (lang/fun ?head . ?body)
+  (syntax-expand
+   (prim-fun ?head (begin . ?body))))
+
+;; Main
+
+(fun (lang/fac n)
+  (if (< n 2)
+      n
+      (* n (fac (- n 1)))))
+
+(fun (lang/main)
+  (var m 5)
+  (fac m))
