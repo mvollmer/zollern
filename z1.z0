@@ -1353,11 +1353,24 @@
   (syscall)
   (ret))
 
+(code sys-page-get
+  (jmp page-get))
+
+(code sys-page-put
+  (set l0 (u64 sp 8))
+  (jmp page-put))
+
 (code sys-export-table
   (8 sys-call .sys-call-name)
+  (8 sys-page-get .sys-page-get-name)
+  (8 sys-page-put .sys-page-put-name)
   (8 0 0)
 .sys-call-name
-  (1 "call" 0))
+  (1 "call" 0)
+.sys-page-get-name
+  (1 "page-get" 0)
+.sys-page-put-name
+  (1 "page-put" 0))
 
 (code export-globals
   (push x1)
