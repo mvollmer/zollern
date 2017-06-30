@@ -1800,7 +1800,7 @@
   (set l1 (exp-first l0))
   (assert-type l1 exp-type-symbol syntax)
   (set l2 2)
-  (set l3 (u64 sp 8))
+  (set l3 (u64 sp))
   (call comp-expand-form)
   (cmp l1 0)
   (je syntax)
