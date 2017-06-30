@@ -852,17 +852,13 @@
   (call exp-init)
   (call code-init)
   (pop l0)
-  (call book-init)
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-book l0))
-  (set l0 (bk-next l0))
-  (cmp l0 0)
-  (je .no-lang-book)
+  (jmp book-init))
+
+(code compiler-lang-init
   (let l0 (u8 .lang-name))
   (call book-find)
   (set l1 (ctxt-comp cp))
   (set (cc-lang-book l1) l0)
-.no-lang-book
   (ret)
 .lang-name
   (1 "lang/." 0))
@@ -1179,6 +1175,8 @@
   (pop x0)
   (ret))
 
+;; Exported functions
+
 (code comp-type
   (set l0 (u64 sp 8))
   (set l0 (exp-type l0))
@@ -1315,7 +1313,7 @@
   (8 comp-reverse .comp-reverse-name)
   (8 comp-syntax .comp-syntax-name)
   (8 comp-show .comp-show-name)
-  comp-export-table-end
+  (8 0 0)
 .comp-type-name
   (1 "type" 0)
 .comp-first-name
@@ -1343,20 +1341,38 @@
 .comp-show-name
   (1 "show" 0))
 
-(code export-exp-globals
+(code sys-call
+  ;; syscall args: l4,  l3,  l2,  l7,  l5, l6, number to l0.
+  (set l0 (u64 sp (* 1 8)))
+  (set l4 (u64 sp (* 2 8)))
+  (set l3 (u64 sp (* 3 8)))
+  (set l2 (u64 sp (* 4 8)))
+  (set l7 (u64 sp (* 5 8)))
+  (set l5 (u64 sp (* 6 8)))
+  (set l6 (u64 sp (* 7 8)))
+  (syscall)
+  (ret))
+
+(code sys-export-table
+  (8 sys-call .sys-call-name)
+  (8 0 0)
+.sys-call-name
+  (1 "call" 0))
+
+(code export-globals
   (push x1)
-  (set x1 comp-export-table)
+  (set x1 l0)
   (jmp .test)
 .loop
-  (set l0 (u64 x1 8))
   (call globals-define)
   (set l1 (u64 x1))
   (set (glb-type l0) def-type-func)
   (set (glb-val l0) l1)
   (add x1 16)
 .test
-  (cmp x1 comp-export-table-end)
-  (jb .loop)
+  (set l0 (u64 x1 8))
+  (cmp l0 0)
+  (jne .loop)
   (pop x1)
   (ret))
 
@@ -2229,6 +2245,7 @@
   (set x0 l0)
   (set x1 l1)
   (call compiler-init)
+  (call compiler-lang-init)
   (set l1 x1)
   (set x1 fbuf)
   (set l0 x1)
@@ -2262,7 +2279,13 @@
   (set (ctxt-comp cp) l0)
   (set l0 .exp-name)
   (call compiler-init)
-  (call export-exp-globals)
+  (set l0 comp-export-table)
+  (call export-globals)
+  (call compiler-fini)
+  (set l0 .sys-name)
+  (call compiler-init)
+  (set l0 sys-export-table)
+  (call export-globals)
   (call compiler-fini)
   (set l0 .lang-name)
   (set l1 .lang-filename)
@@ -2286,10 +2309,10 @@
 run
   (call l0)
   (jmp sys-exit)
-.empty-name
-  (1 "<empty>" 0)
 .exp-name
   (1 "exp" 0)
+.sys-name
+  (1 "sys" 0)
 .main-undefined
   (set l0 .main-undefined-message)
   (jmp abort)

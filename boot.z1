@@ -5,4 +5,5 @@
 
 (fun (boot/main)
   (var m 5)
+  (sys/call 1 1 "hi\n" 3)
   (boot/fac m))
