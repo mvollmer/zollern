@@ -1,9 +1,24 @@
+(fun (boot/mod n m)
+  (- n (* (/ n m) m)))
+
+(fun (boot/print-int n)
+  (var buf (sys/page-get))
+  (var end (+ buf 40))
+  (var ptr end)
+  (set ptr (- ptr 1))
+  (set (u8 ptr) 10)
+  (label loop)
+  (set ptr (- ptr 1))
+  (set (u8 ptr) (+ (boot/mod n 10) 48))
+  (set n (/ n 10))
+  (if n (goto loop))
+  (sys/call 1 1 ptr (- end ptr))
+  (sys/page-put buf))
+
 (fun (boot/fac n)
   (if (< n 2)
       n
       (* n (boot/fac (- n 1)))))
 
 (fun (boot/main)
-  (var m 5)
-  (sys/call 1 1 "hi\n" 3)
-  (boot/fac m))
+  (boot/print-int (boot/fac 10)))
