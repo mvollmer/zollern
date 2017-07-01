@@ -21,4 +21,7 @@
       (* n (boot/fac (- n 1)))))
 
 (fun (boot/main)
-  (boot/print-int (boot/fac 10)))
+  (var n 1)
+  (while (< n 10)
+    (boot/print-int (boot/fac n))
+    (set n (+ n 1))))

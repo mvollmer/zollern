@@ -480,3 +480,14 @@
 (mac (lang/fun ?head . ?body)
   (syntax-expand
    (prim-fun ?head (begin . ?body))))
+
+(mac (lang/while ?cond . ?body)
+  (var loop (exp/gensym))
+  (var test (exp/gensym))
+  (syntax-expand
+     (begin
+       (goto ?test)
+       (label ?loop)
+       (begin . ?body)
+       (label ?test)
+       (if ?cond (goto ?loop)))))
