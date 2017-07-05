@@ -175,6 +175,7 @@
 (defprim lang/<=         7 3)
 (defprim lang/>          7 4)
 (defprim lang/>=         7 5)
+(defprim lang/%          7 6)
 
 (defprim lang/+          8 0)
 (defprim lang/-          8 1)

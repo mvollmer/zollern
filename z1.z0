@@ -1649,6 +1649,7 @@
   (8 comp-binop-lte) ; 3
   (8 comp-binop-gt)  ; 4
   (8 comp-binop-gte) ; 5
+  (8 comp-binop-mod) ; 6
   comp-binop-table-end)
 
 (def comp-binop-table-size (>> (- comp-binop-table-end comp-binop-table) 3))
@@ -1659,8 +1660,8 @@
   (parse-exp l0 l3)
   (parse-eol l0)
   (push l1)
-  (push l3)
-  (set l0 l2)
+  (push l2)
+  (set l0 l3)
   (call comp-expr)
   (call code-start)
   (code-emit l0 (push l0))
@@ -1678,7 +1679,7 @@
 (def (comp-emit-setcc ?ins)
   (code-emit l0 (set l2 l0))
   (code-emit l0 (xor l0 l0))
-  (code-emit l0 (cmp l1 l2))
+  (code-emit l0 (cmp l2 l1))
   (code-emit l0 (?ins l0.8)))
 
 (code comp-binop-eq
@@ -1703,6 +1704,12 @@
 
 (code comp-binop-gte
   (comp-emit-setcc setge)
+  (ret))
+
+(code comp-binop-mod
+  (code-emit l0 (sign-extend))
+  (code-emit l0 (sdiv l1))
+  (code-emit l0 (set l0 l2))
   (ret))
 
 (code comp-polop-table
