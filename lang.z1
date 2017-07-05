@@ -146,6 +146,7 @@
 (defprim lang/prim-var   9)
 (defprim lang/set       10)
 (defprim lang/loc       11)
+(defprim lang/mem       14)
 
 (defprim  lang/u8     12 0)
 (defprim lang/u16     12 1)

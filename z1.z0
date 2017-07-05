@@ -354,7 +354,8 @@
 (def def-type-undef 0)
 (def def-type-func  1)
 (def def-type-macro 2)
-(def def-type-local 3)
+(def def-type-var   4)
+(def def-type-mem   5)
 (def def-type-label 4)
 
 ;; Expressions
@@ -1804,7 +1805,19 @@
   (set l1 (cc-next-frame-offset l2))
   (add l1 8)
   (set (cc-next-frame-offset l2) l1)
-  (set l2 def-type-local)
+  (set l2 def-type-var)
+  (jmp locals-define))
+
+(code comp-mem
+  (parse-symbol l0 l1)
+  (parse-num l0 l2 0x1000)
+  (parse-eol l0)
+  (set l0 l1)
+  (set l3 (ctxt-comp cp))
+  (set l1 (cc-next-frame-offset l3))
+  (add l1 l2)
+  (set (cc-next-frame-offset l3) l1)
+  (set l2 def-type-mem)
   (jmp locals-define))
 
 (code comp-set
@@ -1824,7 +1837,7 @@
   (jmp comp-expr)
 .set-symbol
   (set l1 (exp-sym-type l0))
-  (cmp l1 def-type-local)
+  (cmp l1 def-type-var)
   (jne error-not-local-exp)
   (set l1 (exp-sym-val l0))
   (neg l1)
@@ -1854,7 +1867,7 @@
   (set l0 l1)
   (call comp-expand)
   (assert-type l0 exp-type-symbol syntax)
-  (cmp (exp-sym-type l0) def-type-local)
+  (cmp (exp-sym-type l0) def-type-var)
   (jne error-not-local-exp)
   (set l1 (exp-sym-val l0))
   (neg l1)
@@ -2004,7 +2017,7 @@
   (parse-symbol l2 l0)
   (push l2)
   (push l1)
-  (set l2 def-type-local)
+  (set l2 def-type-var)
   (call locals-define)
   (pop l1)
   (pop l2)
@@ -2158,6 +2171,7 @@
   (8 comp-loc)    ; 11
   (8 comp-memref) ; 12
   (8 comp-memset) ; 13
+  (8 comp-mem)    ; 14
   comp-expr-table-end)
 
 (def comp-first-local-only 3)
@@ -2212,8 +2226,8 @@
 .not-number
   (assert-type l0 exp-type-symbol .not-symbol)
   (call lookup)
-  (cmp l0 def-type-local)
-  (jne .not-local)
+  (cmp l0 def-type-var)
+  (jne .not-var)
   (neg l1)
   (push l1)
   (call code-start)
@@ -2221,7 +2235,17 @@
   (code-emit l0 (set l0 (u64 x1 0xFFFF)) l1)
   (call code-end)
   (jmp .return)
-.not-local
+.not-var
+  (cmp l0 def-type-mem)
+  (jne .not-mem)
+  (neg l1)
+  (push l1)
+  (call code-start)
+  (pop l1)
+  (code-emit l0 (let l0 (u8 x1 0xFFFF)) l1)
+  (call code-end)
+  (jmp .return)
+.not-mem
   (push l1)
   (call code-start)
   (pop l1)
