@@ -1247,6 +1247,16 @@
   (call strint)
   (sub l0 1)
   (set (u8 l0) :$)
+  ;; add another '$' for the "lang" book so that its global gensyms
+  ;; don't conflict with other books gensyms
+  (set l1 (ctxt-comp cp))
+  (set l2 (cc-book l1))
+  (set l1 (cc-lang-book l1))
+  (cmp l1 l2)
+  (jne .not-lang-book)
+  (sub l0 1)
+  (set (u8 l0) :$)
+.not-lang-book
   (call exp-intern)
   (ret))
 
@@ -1744,21 +1754,29 @@
 
 (code locals-define
   ;; l0 - symbol
-  ;; l1 - offset
+  ;; l1 - value
+  ;; l2 - type
   (push l0)
   (push l1)
+  (push l2)
   (cmp (exp-sym-type l0) def-type-undef)
   (jne .redefined)
   (let l0 (u8 l0 (sizeof exp-symbol)))
-  ;; XXX - reject if symbol has book part, search the core book otherwise
-  (call globals-search)
+  (call skip-book-prefix)
+  (cmp l0 l1)
+  (jne .not-local-symbol)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-lang-book l0))
+  (call book-search)
   (cmp l0 0)
   (jne .redefined)
+  (pop l2)
   (pop l1)
   (pop l0)
-  (exp-sym-define l0 def-type-local l1)
+  (exp-sym-define l0 l2 l1)
   (ret)
 .redefined
+  (pop l2)
   (pop l1)
   (pop l0)
   (let l0 (u8 l0 (sizeof exp-symbol)))
@@ -1766,7 +1784,17 @@
   (let l0 (u8 .redef-error-string))
   (jmp abort)
 .redef-error-string
-  (1 " redefined\n" 0))
+  (1 " redefined\n" 0)
+.not-local-symbol
+  (pop l2)
+  (pop l1)
+  (pop l0)
+  (let l0 (u8 l0 (sizeof exp-symbol)))
+  (call print)
+  (let l0 (u8 .not-local-symbol-string))
+  (jmp abort)
+.not-local-symbol-string
+  (1 " not a local symbol\n" 0))
 
 (code comp-var
   (parse-symbol l0 l1)
@@ -1776,8 +1804,8 @@
   (set l1 (cc-next-frame-offset l2))
   (add l1 8)
   (set (cc-next-frame-offset l2) l1)
-  (call locals-define)
-  (ret))
+  (set l2 def-type-local)
+  (jmp locals-define))
 
 (code comp-set
   (parse-exp l0 l1)
@@ -1976,6 +2004,7 @@
   (parse-symbol l2 l0)
   (push l2)
   (push l1)
+  (set l2 def-type-local)
   (call locals-define)
   (pop l1)
   (pop l2)
@@ -2079,10 +2108,11 @@
 (code comp-label
   (parse-symbol l0 l1)
   (parse-eol l0)
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-code-ptr l0))
-  (exp-sym-define l1 def-type-label l0)
-  (ret))
+  (set l0 l1)
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-code-ptr l1))
+  (set l2 def-type-label)
+  (jmp locals-define))
 
 (code comp-goto
   (push l0)
