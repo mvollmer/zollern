@@ -70,68 +70,6 @@
        0)))))
 (2 lang/defprim 0 lang/$defprim)
 
-;; And another similar macro for defining primitive setters.
-;;
-;; (defprim-setter NAME A)
-;; =>
-;; (0
-;;   (1 ($nn form val) ($prim-set form val A))
-;;   (2 NAME 2 $nn))
-
-(1 (lang/$prim-set form val a)
-   (exp/make-pair
-    (exp/make-number 13)
-    (exp/make-pair
-     (exp/make-number a)
-     (exp/make-pair
-      (exp/first (exp/rest form))
-      (exp/make-pair
-       val
-       0)))))
-
-(1 (lang/$defprim-set form)
-   (0
-    (9 gensym) (10 gensym (exp/global (exp/gensym)))
-    (9 name-cell) (10 name-cell (exp/rest form))
-    (9 a-cell) (10 a-cell (exp/rest name-cell))
-    (exp/make-pair
-     (exp/make-number 0)
-     (exp/make-pair
-      (exp/make-pair
-       (exp/make-number 1)
-       (exp/make-pair
-        (exp/make-pair
-         gensym
-         (exp/make-pair
-          (exp/intern "form")
-          (exp/make-pair
-           (exp/intern "val")
-           0))))
-       (exp/make-pair
-        (exp/make-pair
-         (exp/intern "$prim-set")
-         (exp/make-pair
-          (exp/intern "form")
-          (exp/make-pair
-           (exp/intern "val")
-           (exp/make-pair
-            (exp/first a-cell)
-            0))))
-        0))
-      (exp/make-pair
-       (exp/make-pair
-        (exp/make-number 2)
-        (exp/make-pair
-         (exp/first name-cell)
-         (exp/make-pair
-          (exp/make-number 2)
-          (exp/make-pair
-           gensym
-           0)))
-        0)
-       0)))))
-(2 lang/defprim-set 0 lang/$defprim-set)
-
 ;; Primitives
 ;;
 ;; Some primitives are okay for direct use, but some need to be
@@ -156,15 +94,6 @@
 (defprim lang/s16     12 5)
 (defprim lang/s32     12 6)
 (defprim lang/s64     12 7)
-
-(defprim-set  lang/u8 0)
-(defprim-set lang/u16 1)
-(defprim-set lang/u32 2)
-(defprim-set lang/u64 3)
-(defprim-set  lang/s8 4)
-(defprim-set lang/s16 5)
-(defprim-set lang/s32 6)
-(defprim-set lang/s64 7)
 
 (defprim lang/prim-neg   6 0)
 (defprim lang/not        6 1)
@@ -493,3 +422,25 @@
        (begin . ?body)
        (label ?test)
        (if ?cond (goto ?loop)))))
+
+;; Primitive setters
+
+(fun (lang/$prim-set form val a)
+  (syntax-parse form (_ ?ptr))
+  (syntax-expand (13 ?(exp/make-number a) ?ptr ?val)))
+
+(mac (lang/defprim-set ?name ?a)
+  (var gensym (exp/global (exp/gensym)))
+  (syntax-expand
+   (begin
+     (fun (?gensym form val) (lang/$prim-set form val ?a))
+     (prim-mac ?name 2 ?gensym))))
+
+(defprim-set  lang/u8 0)
+(defprim-set lang/u16 1)
+(defprim-set lang/u32 2)
+(defprim-set lang/u64 3)
+(defprim-set  lang/s8 4)
+(defprim-set lang/s16 5)
+(defprim-set lang/s32 6)
+(defprim-set lang/s64 7)
