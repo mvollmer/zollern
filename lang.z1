@@ -444,3 +444,13 @@
 (defprim-set lang/s16 5)
 (defprim-set lang/s32 6)
 (defprim-set lang/s64 7)
+
+;; Context
+
+(fun (lang/$context form)
+  (syntax-expand (15)))
+(prim-mac lang/context 1 lang/$context)
+
+(fun (lang/$set-context form val)
+  (syntax-expand (16 ?val)))
+(prim-mac lang/context 3 lang/$set-context)

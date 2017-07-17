@@ -17,7 +17,9 @@
       (* n (boot/fac (- n 1)))))
 
 (fun (boot/main)
+  (mem ctxt 128)
+  (set context ctxt)
   (var n 1)
-  (while (< n 10)
+  (while (< n 20)
     (boot/print-int (boot/fac n))
     (set n (+ n 1))))
