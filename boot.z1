@@ -1,3 +1,5 @@
+(def boot/MAX 20)
+
 (fun (boot/print-int n)
   (mem buf 40)
   (var end (+ buf 40))
@@ -20,6 +22,6 @@
   (mem ctxt 128)
   (set context ctxt)
   (var n 1)
-  (while (< n 20)
+  (while (< n boot/MAX)
     (boot/print-int (boot/fac n))
     (set n (+ n 1))))
