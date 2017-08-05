@@ -84,7 +84,7 @@
 (defprim lang/prim-var   9)
 (defprim lang/set       10)
 (defprim lang/loc       11)
-(defprim lang/mem       14)
+(defprim lang/prim-mem  14)
 
 (defprim  lang/u8     12 0)
 (defprim lang/u16     12 1)
@@ -130,9 +130,16 @@
            (label done)
            result))
 
+(prim-fun (lang/is-meta form meta)
+          (prim-if (== (exp/type form) 0)
+                   (prim-if (== (exp/first form) meta)
+                            1
+                            0)
+                   0))
+
 (prim-fun (lang/expand-template form meta dot)
           (begin
-            (prim-var tail)
+           (prim-var tail)
            (prim-var result)
            (prim-var result-length)
            (prim-var first)
@@ -154,12 +161,15 @@
            (prim-if (== type 1) ;; symbol
                     (prim-if (== first meta)
                              (begin
-                               (exp/first (exp/rest form))
+                              (set arg (exp/first (exp/rest form)))
+                              (prim-if (is-meta arg meta)
+                                       (expand-template arg 0 dot)
+                                       arg)
                               (goto out))
                              (prim-if (== first dot)
                                       (begin
-                                        (set tail (expand-template (exp/first (exp/rest form))
-                                                                   meta dot))
+                                       (set tail (expand-template (exp/first (exp/rest form))
+                                                                  meta dot))
                                        (goto done))
                                       ;; `(exp/intern ,(exp/make-string (exp/symbol-name first))
                                       (set arg (exp/make-pair
@@ -438,35 +448,107 @@
       (label ?test)
       (if ?cond (goto ?loop))))))
 
-;; Primitive setters
+;; Setters
 
-(fun (lang/$prim-set form val a)
-  (syntax-parse form (_ ?ptr))
-  (syntax-expand (13 ?(exp/make-number a) ?ptr ?val)))
-
-(def (lang/defprim-set ?name ?a)
+(def (lang/defset ?head ?val ?exp)
   ?(begin
-    (var gensym (exp/global (exp/gensym)))
-    (syntax-expand
+    (var $name (exp/global (exp/gensym)))
+    (if (== (exp/type head) 1)
+        (syntax-expand
+         (begin
+          (fun (?$name form ?val) (syntax-expand ?exp))
+          (prim-mac ?head 3 ?$name)))
      (begin
-      (fun (?gensym form val) (lang/$prim-set form val ?a))
-      (prim-mac ?name 2 ?gensym)))))
+      (syntax-parse head (?name . ?args))
+      (syntax-expand
+       (begin
+        (fun (?$name form ?val)
+             (syntax-parse form (_ . ?args))
+             (syntax-expand ?exp))
+        (prim-mac ?name 2 ?$name)))))))
 
-(defprim-set  lang/u8 0)
-(defprim-set lang/u16 1)
-(defprim-set lang/u32 2)
-(defprim-set lang/u64 3)
-(defprim-set  lang/s8 4)
-(defprim-set lang/s16 5)
-(defprim-set lang/s32 6)
-(defprim-set lang/s64 7)
+(def (lang/defset-prim ?name ?a)
+  (defset (?name ??ptr) val (13 ?a ??ptr ??val)))
+
+(defset-prim  lang/u8 0)
+(defset-prim lang/u16 1)
+(defset-prim lang/u32 2)
+(defset-prim lang/u64 3)
+(defset-prim  lang/s8 4)
+(defset-prim lang/s16 5)
+(defset-prim lang/s32 6)
+(defset-prim lang/s64 7)
+
+;; Logical operators
+
+(def (lang/and ?a . ?rest)
+  ?(if rest
+       (syntax-expand
+        (if ?a (and . ?rest) 0))
+    a))
+
+;; Compile-time expressions
+
+(fun (lang/is-prim form a)
+  (and (== (exp/type form) 0)
+       (== (exp/type (exp/first form)) 3)
+       (== (exp/number-value (exp/first form)) a)))
+
+(fun (lang/const-expr form)
+  (set form (exp/expand form))
+  (if (== (exp/type form) 3)
+      (exp/number-value form)
+   (if (is-prim form 0)
+       (const-expr (exp/first (exp/rest form)))
+    (if (is-prim form 8)
+        (begin
+         (var op (exp/number-value (exp/first (exp/rest form))))
+         (var args (exp/rest (exp/rest form)))
+         (var res (const-expr (exp/first args)))
+         (set args (exp/rest args))
+         (while args
+          (var arg (const-expr (exp/first args)))
+          (set args (exp/rest args))
+          (if (== op 0)
+              (set res (+ res arg))
+           (if (== op 2)
+               (set res (* res arg))
+            (exp/syntax))))
+         res)
+     (exp/syntax)))))
+
+;; Stack memory
+
+(def (lang/mem ?name ?size)
+  (prim-mem ?name ?(exp/make-number (const-expr size))))
 
 ;; Context
 
-(fun (lang/$context form)
-  (syntax-expand (15)))
-(prim-mac lang/context 1 lang/$context)
+(def lang/context (15))
+(defset lang/context val (16 ?val))
 
-(fun (lang/$set-context form val)
-  (syntax-expand (16 ?val)))
-(prim-mac lang/context 3 lang/$set-context)
+;; Structs
+
+(def (lang/struct ?name . ?fields)
+  (begin .
+   ?(begin
+     (var defs 0)
+     (var offset 0)
+     (var field-name)
+     (var field-loc)
+     (while fields
+      (set field-name (exp/global (exp/first fields)))
+      (set field-loc (syntax-expand (u64 (+ ??ptr ?(exp/make-number offset)))))
+      (set defs
+           (exp/make-pair
+            (syntax-expand
+             (begin
+              (def (?field-name ??ptr) ?field-loc)
+              (defset (?field-name ??ptr) val (set ?field-loc ??val))))
+            defs))
+      (set offset (+ offset 8))
+      (set fields (exp/rest fields)))
+     (set defs (exp/make-pair
+                (syntax-expand (def ?name ?(exp/make-number offset)))
+                defs))
+     defs)))

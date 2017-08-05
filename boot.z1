@@ -1,4 +1,10 @@
-(def boot/MAX 20)
+(struct boot/context
+  ctxt-books
+  ctxt-comp
+  ctxt-gfx)
+
+(struct boot/gfx
+  gfx-pixels)
 
 (fun (boot/print-int n)
   (mem buf 40)
@@ -19,9 +25,11 @@
       (* n (boot/fac (- n 1)))))
 
 (fun (boot/main)
-  (mem ctxt 128)
+  (mem ctxt boot/context)
+  (mem gfx boot/gfx)
   (set context ctxt)
+  (set (boot/ctxt-gfx context) gfx)
   (var n 1)
-  (while (< n boot/MAX)
+  (while (< n 20)
     (boot/print-int (boot/fac n))
     (set n (+ n 1))))
