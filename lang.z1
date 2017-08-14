@@ -529,16 +529,51 @@
 
 ;; Structs
 
+(fun (lang/sizeof sym)
+  (if (== sym (exp/intern "u64"))
+      8
+   (if (== sym (exp/intern "u32"))
+       4
+    (if (== sym (exp/intern "u16"))
+        2
+     (if (== sym (exp/intern "u8"))
+         1
+      (if (== sym (exp/intern "s64"))
+          8
+       (if (== sym (exp/intern "s32"))
+           4
+        (if (== sym (exp/intern "s16"))
+            2
+         (if (== sym (exp/intern "s8"))
+             1
+          (exp/syntax))))))))))
+
 (def (lang/struct ?name . ?fields)
   (begin .
    ?(begin
      (var defs 0)
      (var offset 0)
+     (var field)
      (var field-name)
+     (var field-accessor)
+     (var field-size)
      (var field-loc)
      (while fields
-      (set field-name (exp/global (exp/first fields)))
-      (set field-loc (syntax-expand (u64 (+ ??ptr ?(exp/make-number offset)))))
+      (set field (exp/first fields))
+      (if (== (exp/type field) 1)
+          (begin
+           (set field-name field)
+           (set field-accessor (exp/intern "u64"))
+           (set field-size 8))
+       (if (== (exp/type field) 0)
+           (begin
+            (set field-name (exp/first field))
+            (set field-accessor (exp/first (exp/rest field)))
+            (set field-size (lang/sizeof field-accessor)))
+
+        (exp/syntax)))
+      (set field-name (exp/global field-name))
+      (set field-loc (syntax-expand (?field-accessor (+ ??ptr ?(exp/make-number offset)))))
       (set defs
            (exp/make-pair
             (syntax-expand
@@ -546,7 +581,7 @@
               (def (?field-name ??ptr) ?field-loc)
               (defset (?field-name ??ptr) val (set ?field-loc ??val))))
             defs))
-      (set offset (+ offset 8))
+      (set offset (+ offset field-size))
       (set fields (exp/rest fields)))
      (set defs (exp/make-pair
                 (syntax-expand (def ?name ?(exp/make-number offset)))
