@@ -27,6 +27,9 @@
   (set (boot/gfxcmd-arg3 cmd) arg3)
   (sys/call 1 4 cmd boot/gfx-command))
 
+(fun (boot/gfx-show)
+  (boot/gfx-cmd 2))
+
 (fun (boot/gfx-wait)
   (mem event boot/gfx-event)
   (label loop)
@@ -35,6 +38,22 @@
       (begin)
    (goto loop)))
 
+(fun (boot/gfx-rect x y w h c)
+  (var gfx (boot/ctxt-gfx context))
+  (var pixels (+ (boot/gfx-pixels gfx) (* (+ x (* y 1024)) 4)))
+  (var skip (* (- 1024 w) 4))
+  (var i)
+  (var j)
+  (set j 0)
+  (while (< j h)
+   (set i 0)
+   (while (< i w)
+    (set (u32 pixels) c)
+    (set pixels (+ pixels 4))
+    (set i (+ i 1)))
+   (set pixels (+ pixels skip))
+   (set j (+ j 1))))
+
 (fun (boot/gfx-init)
   (var bytes (* 1024 768 4))
   (if (< (sys/call 77 3 bytes) 0)
@@ -42,6 +61,9 @@
   (set (boot/gfx-pixels (boot/ctxt-gfx context))
        (sys/call 9 0 bytes 3 1 3 0))
   (boot/gfx-cmd 1 1024 768))
+
+(fun (boot/gfx-color r g b)
+  (+ (* (+ (* r 256) g) 256) b))
 
 (fun (boot/print-int n)
   (mem buf 40)
@@ -67,6 +89,8 @@
   (set context ctxt)
   (set (boot/ctxt-gfx context) gfx)
   (boot/gfx-init)
+  (boot/gfx-rect 0 0 1024 768 (boot/gfx-color 250 250 230))
+  (boot/gfx-show)
 
   (var n 1)
   (while (< n 20)
