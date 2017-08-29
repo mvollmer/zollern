@@ -1,0 +1,66 @@
+(struct gfx/context
+  ctxt-books
+  ctxt-comp
+  ctxt-gfx)
+
+(struct gfx/gfx
+  gfx-pixels)
+
+(struct gfx/event
+  (ev-type u16)
+  (ev-x u16)
+  (ev-y u16)
+  (ev-state u16)
+  (ev-input u32))
+
+(struct gfx/command
+  (cmd-op u32)
+  (cmd-arg1 u32)
+  (cmd-arg2 u32)
+  (cmd-arg3 u32))
+
+(fun (gfx/cmd op arg1 arg2 arg3)
+  (mem cmd gfx/command)
+  (set (gfx/cmd-op cmd) op)
+  (set (gfx/cmd-arg1 cmd) arg1)
+  (set (gfx/cmd-arg2 cmd) arg2)
+  (set (gfx/cmd-arg3 cmd) arg3)
+  (sys/call 1 4 cmd gfx/command))
+
+(fun (gfx/show)
+  (gfx/cmd 2))
+
+(fun (gfx/wait)
+  (mem event gfx/event)
+  (label loop)
+  (sys/call 0 5 event gfx/event)
+  (if (== (gfx/ev-type event) 1)
+      (begin)
+   (goto loop)))
+
+(fun (gfx/rect x y w h c)
+  (var gfx (gfx/ctxt-gfx context))
+  (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y 1024)) 4)))
+  (var skip (* (- 1024 w) 4))
+  (var i)
+  (var j)
+  (set j 0)
+  (while (< j h)
+   (set i 0)
+   (while (< i w)
+    (set (u32 pixels) c)
+    (set pixels (+ pixels 4))
+    (set i (+ i 1)))
+   (set pixels (+ pixels skip))
+   (set j (+ j 1))))
+
+(fun (gfx/init)
+  (var bytes (* 1024 768 4))
+  (if (< (sys/call 77 3 bytes) 0)
+      (sys/call 60 12))
+  (set (gfx/gfx-pixels (gfx/ctxt-gfx context))
+       (sys/call 9 0 bytes 3 1 3 0))
+  (gfx/cmd 1 1024 768))
+
+(fun (gfx/color r g b)
+  (+ (* (+ (* r 256) g) 256) b))
