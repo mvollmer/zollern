@@ -1391,13 +1391,16 @@
   (8 sys-call .sys-call-name)
   (8 sys-page-get .sys-page-get-name)
   (8 sys-page-put .sys-page-put-name)
+  (8 mono .sys-mono-name)
   (8 0 0)
 .sys-call-name
   (1 "call" 0)
 .sys-page-get-name
   (1 "page-get" 0)
 .sys-page-put-name
-  (1 "page-put" 0))
+  (1 "page-put" 0)
+.sys-mono-name
+  (1 "mono" 0))
 
 (code export-globals
   (push x1)
