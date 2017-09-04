@@ -96,7 +96,7 @@
 (defprim lang/s64     12 7)
 
 (defprim lang/prim-neg   6 0)
-(defprim lang/not        6 1)
+(defprim lang/bit-not    6 1)
 
 (defprim lang/==         7 0)
 (defprim lang/!=         7 1)
@@ -107,7 +107,7 @@
 (defprim lang/%          7 6)
 
 (defprim lang/+          8 0)
-(defprim lang/-          8 1)
+(defprim lang/prim-minus 8 1)
 (defprim lang/*          8 2)
 (defprim lang//          8 3)
 
@@ -125,7 +125,7 @@
                     12)
            (set result (exp/make-pair (u64 next) result))
            (set next (+ next 8))
-           (set n (- n 1))
+           (set n (prim-minus n 1))
            (goto loop)
            (label done)
            result))
@@ -479,6 +479,13 @@
 (defset-prim lang/s32 6)
 (defset-prim lang/s64 7)
 
+;; Arithmetic
+
+(def (lang/- ?a . ?rest)
+  ?(if rest
+       (syntax-expand (prim-minus ?a . ?rest))
+    (syntax-expand (prim-neg $a))))
+
 ;; Logical operators
 
 (def (lang/and ?a . ?rest)
@@ -486,6 +493,9 @@
        (syntax-expand
         (if ?a (and . ?rest) 0))
     a))
+
+(def (lang/not ?a)
+  (if ?a 0 1))
 
 ;; Compile-time expressions
 

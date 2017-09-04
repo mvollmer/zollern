@@ -1639,7 +1639,7 @@
   (parse-exp l0 l2)
   (parse-eol l0)
   (push l1)
-  (set l1 l2)
+  (set l0 l2)
   (call comp-expr)
   (pop l1)
   (set l0 comp-unop-table)
