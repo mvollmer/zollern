@@ -17,10 +17,7 @@
       (* n (boot/fac (- n 1)))))
 
 (fun (boot/main)
-  (mem ctxt gfx/context)
-  (mem gfx gfx/gfx)
-  (set context ctxt)
-  (set (gfx/ctxt-gfx context) gfx)
+  (mem/init)
   (gfx/init)
   (gfx/rect 0 0 1024 768 (gfx/color 255 255 255))
 

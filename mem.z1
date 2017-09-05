@@ -1,0 +1,23 @@
+(struct mem/context
+  mem-next
+  mem-end)
+
+(fun (mem/init)
+  (var page (sys/page-get))
+  (set context page)
+  (var mem-context (+ page ctxt/contexts))
+  (set (mem/mem-next mem-context) (+ mem-context mem/context))
+  (set (mem/mem-end mem-context) (+ page (* 16 1024)))
+  (set (ctxt/mem context) mem-context))
+
+(fun (mem/alloc size)
+  (var ctxt (ctxt/mem context))
+  (var ptr (mem/mem-next ctxt))
+  (var end (+ ptr size))
+  (if (> end (mem/mem-end ctxt))
+      (begin
+       (set ptr (sys/page-get))
+       (set end (+ ptr size))
+       (set (mem/mem-end ctxt) (+ ptr (* 16 1024)))))
+  (set (mem/mem-next ctxt) end)
+  ptr)

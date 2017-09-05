@@ -1,0 +1,5 @@
+(struct ctxt/contexts
+  books
+  comp
+  mem
+  gfx)
