@@ -1,4 +1,4 @@
-(fun (boot/print-int x y n)
+(fun (boot/print-int n)
   (mem buf 40)
   (var end (+ buf 40))
   (var ptr end)
@@ -9,7 +9,8 @@
   (set (u8 ptr) (+ (% n 10) 48))
   (set n (/ n 10))
   (if n (goto loop))
-  (gfx/text x y ptr))
+  (con/out ptr)
+  (con/nl))
 
 (fun (boot/fac n)
   (if (< n 2)
@@ -19,13 +20,11 @@
 (fun (boot/main)
   (mem/init)
   (gfx/init)
-  (gfx/rect 0 0 1024 768 (gfx/color 255 255 255))
+  (con/init)
 
   (var n 1)
-  (var skip (- (gfx/font-ascent sys/mono) (gfx/font-descent sys/mono)))
   (while (< n 20)
-   (boot/print-int 10 (* n skip) (boot/fac n))
+   (boot/print-int (boot/fac n))
    (set n (+ n 1)))
 
-  (gfx/show)
   (gfx/wait))
