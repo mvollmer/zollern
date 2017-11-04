@@ -9,8 +9,7 @@
   (set (u8 ptr) (+ (% n 10) 48))
   (set n (/ n 10))
   (if n (goto loop))
-  (con/out ptr)
-  (con/nl))
+  (con/out ptr))
 
 (fun (boot/fac n)
   (if (< n 2)
@@ -23,8 +22,12 @@
   (con/init)
 
   (var n 1)
-  (while (< n 20)
+  (while (< n 21)
+   (boot/print-int n)
+   (con/out ": ")
    (boot/print-int (boot/fac n))
+   (con/nl)
    (set n (+ n 1)))
 
+  (gfx/invert-rect 10 500 100 100)
   (gfx/wait))
