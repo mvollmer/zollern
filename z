@@ -9,8 +9,8 @@ z0: z0.c
 z1: z0 pre.z0 std.z0 font.z0 z1.z0
 	./z0 pre.z0 std.z0 font.z0 z1.z0 z1
 
-font.z0: zttf
-	./zttf /usr/share/fonts/dejavu/DejaVuSansMono.ttf 16 mono >font.z0
+font.z0: zttf z
+	./zttf /usr/share/fonts/dejavu/DejaVuSansMono.ttf 14 mono >font.z0
 
 zfb: zfb.c
 	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt -lX11
