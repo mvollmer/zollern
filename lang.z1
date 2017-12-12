@@ -484,7 +484,7 @@
 (def (lang/- ?a . ?rest)
   ?(if rest
        (syntax-expand (prim-minus ?a . ?rest))
-    (syntax-expand (prim-neg $a))))
+    (syntax-expand (prim-neg ?a))))
 
 ;; Logical operators
 

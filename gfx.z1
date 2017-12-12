@@ -6,7 +6,7 @@
   (ev-x u16)
   (ev-y u16)
   (ev-state u16)
-  (ev-input u32))
+  (ev-input s32))
 
 (struct gfx/command
   (cmd-op u32)
@@ -25,10 +25,13 @@
 (fun (gfx/show)
   (gfx/cmd 2))
 
+(fun (gfx/read-event event)
+  (sys/call 0 5 event gfx/event))
+
 (fun (gfx/wait)
   (mem event gfx/event)
   (label loop)
-  (sys/call 0 5 event gfx/event)
+  (gfx/read-event event)
   (if (== (gfx/ev-type event) 1)
       (begin)
    (goto loop)))

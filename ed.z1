@@ -1,0 +1,192 @@
+(struct ed/data
+  ;; Window
+  (row-height u32)
+  (col-width u32)
+  (rows u32)
+  (cols u32)
+  ;; Buffer
+  (buf u64)
+  (len u64)
+  (max u64)
+  ;; Editing state
+  (point u64))
+
+(fun (ed/paint-lines ed ptr start-row n-rows)
+  (var w (ed/col-width ed))
+  (var h (ed/row-height ed))
+  (var end (+ (ed/buf ed) (ed/len ed)))
+  (var x)
+  (var y)
+  (var c)
+  (var n-cols)
+  (set y (* start-row h))
+  (gfx/rect 0 y 1024 (+ y (* n-rows h)) (gfx/color 255 255 255))
+  (while (> n-rows 0)
+   (set n-cols (ed/cols ed))
+   (set x 0)
+   (while (> n-cols 0)
+    (set c (if (>= ptr end) 10 (u8 ptr)))
+    (set x (+ x (if (== c 10) w (gfx/glyph x y c))))
+    (if (== ptr (ed/point ed))
+        (gfx/invert-rect (- x w) y w h))
+    (if (>= ptr end)
+        (goto all-done))
+    (set ptr (+ ptr 1))
+    (if (== c 10)
+        (goto row-done))
+    (set n-cols (- n-cols 1)))
+   (label row-done)
+   (set y (+ y h))
+   (set n-rows (- n-rows 1)))
+  (label all-done))
+
+(fun (ed/redisplay ed)
+  ;; Missing:
+  ;; - Scroll to move point into display window
+  ;; - Don't paint lines that haven't changed
+  (ed/paint-lines ed (ed/buf ed) 0 (ed/rows ed))
+  (gfx/show))
+
+;; Scanning
+
+(fun (ed/find-bol ed ptr)
+  (while (and (> ptr (ed/buf ed)) (!= (u8 (- ptr 1)) 10))
+   (set ptr (- ptr 1)))
+  ptr)
+
+(fun (ed/find-eol ed ptr)
+  (var end (+ (ed/buf ed) (ed/len ed)))
+  (while (and (< ptr end) (!= (u8 ptr) 10))
+   (set ptr (+ ptr 1)))
+  ptr)
+
+(fun (ed/find-column ed ptr col)
+  (var col-ptr (+ ptr col))
+  (var end (+ (ed/buf ed) (ed/len ed)))
+  (while (and (< ptr col-ptr) (< ptr end) (!= (u8 ptr) 10))
+   (set ptr (+ ptr 1)))
+  ptr)
+
+;; Cursor movement
+
+(fun (ed/left ed)
+  (if (> (ed/point ed) (ed/buf ed))
+      (begin
+       (set (ed/point ed) (- (ed/point ed) 1))
+       1)
+   0))
+
+(fun (ed/right ed)
+  (if (< (ed/point ed) (+ (ed/buf ed) (ed/len ed)))
+      (set (ed/point ed) (+ (ed/point ed) 1))))
+
+(fun (ed/up ed)
+  (var p (ed/point ed))
+  (var bol (ed/find-bol ed p))
+  (if (> bol (ed/buf ed))
+      (set (ed/point ed) (ed/find-column ed (ed/find-bol ed (- bol 1)) (- p bol)))))
+
+(fun (ed/down ed)
+  (var p (ed/point ed))
+  (var bol (ed/find-bol ed p))
+  (var eol (ed/find-eol ed p))
+  (if (< eol (+ (ed/buf ed) (ed/len ed)))
+      (set (ed/point ed) (ed/find-column ed (+ eol 1) (- p bol)))))
+
+(fun (ed/beginning-of-line ed)
+  (set (ed/point ed) (ed/find-bol ed (ed/point ed))))
+
+(fun (ed/end-of-line ed)
+  (set (ed/point ed) (ed/find-eol ed (ed/point ed))))
+
+;; Text modifications
+
+(fun (ed/insert ed char)
+  ;; (dbg/int "insert" char)
+  (if (< (ed/len ed) (ed/max ed))
+      (begin
+       (var ptr (+ (ed/buf ed) (ed/len ed)))
+       (while (> ptr (ed/point ed))
+        (set (u8 ptr) (u8 (- ptr 1)))
+        (set ptr (- ptr 1)))
+       (set (u8 ptr) char)
+       (set (ed/len ed) (+ (ed/len ed) 1))
+       (set (ed/point ed) (+ (ed/point ed) 1)))))
+
+(fun (ed/delete ed)
+  (if (< (ed/point ed) (+ (ed/buf ed) (ed/len ed)))
+      (begin
+       (var ptr (ed/point ed))
+       (var end (+ (ed/buf ed) (ed/len ed) -1))
+       (while (< ptr end)
+        (set (u8 ptr) (u8 (+ ptr 1)))
+        (set ptr (+ ptr 1)))
+       (set (ed/len ed) (- (ed/len ed) 1)))))
+
+(fun (ed/backspace ed)
+  (if (ed/left ed)
+      (ed/delete ed)))
+
+;; Keys
+
+(fun (ed/command ed key state)
+  ;; (dbg/int "command" key)
+  ;; (dbg/int "state" state)
+  (var ptr)
+  (var end)
+  (if (== state 0)
+      (begin
+       (if (== key -11) ;; return
+           (ed/insert ed 10))
+       (if (== key -15) ;; left
+           (ed/left ed))
+       (if (== key -17) ;; right
+           (ed/right ed))
+       (if (== key -16) ;; up
+           (ed/up ed))
+       (if (== key -18) ;; down
+           (ed/down ed))
+       (if (== key -9) ;; backspace
+           (ed/backspace ed))
+       (if (== key -13) ;; delete
+           (ed/delete ed))))
+  (if (== state 16) ;; control
+      (begin
+       (if (== key 97) ;; C-a
+           (ed/beginning-of-line ed))
+       (if (== key 101) ;; C-e
+           (ed/end-of-line ed)))))
+
+(fun (ed/input ed)
+  (mem event gfx/event)
+  (gfx/read-event event)
+  (if (== (gfx/ev-type event) 1)
+      (sys/call 60 0))
+  (if (== (gfx/ev-type event) 2)
+      (begin
+       (var input (gfx/ev-input event))
+       (var state (gfx/ev-state event))
+       (if (and (> input 0) (== state 0))
+           (ed/insert ed input)
+        (ed/command ed input state)))))
+
+(fun (ed/append ed str)
+  (while (u8 str)
+   (set (u8 (ed/point ed)) (u8 str))
+   (set str (+ str 1))
+   (set (ed/point ed) (+ (ed/point ed) 1)))
+  (set (ed/len ed) (- (ed/point ed) (ed/buf ed))))
+
+(fun (ed/ed)
+  (mem ed ed/data)
+  (set (ed/row-height ed) (- (gfx/font-ascent sys/mono) (gfx/font-descent sys/mono)))
+  (set (ed/col-width ed) (gfx/glyph 0 0 32))
+  (set (ed/rows ed) (/ 768 (ed/row-height ed)))
+  (set (ed/cols ed) (- (/ 1024 (ed/col-width ed)) 1))
+  (set (ed/buf ed) (sys/page-get))
+  (set (ed/max ed) (* 16 1024))
+  (set (ed/len ed) 0)
+  (set (ed/point ed) (ed/buf ed))
+  (while 1
+   (ed/redisplay ed)
+   (ed/input ed)))
