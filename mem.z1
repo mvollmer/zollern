@@ -3,8 +3,10 @@
   mem-end)
 
 (fun (mem/init)
+  (var boot-books (ctxt/books context))
   (var page (sys/page-get))
   (set context page)
+  (set (ctxt/books context) boot-books)
   (var mem-context (+ page ctxt/contexts))
   (set (mem/mem-next mem-context) (+ mem-context mem/context))
   (set (mem/mem-end mem-context) (+ page (* 16 1024)))

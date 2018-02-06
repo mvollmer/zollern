@@ -591,7 +591,7 @@
   (ret))
 
 (code exp-read
-  (let l3 (ctxt-comp cp))
+  (set l3 (ctxt-comp cp))
   (let l1 (cc-token l3))
   (let l2 (cc-tokenbuf l3))
   (set (tk-buf l1) l2)
@@ -1387,10 +1387,22 @@
   (set l0 (u64 sp 8))
   (jmp page-put))
 
+(code sys-compile
+  (set l0 (u64 sp 8))
+  (set l1 (u64 sp 16))
+  (set l2 (u64 sp 24))
+  (sub sp (sizeof compiler-context))
+  (set (ctxt-comp cp) sp)
+  (call compile-book-from-membuffer)
+  (set (ctxt-comp cp) 0)
+  (add sp (sizeof compiler-context))
+  (ret))
+
 (code sys-export-table
   (8 sys-call .sys-call-name)
   (8 sys-page-get .sys-page-get-name)
   (8 sys-page-put .sys-page-put-name)
+  (8 sys-compile .sys-compile-name)
   (8 mono .sys-mono-name)
   (8 0 0)
 .sys-call-name
@@ -1399,6 +1411,8 @@
   (1 "page-get" 0)
 .sys-page-put-name
   (1 "page-put" 0)
+.sys-compile-name
+  (1 "compile" 0)
 .sys-mono-name
   (1 "mono" 0))
 
@@ -2349,21 +2363,15 @@
 (data
   fbuf (sizeof file-buffer))
 
-(code compile
+(code compile-book-from-filebuffer
   ;; l0 - book name
-  ;; l1 - file name
+  ;; l1 - file-buffer
   (push x0)
-  (push x1)
-  (set x0 l0)
-  (set x1 l1)
+  (set x0 l1)
   (call compiler-init)
   (call compiler-lang-init)
-  (set l1 x1)
-  (set x1 fbuf)
-  (set l0 x1)
-  (call file-open)
 .loop
-  (set l0 x1)
+  (set l0 x0)
   (call exp-read)
   (cmp l0 0)
   (je .done)
@@ -2372,9 +2380,33 @@
   (jmp .loop)
 .done
   (call compiler-fini)
-  (set l0 x1)
+  (pop x0)
+  (ret))
+
+(code compile-book-from-membuffer
+  ;; l0 - book name
+  ;; l1 - start
+  ;; l2 - end
+  (set l3 fbuf)
+  (set (fb-start l3) l1)
+  (set (fb-end l3) l2)
+  (set (fb-ptr l3) l1)
+  (set l1 l3)
+  (jmp compile-book-from-filebuffer))
+
+(code compile-book-from-filename
+  ;; l0 - book name
+  ;; l1 - file name
+  (push x0)
+  (push l0)
+  (set x0 fbuf)
+  (set l0 x0)
+  (call file-open)
+  (set l1 x0)
+  (pop l0)
+  (call compile-book-from-filebuffer)
+  (set l0 x0)
   (call file-close)
-  (pop x1)
   (pop x0)
   (ret))
 
@@ -2403,7 +2435,7 @@
   (set (u8 l0) 0)
   (set l0 sp)
   (set l1 (u64 x0 -8))
-  (call compile)
+  (call compile-book-from-filename)
   (set sp x0)
   (pop x0)
   (ret))
@@ -2460,7 +2492,6 @@
   (jne .main-not-func)
   (set l0 (glb-val l0))
 run
-  (set cp 0)
   (call l0)
   (jmp sys-exit)
 .exp-name

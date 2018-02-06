@@ -127,6 +127,11 @@
   (if (ed/left ed)
       (ed/delete ed)))
 
+;; Global commands
+
+(fun (ed/compile ed)
+  (sys/compile "user" (ed/buf ed) (+ (ed/buf ed) (ed/len ed))))
+
 ;; Keys
 
 (fun (ed/command ed key state)
@@ -155,7 +160,11 @@
        (if (== key 97) ;; C-a
            (ed/beginning-of-line ed))
        (if (== key 101) ;; C-e
-           (ed/end-of-line ed)))))
+           (ed/end-of-line ed))))
+  (if (== state 32) ;; meta
+      (begin
+       (if (== key 109) ;; M-m
+           (ed/compile ed)))))
 
 (fun (ed/input ed)
   (mem event gfx/event)
