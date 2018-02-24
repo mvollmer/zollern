@@ -1,6 +1,6 @@
 ;;; Z1 compiler
 
-(code abort
+(code panic
   (call print)
   (set l0 125)
   (jmp sys-exit))
@@ -64,7 +64,7 @@
   (cmp l1 l0)
   (je .make-page)
   (let l0 (u8 .message))
-  (jmp abort)
+  (jmp panic)
 .message
   (1 "Can't get memory\n" 0))
 
@@ -121,7 +121,7 @@
   (ret)
 .too-large
   (let l0 (u8 .message))
-  (jmp abort)
+  (jmp panic)
 .message
   (1 "pool allocation too large\n" 0))
 
@@ -189,7 +189,7 @@
   (ret)
 .err
   (let l0 (u8 .message))
-  (jmp abort)
+  (jmp panic)
 .message
   (1 "Can't read file\n" 0))
 
@@ -316,7 +316,7 @@
   (ret)
 .eof-in-string
   (let l0 (u8 .eof-in-string-message))
-  (jmp abort)
+  (jmp compiler-abort)
 .eof-in-string-message
   (1 "Unexpected end of file in string\n" 0))
 
@@ -340,6 +340,7 @@
   (mem-pool cc-tmp-pool)
   (u64 cc-symbols)
   (token-struct cc-token)
+  (u64 cc-code-pages)
   (u64 cc-code-ptr)
   (u64 cc-code-end)
   (u32 cc-next-frame-offset)
@@ -347,6 +348,7 @@
   (u32 cc-gensym)
   (u64 cc-fixups)
   (u64 cc-curexp)
+  (u64 cc-abort-sp)
   (u8 cc-tokenbuf 1024))
 
 ;; Definition types
@@ -388,7 +390,7 @@
   (set l0 (cc-curexp l0))
   (call exp-write)
   (pop l0)
-  (jmp abort))
+  (jmp compiler-abort))
 
 (code error-redef-exp
   (let l0 (u8 .redef-error-string))
@@ -626,7 +628,7 @@
   (jmp .list-loop)
 .eof-in-list
   (let l0 (u8 .eof-in-list-message))
-  (jmp abort)
+  (jmp compiler-abort)
 .eof-in-list-message
   (1 "Unexpected end of file in list\n" 0)
 .list-done
@@ -810,14 +812,34 @@
 
 (code code-init
   (set l0 (ctxt-comp cp))
+  (set (cc-code-pages l0) 0)
   (jmp code-new-page))
 
 (code code-new-page
   (call page-get)
   (set l1 (ctxt-comp cp))
+  (set l2 (cc-code-pages l1))
+  (set (u64 l0) l2)
+  (set (cc-code-pages l1) l0)
+  (add l0 8)
   (set (cc-code-ptr l1) l0)
-  (add l0 PAGE_SIZE)
+  (add l0 (- PAGE_SIZE 8))
   (set (cc-code-end l1) l0)
+  (ret))
+
+(code code-abort
+  (push x0)
+  (set x0 (ctxt-comp cp))
+  (set x0 (cc-code-pages x0))
+.test
+  (cmp x0 0)
+  (je .done)
+  (set l0 x0)
+  (set x0 (u64 l0))
+  (call page-put)
+  (jmp .test)
+.done
+  (pop x0)
   (ret))
 
 (code book-init
@@ -842,6 +864,13 @@
   (set (bk-next x0) l1)
   (set (ctxt-books cp) x0)
   (pop x0)
+  (ret))
+
+(code book-abort
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (set l1 (bk-next l0))
+  (set (ctxt-books cp) l1)
   (ret))
 
 (code compiler-init
@@ -1034,7 +1063,7 @@
   (set l0 x0)
   (call print)
   (let l0 (u8 .book-not-found-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .book-not-found-string
   (1 ": no such book\n" 0))
 
@@ -1066,7 +1095,7 @@
 .error-not-global
   (call print)
   (let l0 (u8 .not-global-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .not-global-string
   (1 " not global\n" 0)
 .error-not-current-book
@@ -1074,7 +1103,7 @@
   (pop l0)
   (call print)
   (let l0 (u8 .not-current-book-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .not-current-book-string
   (1 " not in current book\n" 0))
 
@@ -1144,7 +1173,7 @@
   (let l0 (u8 l0 (sizeof global)))
   (call print)
   (let l0 (u8 .undef-error-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .undef-error-string
   (1 " undefined\n" 0))
 
@@ -1152,7 +1181,7 @@
   (let l0 (u8 l0 (sizeof global)))
   (call print)
   (let l0 (u8 .redef-error-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .redef-error-string
   (1 " redefined\n" 0))
 
@@ -1476,7 +1505,7 @@
   (let l0 (u8 x0 (sizeof exp-symbol)))
   (call print)
   (let l0 (u8 .undef-error-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .undef-error-string
   (1 " undefined\n" 0))
 
@@ -1823,7 +1852,7 @@
   (let l0 (u8 l0 (sizeof exp-symbol)))
   (call print)
   (let l0 (u8 .redef-error-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .redef-error-string
   (1 " redefined\n" 0)
 .not-local-symbol
@@ -1833,7 +1862,7 @@
   (let l0 (u8 l0 (sizeof exp-symbol)))
   (call print)
   (let l0 (u8 .not-local-symbol-string))
-  (jmp abort)
+  (jmp compiler-abort)
 .not-local-symbol-string
   (1 " not a local symbol\n" 0))
 
@@ -2363,11 +2392,23 @@
 (data
   fbuf (sizeof file-buffer))
 
+(code compiler-panic
+  (set l0 .msg)
+  (jmp panic)
+.msg
+  (1 "Boot failed\n" 0))
+
 (code compile-book-from-filebuffer
   ;; l0 - book name
   ;; l1 - file-buffer
   (push x0)
+  (push x1)
+  (push x2)
+  (push x3)
+  (push x4)
   (set x0 l1)
+  (set l2 (ctxt-comp cp))
+  (set (cc-abort-sp l2) sp)
   (call compiler-init)
   (call compiler-lang-init)
 .loop
@@ -2380,7 +2421,28 @@
   (jmp .loop)
 .done
   (call compiler-fini)
+  (pop x4)
+  (pop x3)
+  (pop x2)
+  (pop x1)
   (pop x0)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book cp))
+  (ret))
+
+(code compiler-abort
+  ;; l0 - message
+  (call print)
+  (call book-abort)
+  (call code-abort)
+  (set l0 (ctxt-comp cp))
+  (set sp (cc-abort-sp l0))
+  (pop x4)
+  (pop x3)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (set l0 0)
   (ret))
 
 (code compile-book-from-membuffer
@@ -2405,8 +2467,10 @@
   (set l1 x0)
   (pop l0)
   (call compile-book-from-filebuffer)
+  (push l0)
   (set l0 x0)
   (call file-close)
+  (pop l0)
   (pop x0)
   (ret))
 
@@ -2444,14 +2508,19 @@
   ;; l0 - pointer to file names, zero terminated
   (push x0)
   (set x0 l0)
+  (set l0 0)
   (jmp .test)
 .loop
+  (set l0 l1)
   (call compile-file)
+  (cmp l0 0)
+  (je .done)
   (add x0 8)
 .test
-  (set l0 (u64 x0))
-  (cmp l0 0)
+  (set l1 (u64 x0))
+  (cmp l1 0)
   (jne .loop)
+.done
   (pop x0)
   (ret))
 
@@ -2478,14 +2547,10 @@
   (call compiler-fini)
   (let l0 (u64 sp 16))
   (call compile-files)
-  (set l0 3)
-  (push l0)
-  (set l0 2)
-  (push l0)
-  (set l0 1)
-  (push l0)
-  (set l0 .main-name)
-  (call globals-search)
+  (cmp l0 0)
+  (je .compile-failed)
+  (set l1 .main-name)
+  (call book-search)
   (cmp l0 0)
   (je .main-undefined)
   (cmp (glb-type l0) def-type-func)
@@ -2498,15 +2563,20 @@ run
   (1 "exp" 0)
 .sys-name
   (1 "sys" 0)
+.compile-failed
+  (set l0 .compile-failed-message)
+  (jmp panic)
 .main-undefined
   (set l0 .main-undefined-message)
-  (jmp abort)
+  (jmp panic)
 .main-not-func
   (set l0 .main-not-func-message)
-  (jmp abort)
+  (jmp panic)
 .main-name
-  (1 "boot/main" 0)
+  (1 "main" 0)
+.compile-failed-message
+  (1 "bootstrap compilation failed\n" 0)
 .main-undefined-message
-  (1 "boot/main undefined\n" 0)
+  (1 "main undefined\n" 0)
 .main-not-func-message
-  (1 "boot/main is not a function\n" 0))
+  (1 "main is not a function\n" 0))
