@@ -1133,6 +1133,22 @@
   (pop x0)
   (ret))
 
+(code book-search-fun
+  ;; l0 - book
+  ;; l1 - name (suffix)
+  ;; ->
+  ;; l0 - function
+  (call book-search)
+  (cmp l0 0)
+  (je .not-found)
+  (cmp (glb-type l0) def-type-func)
+  (jne .not-found)
+  (set l0 (glb-val l0))
+  (ret)
+.not-found
+  (set l0 0)
+  (ret))
+
 (code globals-search
   ;; l0 - name (full name)
   ;; ->
@@ -1427,11 +1443,17 @@
   (add sp (sizeof compiler-context))
   (ret))
 
+(code sys-book-search-fun
+  (set l0 (u64 sp 8))
+  (set l1 (u64 sp 16))
+  (jmp book-search-fun))
+
 (code sys-export-table
   (8 sys-call .sys-call-name)
   (8 sys-page-get .sys-page-get-name)
   (8 sys-page-put .sys-page-put-name)
   (8 sys-compile .sys-compile-name)
+  (8 sys-book-search-fun .sys-book-search-fun-name)
   (8 mono .sys-mono-name)
   (8 0 0)
 .sys-call-name
@@ -1442,6 +1464,8 @@
   (1 "page-put" 0)
 .sys-compile-name
   (1 "compile" 0)
+.sys-book-search-fun-name
+  (1 "book-search-fun" 0)
 .sys-mono-name
   (1 "mono" 0))
 
@@ -2550,12 +2574,9 @@
   (cmp l0 0)
   (je .compile-failed)
   (set l1 .main-name)
-  (call book-search)
+  (call book-search-fun)
   (cmp l0 0)
   (je .main-undefined)
-  (cmp (glb-type l0) def-type-func)
-  (jne .main-not-func)
-  (set l0 (glb-val l0))
 run
   (call l0)
   (jmp sys-exit)
@@ -2569,14 +2590,9 @@ run
 .main-undefined
   (set l0 .main-undefined-message)
   (jmp panic)
-.main-not-func
-  (set l0 .main-not-func-message)
-  (jmp panic)
 .main-name
   (1 "main" 0)
 .compile-failed-message
   (1 "bootstrap compilation failed\n" 0)
 .main-undefined-message
-  (1 "main undefined\n" 0)
-.main-not-func-message
-  (1 "main is not a function\n" 0))
+  (1 "main undefined (or not a function)\n" 0))
