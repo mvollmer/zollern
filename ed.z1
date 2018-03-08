@@ -130,9 +130,11 @@
 ;; Global commands
 
 (fun (ed/compile ed)
-  (if (and (var book (sys/compile "user" (ed/buf ed) (+ (ed/buf ed) (ed/len ed))))
-           (var main (sys/book-search-fun book "main")))
-      (main)))
+  (if (var book (sys/compile "user" (ed/buf ed) (+ (ed/buf ed) (ed/len ed))))
+      (begin
+       (if (var main (sys/book-search-fun book "main"))
+           (main))
+       (sys/book-free book))))
 
 ;; Keys
 

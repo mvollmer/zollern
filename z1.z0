@@ -74,6 +74,20 @@
   (set (u64 mem-free-pages) l0)
   (ret))
 
+(code page-put-many
+  (push x0)
+  (set x0 l0)
+  (jmp .test)
+.loop
+  (set l0 x0)
+  (set x0 (u64 l0))
+  (call page-put)
+.test
+  (cmp x0 0)
+  (jne .loop)
+  (pop x0)
+  (ret))
+
 ;; (data p (sizeof mem-pool))
 ;;
 ;; (mem-pool-init p)
@@ -126,21 +140,12 @@
   (1 "pool allocation too large\n" 0))
 
 (code mem-pool-reset
-  (push x0)
-  (set x0 (mp-pages l0))
-  (set (mp-pages l0) 0)
   (set (mp-end l0) 0)
   (set (mp-next l0) 0)
-  (jmp .test)
-.loop
-  (set l0 x0)
-  (set x0 (u64 l0))
-  (call page-put)
-.test
-  (cmp x0 0)
-  (jne .loop)
-  (pop x0)
-  (ret))
+  (set l1 (mp-pages l0))
+  (set (mp-pages l0) 0)
+  (set l0 l1)
+  (jmp page-put-many))
 
 ;; Reading files
 
@@ -328,6 +333,7 @@
 (defstruct book
   (u64 bk-name)
   (u64 bk-next)
+  (u64 bk-pages)
   (u64 bk-globals))
 
 ;;; Compiler context
@@ -828,19 +834,9 @@
   (ret))
 
 (code code-abort
-  (push x0)
-  (set x0 (ctxt-comp cp))
-  (set x0 (cc-code-pages x0))
-.test
-  (cmp x0 0)
-  (je .done)
-  (set l0 x0)
-  (set x0 (u64 l0))
-  (call page-put)
-  (jmp .test)
-.done
-  (pop x0)
-  (ret))
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-code-pages l0))
+  (jmp page-put-many))
 
 (code book-init
   ;; l0 - name
@@ -862,16 +858,20 @@
   (set (cc-book l1) x0)
   (set l1 (ctxt-books cp))
   (set (bk-next x0) l1)
-  (set (ctxt-books cp) x0)
   (pop x0)
   (ret))
 
-(code book-abort
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-book l0))
-  (set l1 (bk-next l0))
-  (set (ctxt-books cp) l1)
+(code book-register
+  ;; l0 - book
+  (set l1 (ctxt-books cp))
+  (set (bk-next l0) l1)
+  (set (ctxt-books cp) l0)
   (ret))
+
+(code book-free
+  ;; l0 - book
+  (set l0 (bk-pages l0))
+  (jmp page-put-many))
 
 (code compiler-init
   ;; l0 - book name
@@ -886,6 +886,8 @@
 
 (code compiler-lang-init
   (let l0 (u8 .lang-name))
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-book l1))
   (call book-find)
   (set l1 (ctxt-comp cp))
   (set (cc-lang-book l1) l0)
@@ -1022,12 +1024,16 @@
 
 (code book-find
   ;; l0 - full name
+  ;; l1 - books
   ;; ->
   ;; l0 - book
   ;; l1 - suffix
+  (push x2)
+  (set x2 l1)
   (call skip-book-prefix)
   (cmp l0 l1)
   (jne .search)
+  (pop x2)
   (set l0 (ctxt-comp cp))
   (set l0 (cc-lang-book l0))
   (ret)
@@ -1035,10 +1041,8 @@
   (sub l1 l0)
   (push x0)
   (push x1)
-  (push x2)
   (set x0 l0)
   (set x1 l1)
-  (set x2 (ctxt-books cp))
   (jmp .test)
 .loop
   (set x2 (bk-next x2))
@@ -1055,9 +1059,9 @@
   (set l1 x0)
   (add l1 x1)
   (add l1 1) ;; skip '/'
-  (pop x2)
   (pop x1)
   (pop x0)
+  (pop x2)
   (ret)
 .not-found
   (set l0 x0)
@@ -1153,6 +1157,8 @@
   ;; l0 - name (full name)
   ;; ->
   ;; l0 - global
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-book l1))
   (call book-find)
   (cmp l0 0)
   (je .done)
@@ -1448,12 +1454,17 @@
   (set l1 (u64 sp 16))
   (jmp book-search-fun))
 
+(code sys-book-free
+  (set l0 (u64 sp 8))
+  (jmp book-free))
+
 (code sys-export-table
   (8 sys-call .sys-call-name)
   (8 sys-page-get .sys-page-get-name)
   (8 sys-page-put .sys-page-put-name)
   (8 sys-compile .sys-compile-name)
   (8 sys-book-search-fun .sys-book-search-fun-name)
+  (8 sys-book-free .sys-book-free-name)
   (8 mono .sys-mono-name)
   (8 0 0)
 .sys-call-name
@@ -1466,6 +1477,8 @@
   (1 "compile" 0)
 .sys-book-search-fun-name
   (1 "book-search-fun" 0)
+.sys-book-free-name
+  (1 "book-free" 0)
 .sys-mono-name
   (1 "mono" 0))
 
@@ -2450,14 +2463,15 @@
   (pop x2)
   (pop x1)
   (pop x0)
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-book cp))
+  (set l1 (ctxt-comp cp))
+  (set l0 (cc-book l1))
+  (set l2 (cc-code-pages l1))
+  (set (bk-pages l0) l2)
   (ret))
 
 (code compiler-abort
   ;; l0 - message
   (call print)
-  (call book-abort)
   (call code-abort)
   (set l0 (ctxt-comp cp))
   (set sp (cc-abort-sp l0))
@@ -2526,6 +2540,12 @@
   (call compile-book-from-filename)
   (set sp x0)
   (pop x0)
+  (cmp l0 0)
+  (je .no-book)
+  (push l0)
+  (call book-register)
+  (pop l0)
+.no-book
   (ret))
 
 (code compile-files
@@ -2564,11 +2584,17 @@
   (set l0 comp-export-table)
   (call export-globals)
   (call compiler-fini)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (call book-register)
   (set l0 .sys-name)
   (call compiler-init)
   (set l0 sys-export-table)
   (call export-globals)
   (call compiler-fini)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (call book-register)
   (let l0 (u64 sp 16))
   (call compile-files)
   (cmp l0 0)
