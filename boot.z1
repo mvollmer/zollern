@@ -1,4 +1,4 @@
 (fun (boot/main)
   (mem/init)
   (gfx/init)
-  (ed/ed))
+  (ed/ed 0 0 1024 100))
