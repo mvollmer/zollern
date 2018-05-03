@@ -11,7 +11,30 @@
   (len u64)
   (max u64)
   ;; Editing state
+  (window-top u64)
   (point u64))
+
+;; Scanning
+
+(fun (ed/find-bol ed ptr)
+  (while (and (> ptr (ed/buf ed)) (!= (u8 (- ptr 1)) 10))
+   (set ptr (- ptr 1)))
+  ptr)
+
+(fun (ed/find-eol ed ptr)
+  (var end (+ (ed/buf ed) (ed/len ed)))
+  (while (and (< ptr end) (!= (u8 ptr) 10))
+   (set ptr (+ ptr 1)))
+  ptr)
+
+(fun (ed/find-column ed ptr col)
+  (var col-ptr (+ ptr col))
+  (var end (+ (ed/buf ed) (ed/len ed)))
+  (while (and (< ptr col-ptr) (< ptr end) (!= (u8 ptr) 10))
+   (set ptr (+ ptr 1)))
+  ptr)
+
+;; Display
 
 (fun (ed/paint-lines ed ptr start-row n-rows)
   (var w (ed/col-width ed))
@@ -42,32 +65,24 @@
    (set n-rows (- n-rows 1)))
   (label all-done))
 
+(fun (ed/frame ed)
+  (var p (ed/point ed))
+  (var n (ed/rows ed))
+  (var b)
+  (label loop)
+  (set b (ed/find-bol ed p))
+  (set n (- n 1 (/ (- p b) (ed/cols ed))))
+  (set p (- b 1))
+  (if (and (> b (ed/window-top ed)) (> n 0))
+      (goto loop))
+  (if (< n 0)
+      (set b (+ b (* (- n) (ed/cols ed)))))
+  (set (ed/window-top ed) b))
+
 (fun (ed/redisplay ed)
-  ;; Missing:
-  ;; - Scroll to move point into display window
-  ;; - Don't paint lines that haven't changed
-  (ed/paint-lines ed (ed/buf ed) 0 (ed/rows ed))
+  (ed/frame ed)
+  (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed))
   (gfx/show))
-
-;; Scanning
-
-(fun (ed/find-bol ed ptr)
-  (while (and (> ptr (ed/buf ed)) (!= (u8 (- ptr 1)) 10))
-   (set ptr (- ptr 1)))
-  ptr)
-
-(fun (ed/find-eol ed ptr)
-  (var end (+ (ed/buf ed) (ed/len ed)))
-  (while (and (< ptr end) (!= (u8 ptr) 10))
-   (set ptr (+ ptr 1)))
-  ptr)
-
-(fun (ed/find-column ed ptr col)
-  (var col-ptr (+ ptr col))
-  (var end (+ (ed/buf ed) (ed/len ed)))
-  (while (and (< ptr col-ptr) (< ptr end) (!= (u8 ptr) 10))
-   (set ptr (+ ptr 1)))
-  ptr)
 
 ;; Cursor movement
 
@@ -204,6 +219,7 @@
   (set (ed/max ed) (* 16 1024))
   (set (ed/len ed) 0)
   (set (ed/point ed) (ed/buf ed))
+  (set (ed/window-top ed) (ed/buf ed))
   (while 1
    (ed/redisplay ed)
    (ed/input ed)))
