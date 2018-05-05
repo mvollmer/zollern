@@ -30,11 +30,9 @@
 
 (fun (gfx/wait)
   (mem event gfx/event)
-  (label loop)
-  (gfx/read-event event)
-  (if (== (gfx/ev-type event) 1)
-      (begin)
-   (goto loop)))
+  (while (begin
+          (gfx/read-event event)
+          (!= (gfx/ev-type event) 1))))
 
 (fun (gfx/init)
   (set (ctxt/gfx context) (mem/alloc gfx/context))
