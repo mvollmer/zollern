@@ -22,11 +22,18 @@
   (var x (con/cursor-x ctxt))
   (var y (- 768 (con/line-height ctxt)))
   (while (u8 str)
+   (if (== (u8 str) 10)
+       (goto newline))
    (set x (+ x (gfx/glyph x y (u8 str))))
    (if (> x 1010)
        (begin
+        (label newline)
         (con/nl)
         (set x 0)))
    (set str (+ str 1)))
   (set (con/cursor-x ctxt) x)
   (gfx/show))
+
+(fun (con/in buf len)
+  (var ctxt (ctxt/con context))
+  (ed/ed buf len (con/cursor-x ctxt) (- 768 (con/line-height ctxt)) 1024 768))

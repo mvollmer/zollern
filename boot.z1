@@ -1,4 +1,10 @@
 (fun (boot/main)
+  (mem buf 256)
   (mem/init)
   (gfx/init)
-  (ed/ed 0 0 400 60))
+  (con/init)
+  (while 1
+   (con/out "$ ")
+   (con/in buf 256)
+   (con/out buf)
+   (con/out "\n")))
