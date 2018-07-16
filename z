@@ -1,7 +1,7 @@
 #! /bin/make -f
 
 run: zfb z1
-	./zfb ./z1 lang.z1 dbg.z1 ctxt.z1 mem.z1 gfx.z1 ed.z1 con.z1 boot.z1
+	./zfb ./z1 lang.z1 dbg.z1 ctxt.z1 mem.z1 gfx.z1 ed.z1 con.z1 shell.z1 boot.z1
 
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c

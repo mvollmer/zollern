@@ -23,3 +23,9 @@
           n))
   (dbg/out ptr)
   (dbg/out "\n"))
+
+(fun (dbg/str l s)
+  (dbg/out l)
+  (dbg/out ": ")
+  (dbg/out s)
+  (dbg/out "\n"))

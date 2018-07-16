@@ -151,15 +151,6 @@
   (if (ed/left ed)
       (ed/delete ed)))
 
-;; Global commands
-
-(fun (ed/compile ed)
-  (if (var book (sys/compile "user" (ed/buf ed) (+ (ed/buf ed) (ed/len ed))))
-      (begin
-       (if (var main (sys/book-search-fun book "main"))
-           (main))
-       (sys/book-free book))))
-
 ;; Keys
 
 (fun (ed/command ed key state)
