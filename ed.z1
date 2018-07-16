@@ -15,6 +15,8 @@
   (buf u64)
   (len u64)
   (max u64)
+  ;; Mode
+  (mode u32)
   ;; Editing state
   (window-top u64)
   (point u64)
@@ -168,7 +170,9 @@
   (if (== state 0)
       (begin
        (if (== key -11) ;; return
-           (set (ed/quit ed) 1))
+           (if (== (ed/mode ed) 1)
+               (set (ed/quit ed) 1)
+               (ed/insert ed 10)))
        (if (== key -15) ;; left
            (ed/left ed))
        (if (== key -17) ;; right
@@ -186,7 +190,12 @@
        (if (== key 97) ;; C-a
            (ed/beginning-of-line ed))
        (if (== key 101) ;; C-e
-           (ed/end-of-line ed)))))
+           (ed/end-of-line ed))))
+  (if (== state 32) ;; meta
+      (begin
+       (if (== key 120) ;; M-x
+           (set (ed/quit ed) 1)))))
+
 
 (fun (ed/input ed)
   (mem event gfx/event)
@@ -201,7 +210,7 @@
            (ed/insert ed input)
         (ed/command ed input state)))))
 
-(fun (ed/ed buf lft top rgt bot)
+(fun (ed/ed buf mode lft top rgt bot)
   (mem ed ed/data)
   (set (ed/top ed) top)
   (set (ed/lft ed) lft)
@@ -212,6 +221,7 @@
   (set (ed/buf ed) (ed/textbuf-buf buf))
   (set (ed/max ed) (ed/textbuf-max buf))
   (set (ed/len ed) (ed/textbuf-len buf))
+  (set (ed/mode ed) mode)
   (set (ed/point ed) (ed/buf ed))
   (set (ed/window-top ed) (ed/buf ed))
   (set (ed/quit ed) 0)
