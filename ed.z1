@@ -1,3 +1,8 @@
+(struct ed/textbuf
+  (textbuf-buf u64)
+  (textbuf-len u64)
+  (textbuf-max u64))
+
 (struct ed/data
   ;; Window
   (top u32)
@@ -196,7 +201,7 @@
            (ed/insert ed input)
         (ed/command ed input state)))))
 
-(fun (ed/ed buf len lft top rgt bot)
+(fun (ed/ed buf lft top rgt bot)
   (mem ed ed/data)
   (set (ed/top ed) top)
   (set (ed/lft ed) lft)
@@ -204,9 +209,9 @@
   (set (ed/col-width ed) (gfx/glyph 0 0 32))
   (set (ed/rows ed) (/ (- bot top) (ed/row-height ed)))
   (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed)))
-  (set (ed/buf ed) buf)
-  (set (ed/max ed) (- len 1))
-  (set (ed/len ed) 0)
+  (set (ed/buf ed) (ed/textbuf-buf buf))
+  (set (ed/max ed) (ed/textbuf-max buf))
+  (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/point ed) (ed/buf ed))
   (set (ed/window-top ed) (ed/buf ed))
   (set (ed/quit ed) 0)
@@ -214,4 +219,4 @@
    (ed/redisplay ed)
    (ed/input ed))
   (gfx/rect lft top (- rgt lft) (- bot top) (gfx/color 255 255 255))
-  (set (u8 (+ buf (ed/len ed))) 0))
+  (set (ed/textbuf-len buf) (ed/len ed)))

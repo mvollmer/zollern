@@ -36,4 +36,9 @@
 
 (fun (con/in buf len)
   (var ctxt (ctxt/con context))
-  (ed/ed buf len (con/cursor-x ctxt) (- 768 (con/line-height ctxt)) 1024 768))
+  (mem tbuf ed/textbuf)
+  (set (ed/textbuf-buf tbuf) buf)
+  (set (ed/textbuf-max tbuf) (- len 1))
+  (set (ed/textbuf-len tbuf) 0)
+  (ed/ed tbuf (con/cursor-x ctxt) (- 768 (con/line-height ctxt)) 1024 768)
+  (set (u8 (+ buf (ed/textbuf-len tbuf))) 0))
