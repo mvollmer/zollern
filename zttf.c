@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 	int  begin=0;
 	int  end=127;
 	int  size;
-	char autohinter=1;
+	char autohinter=0;
 
 	FT_Library freetype;
 	FT_Face    face;
