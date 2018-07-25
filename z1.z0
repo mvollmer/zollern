@@ -341,6 +341,8 @@
 ;; All functions that use a compiler context expect it in (ctxt-comp cp).
 
 (defstruct compiler-context
+  (u64 cc-print-hook)
+  (u64 cc-print-data)
   (u64 cc-book)
   (u64 cc-lang-book)
   (mem-pool cc-tmp-pool)
@@ -356,6 +358,23 @@
   (u64 cc-curexp)
   (u64 cc-abort-sp)
   (u8 cc-tokenbuf 1024))
+
+;; Printing while compiling
+
+(code cc-print
+  ;; l0 - string
+  (set l1 (ctxt-comp cp))
+  (cmp l1 0)
+  (je print)
+  (set l2 (cc-print-hook l1))
+  (cmp l2 0)
+  (je print)
+  (set l3 (cc-print-data l1))
+  (push l3)
+  (push l0)
+  (call l2)
+  (add sp 16)
+  (ret))
 
 ;; Definition types
 
@@ -711,7 +730,7 @@
   (cmp l0 0)
   (jne .not-empty-list)
   (let l0 (u8 .empty-list-string))
-  (jmp print)
+  (jmp cc-print)
 .empty-list-string
   (1 "()" 0)
 .not-empty-list
@@ -722,11 +741,11 @@
   (push x0)
   (set x0 l0)
   (let l0 (u8 .open-paren-string))
-  (call print)
+  (call cc-print)
   (jmp .list-loop-no-space)
 .list-loop
   (let l0 (u8 .space-string))
-  (call print)
+  (call cc-print)
 .list-loop-no-space
   (set l0 (exp-first x0))
   (call exp-write)
@@ -737,13 +756,13 @@
   (cmp l0 exp-type-pair)
   (je .list-loop)
   (let l0 (u8 .improper-end-string))
-  (call print)
+  (call cc-print)
   (set l0 x0)
   (call exp-write)
 .list-done
   (pop x0)
   (let l0 (u8 .close-paren-string))
-  (jmp print)
+  (jmp cc-print)
 .open-paren-string
   (1 "(" 0)
 .space-string
@@ -759,11 +778,11 @@
   (push x0)
   (set x0 l0)
   (let l0 (u8 .double-quote-string))
-  (call print)
+  (call cc-print)
   (set l0 x0)
-  (call print)
+  (call cc-print)
   (let l0 (u8 .double-quote-string))
-  (call print)
+  (call cc-print)
   (pop x0)
   (ret)
 .double-quote-string
@@ -772,7 +791,7 @@
   (cmp l1 exp-type-symbol)
   (jne .not-symbol)
   (add l0 (sizeof exp-symbol))
-  (jmp print)
+  (jmp cc-print)
 .not-symbol
   (cmp l1 exp-type-number)
   (jne .not-number)
@@ -801,10 +820,10 @@
   (set (u8 l1) l2)
 .no-sign
   (set l0 l1)
-  (jmp print)
+  (jmp cc-print)
 .not-number
   (let l0 (u8 .unknown-string))
-  (jmp print)
+  (jmp cc-print)
 .unknown-string
   (1 "<unknown>" 0))
 
@@ -1065,7 +1084,7 @@
   (ret)
 .not-found
   (set l0 x0)
-  (call print)
+  (call cc-print)
   (let l0 (u8 .book-not-found-string))
   (jmp compiler-abort)
 .book-not-found-string
@@ -1097,7 +1116,7 @@
   (set l0 (cc-book l0))
   (ret)
 .error-not-global
-  (call print)
+  (call cc-print)
   (let l0 (u8 .not-global-string))
   (jmp compiler-abort)
 .not-global-string
@@ -1105,7 +1124,7 @@
 .error-not-current-book
   (pop l1)
   (pop l0)
-  (call print)
+  (call cc-print)
   (let l0 (u8 .not-current-book-string))
   (jmp compiler-abort)
 .not-current-book-string
@@ -1193,7 +1212,7 @@
 
 (code error-undef-global
   (let l0 (u8 l0 (sizeof global)))
-  (call print)
+  (call cc-print)
   (let l0 (u8 .undef-error-string))
   (jmp compiler-abort)
 .undef-error-string
@@ -1201,7 +1220,7 @@
 
 (code error-redef-global
   (let l0 (u8 l0 (sizeof global)))
-  (call print)
+  (call cc-print)
   (let l0 (u8 .redef-error-string))
   (jmp compiler-abort)
 .redef-error-string
@@ -1442,7 +1461,11 @@
   (set l0 (u64 sp 8))
   (set l1 (u64 sp 16))
   (set l2 (u64 sp 24))
+  (set l3 (u64 sp 32))
+  (set l4 (u64 sp 40))
   (sub sp (sizeof compiler-context))
+  (set (cc-print-hook sp) l3)
+  (set (cc-print-data sp) l4)
   (set (ctxt-comp cp) sp)
   (call compile-book-from-membuffer)
   (set (ctxt-comp cp) 0)
@@ -1540,7 +1563,7 @@
   (ret)
 .error-undef
   (let l0 (u8 x0 (sizeof exp-symbol)))
-  (call print)
+  (call cc-print)
   (let l0 (u8 .undef-error-string))
   (jmp compiler-abort)
 .undef-error-string
@@ -1887,7 +1910,7 @@
   (pop l1)
   (pop l0)
   (let l0 (u8 l0 (sizeof exp-symbol)))
-  (call print)
+  (call cc-print)
   (let l0 (u8 .redef-error-string))
   (jmp compiler-abort)
 .redef-error-string
@@ -1897,7 +1920,7 @@
   (pop l1)
   (pop l0)
   (let l0 (u8 l0 (sizeof exp-symbol)))
-  (call print)
+  (call cc-print)
   (let l0 (u8 .not-local-symbol-string))
   (jmp compiler-abort)
 .not-local-symbol-string
@@ -2471,7 +2494,7 @@
 
 (code compiler-abort
   ;; l0 - message
-  (call print)
+  (call cc-print)
   (call code-abort)
   (set l0 (ctxt-comp cp))
   (set sp (cc-abort-sp l0))
@@ -2578,6 +2601,7 @@
   (call mem-init)
   (let cp (context ctxt))
   (let l0 (compiler-context cc))
+  (set (cc-print-hook l0) 0)
   (set (ctxt-comp cp) l0)
   (set l0 .exp-name)
   (call compiler-init)

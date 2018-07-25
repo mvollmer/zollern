@@ -23,11 +23,13 @@
     (if (shell/streq line "edit")
         (ed/ed file 0 0 0 1024 768)
      (if (shell/streq line "run")
-         (if (var book (sys/compile "user" (ed/textbuf-buf file) (+ (ed/textbuf-buf file) (ed/textbuf-len file))))
+         (if (var book (sys/compile "user"
+                                    (ed/textbuf-buf file) (+ (ed/textbuf-buf file) (ed/textbuf-len file))
+                                    con/out 0))
              (begin
               (if (var main (sys/book-search-fun book "main"))
                   (main)
                (con/out "no user/main function\n"))
               (sys/book-free book))
-          (con/out "failed to compile\n"))
+          (con/out "compilation failed\n"))
       (con/out "?\n"))))))
