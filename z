@@ -1,7 +1,8 @@
 #! /bin/make -f
 
-run: zfb z1
-	./zfb ./z1 lang.z1 dbg.z1 ctxt.z1 mem.z1 gfx.z1 ed.z1 con.z1 shell.z1 boot.z1
+run: zfs zfb z1
+	./zfs create files zdisk
+	./zfb ./z1 zdisk
 
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c
@@ -17,6 +18,9 @@ zfb: zfb.c
 
 zttf: zttf.c
 	gcc -g -o zttf zttf.c $$(freetype-config --cflags --libs)
+
+zfs: zfs.c
+	cc -std=c99 -g -o zfs zfs.c
 
 clean:
 	rm -f z0 z1 font.z0 zfb zttf

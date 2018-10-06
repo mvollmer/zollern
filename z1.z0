@@ -149,20 +149,28 @@
 
 ;; Reading files
 
-;; (file-open fb name)
-;; (file-close fb)
+(defstruct disk
+  (u64 disk-start)
+  (u64 disk-end))
 
-(defstruct file-buffer
-  (u64 fb-start)
-  (u64 fb-end)
-  (u64 fb-ptr))
+(data
+  disk (sizeof disk))
 
-(code file-open
+;; (disk-open name)
+
+(defstruct disk-header
+  (u32 dh-magic)
+  (u32 dh-version)
+  (u8 dh-padding 248))
+
+(defstruct disk-meta
+  (u8 dm-name 64)
+  (u32 dm-size)
+  (u16 dm-ptrs 94))
+
+(code disk-open
   (push x0)
-  (push x1)
-  (set x1 l0)
   (sub sp (sizeof sys-fstat-buf))
-  (set l0 l1)
   (set l1 0)
   (call sys-open)
   (cmp l0 0)
@@ -181,29 +189,85 @@
   (call sys-mmap)
   (cmp l0 0)
   (jl .err)
-  (set (fb-start x1) l0)
-  (set (fb-ptr x1) l0)
+  (set l2 disk)
+  (set (disk-start l2) l0)
+  (set l1 (dh-magic l0))
+  (cmp l1 0x4c4c4f5a)
+  (je .good-magic)
+  (let l0 (u8 .wrong-magic-message))
+  (jmp panic)
+.good-magic
   (set l1 (st_size sp))
   (add l0 l1)
-  (set (fb-end x1) l0)
+  (set (disk-end l2) l0)
   (add sp (sizeof sys-fstat-buf))
   (set l0 x0)
   (call sys-close)
-  (pop x1)
   (pop x0)
   (ret)
 .err
   (let l0 (u8 .message))
   (jmp panic)
 .message
-  (1 "Can't read file\n" 0))
+  (1 "Can't read disk\n" 0)
+.wrong-magic-message
+  (1 "Not a zdisk\n" 0))
 
-(code file-close
-  (set l1 (fb-end l0))
-  (set l0 (fb-start l0))
-  (sub l1 l0)
-  (call sys-munmap)
-  (ret))
+;; (find-file fb name)
+
+(defstruct file-buffer
+  (u64 fb-start)
+  (u64 fb-end)
+  (u64 fb-ptr))
+
+(code find-file
+  (push x0)
+  (push x1)
+  (push x2)
+  (push l0)
+  (set x0 l1)
+  (set l0 disk)
+  (set x1 (disk-start l0))
+  (add x1 (sizeof disk-header))
+  (set x2 63)
+.test
+  (cmp x2 0)
+  (je .not-found)
+  (set l0 x0)
+  (set l1 x1)
+  (call streq)
+  (cmp l0 0)
+  (jne .found)
+  (add x1 (sizeof disk-meta))
+  (sub x2 1)
+  (jmp .test)
+.found
+  (pop l0)
+  (let l1 (dm-ptrs x1))
+  (set l1 (u16 l1))
+  (set l2 disk)
+  (set l2 (disk-start l2))
+  (mul l1 (* 16 1024))
+  (add l2 l1)
+  (set (fb-start l0) l2)
+  (set (fb-ptr l0) l2)
+  ;; XXX - this assumes that a file is stored in consecutive blocks.
+  ;; This is true when the disk image is created by zfs, but not
+  ;; necessarily true going forward.
+  (set l1 (dm-size x1))
+  (add l2 l1)
+  (set (fb-end l0) l2)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret)
+.not-found
+  (set l0 x0)
+  (call print)
+  (let l0 (u8 .not-found-message))
+  (jmp panic)
+.not-found-message
+  (1 " not found\n" 0))
 
 ;; Tokens
 
@@ -2517,79 +2581,58 @@
   (set l1 l3)
   (jmp compile-book-from-filebuffer))
 
-(code compile-book-from-filename
+(code compile-book-from-file
   ;; l0 - book name
-  ;; l1 - file name
-  (push x0)
   (push l0)
-  (set x0 fbuf)
-  (set l0 x0)
-  (call file-open)
-  (set l1 x0)
+  (set l1 l0)
+  (set l0 fbuf)
+  (call find-file)
+  (set l1 l0)
   (pop l0)
-  (call compile-book-from-filebuffer)
-  (push l0)
-  (set l0 x0)
-  (call file-close)
-  (pop l0)
-  (pop x0)
-  (ret))
+  (jmp compile-book-from-filebuffer))
 
-(code compile-file
-  ;; l0 - file name
-  (push x0)
-  (set x0 sp)
-  (push l0)
-  (call strlen)
-  (add l0 1)
-  (sub sp l0)
-  (set l0 sp)
-  (set l1 (u64 x0 -8))
-  (call strcpy)
-  (set l0 sp)
-  (jmp .test)
-.loop
-  (add l0 1)
-.test
-  (set l1 (u8 l0))
-  (cmp l1 0)
-  (je .done)
-  (cmp l1 :.)
-  (jne .loop)
-.done
-  (set (u8 l0) 0)
-  (set l0 sp)
-  (set l1 (u64 x0 -8))
-  (call compile-book-from-filename)
-  (set sp x0)
-  (pop x0)
-  (cmp l0 0)
-  (je .no-book)
-  (push l0)
-  (call book-register)
-  (pop l0)
-.no-book
-  (ret))
+(data
+  boot-fbuf (sizeof file-buffer)
+  boot-token (sizeof token-struct)
+  boot-tbuf 128)
 
-(code compile-files
-  ;; l0 - pointer to file names, zero terminated
+(code compile-boot-files
+  ;; find BOOT, read tokens
   (push x0)
+  (push x1)
+  (push x2)
+  (set x2 0)
+  (set l0 boot-fbuf)
+  (set l1 .BOOT-name)
+  (call find-file)
   (set x0 l0)
-  (set l0 0)
-  (jmp .test)
+  (set x1 boot-token)
+  (set l0 boot-tbuf)
+  (set (tk-buf x1) l0)
 .loop
-  (set l0 l1)
-  (call compile-file)
-  (cmp l0 0)
+  (set l0 x0)
+  (set l1 x1)
+  (call next-token)
+  (set l0 (tk-kind x1))
+  (cmp l0 tk-kind-eof)
   (je .done)
-  (add x0 8)
-.test
-  (set l1 (u64 x0))
-  (cmp l1 0)
-  (jne .loop)
+  (set l0 boot-tbuf)
+  (call compile-book-from-file)
+  (set x2 l0)
+  (cmp x2 0)
+  (je .done)
+  (call book-register)
+  (jmp .loop)
 .done
+  (set l0 x2)
+  (pop x2)
+  (pop x1)
   (pop x0)
-  (ret))
+  (ret)
+.BOOT-name
+  (1 "BOOT" 0)
+.newline
+  (1 "\n" 0))
 
 ;; Main
 
@@ -2599,6 +2642,8 @@
 
 (code main
   (call mem-init)
+  (set l0 (u64 sp 16))
+  (call disk-open)
   (let cp (context ctxt))
   (let l0 (compiler-context cc))
   (set (cc-print-hook l0) 0)
@@ -2620,7 +2665,7 @@
   (set l0 (cc-book l0))
   (call book-register)
   (let l0 (u64 sp 16))
-  (call compile-files)
+  (call compile-boot-files)
   (cmp l0 0)
   (je .compile-failed)
   (set l1 .main-name)
