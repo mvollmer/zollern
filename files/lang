@@ -593,6 +593,8 @@
      (var field)
      (var field-name)
      (var field-accessor)
+     (var field-array-spec)
+     (var field-element-size)
      (var field-size)
      (var field-loc)
      (while fields
@@ -601,22 +603,32 @@
           (begin
            (set field-name field)
            (set field-accessor (exp/intern "u64"))
-           (set field-size 8))
+           (set field-array-spec 0))
        (if (== (exp/type field) 0)
            (begin
             (set field-name (exp/first field))
             (set field-accessor (exp/first (exp/rest field)))
-            (set field-size (lang/sizeof field-accessor)))
-
+            (set field-array-spec (exp/rest (exp/rest field))))
         (exp/syntax)))
+      (set field-element-size (lang/sizeof field-accessor))
+      (if field-array-spec
+          (set field-size (* field-element-size (const-expr (exp/first field-array-spec))))
+       (set field-size field-element-size))
       (set field-name (exp/global field-name))
-      (set field-loc (syntax-expand (?field-accessor (+ ??ptr ?(exp/make-number offset)))))
+      (set field-loc (exp/make-number offset))
       (set defs
            (exp/make-pair
-            (syntax-expand
-             (begin
-              (def (?field-name ??ptr) ?field-loc)
-              (defset (?field-name ??ptr) val (set ?field-loc ??val))))
+            (if field-array-spec
+                (syntax-expand
+                 (begin
+                  (def (?field-name ??ptr ??idx)
+                    (?field-accessor (+ ??ptr ?field-loc) ??idx))
+                  (defset (?field-name ??ptr ??idx) val
+                    (set (?field-accessor (+ ??ptr ?field-loc) ??idx) ??val))))
+             (syntax-expand
+              (begin
+               (def (?field-name ??ptr) (?field-accessor (+ ??ptr ?field-loc)))
+               (defset (?field-name ??ptr) val (set (?field-accessor (+ ??ptr ?field-loc)) ??val)))))
             defs))
       (set offset (+ offset field-size))
       (set fields (exp/rest fields)))
