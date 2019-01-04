@@ -1274,14 +1274,6 @@
   (pop x0)
   (ret))
 
-(code error-undef-global
-  (let l0 (u8 l0 (sizeof global)))
-  (call cc-print)
-  (let l0 (u8 .undef-error-string))
-  (jmp compiler-abort)
-.undef-error-string
-  (1 " undefined\n" 0))
-
 (code error-redef-global
   (let l0 (u8 l0 (sizeof global)))
   (call cc-print)
@@ -2458,6 +2450,11 @@
   (call code-end)
   (jmp .return)
 .not-mem
+  (cmp l0 def-type-macro)
+  (jne .not-macro)
+  (jmp syntax)
+.not-macro
+  ;; label or func
   (push l1)
   (call code-start)
   (pop l1)
