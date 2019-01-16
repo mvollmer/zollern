@@ -86,15 +86,6 @@
 (defprim lang/loc       11)
 (defprim lang/prim-mem  14)
 
-(defprim  lang/u8     12 0)
-(defprim lang/u16     12 1)
-(defprim lang/u32     12 2)
-(defprim lang/u64     12 3)
-(defprim  lang/s8     12 4)
-(defprim lang/s16     12 5)
-(defprim lang/s32     12 6)
-(defprim lang/s64     12 7)
-
 (defprim lang/prim-neg   6 0)
 (defprim lang/bit-not    6 1)
 
@@ -111,6 +102,8 @@
 (defprim lang/*          8 2)
 (defprim lang//          8 3)
 
+(defprim lang/prim-u64  12 3)
+
 ;; Syntax templates, aka quasi-quote
 
 (prim-fun (lang/$rcons* n tail)
@@ -123,7 +116,7 @@
            (prim-if (== n 0)
                     (goto done)
                     12)
-           (set result (exp/make-pair (u64 next) result))
+           (set result (exp/make-pair (prim-u64 next) result))
            (set next (+ next 8))
            (set n (prim-minus n 1))
            (goto loop)
@@ -163,7 +156,20 @@
                              (begin
                               (set arg (exp/first (exp/rest form)))
                               (prim-if (is-meta arg meta)
-                                       (expand-template arg 0 dot)
+                                       ($rcons* 5 0
+                                                (exp/make-pair
+                                                 (exp/intern "exp/intern")
+                                                 (exp/make-pair
+                                                  (exp/make-string "meta")
+                                                  0))
+                                                (exp/make-pair
+                                                 (exp/intern "exp/first")
+                                                 (exp/make-pair
+                                                  (expand-template (exp/rest arg) meta dot)
+                                                  0))
+                                                (exp/make-number 0)
+                                                (exp/make-number 2)
+                                                (exp/intern "$rcons*"))
                                        arg)
                               (goto out))
                              (prim-if (== first dot)
@@ -470,14 +476,50 @@
 (def (lang/defset-prim ?name ?a)
   (defset (?name ??ptr) val (13 ?a ??ptr ??val)))
 
-(defset-prim  lang/u8 0)
-(defset-prim lang/u16 1)
-(defset-prim lang/u32 2)
-(defset-prim lang/u64 3)
-(defset-prim  lang/s8 4)
-(defset-prim lang/s16 5)
-(defset-prim lang/s32 6)
-(defset-prim lang/s64 7)
+;; Memory access
+
+(fun (lang/sizeof sym)
+  (if (== sym (exp/intern "u64"))
+      8
+   (if (== sym (exp/intern "u32"))
+       4
+    (if (== sym (exp/intern "u16"))
+        2
+     (if (== sym (exp/intern "u8"))
+         1
+      (if (== sym (exp/intern "s64"))
+          8
+       (if (== sym (exp/intern "s32"))
+           4
+        (if (== sym (exp/intern "s16"))
+            2
+         (if (== sym (exp/intern "s8"))
+             1
+          (exp/syntax))))))))))
+
+(def (lang/defprim-accessor ?name ?size ?a)
+  (begin
+   (def (?name ??ptr ??(idx))
+        ??(if idx
+              ?(if (== (exp/number-value size) 1)
+                   (syntax-expand (syntax-expand (12 ?a (+ ??ptr ??idx))))
+                (syntax-expand (syntax-expand (12 ?a (+ ??ptr (* ??idx ?size))))))
+           (syntax-expand (12 ?a ??ptr))))
+   (defset (?name ??ptr ??(idx)) val
+     ??(if idx
+           (syntax-expand (13 ?a (+ ??ptr (* ??idx ?size)) ??val))
+        (syntax-expand (13 ?a ??ptr ??val))))))
+
+(defprim-accessor lang/u8  1 0)
+(defprim-accessor lang/u16 2 1)
+(defprim-accessor lang/u32 4 2)
+(defprim-accessor lang/u64 8 3)
+
+(defprim-accessor lang/s8  1 4)
+(defprim-accessor lang/s16 2 5)
+(defprim-accessor lang/s32 4 6)
+(defprim-accessor lang/s64 8 7)
+
 
 ;; Arithmetic
 
@@ -521,9 +563,13 @@
           (set args (exp/rest args))
           (if (== op 0)
               (set res (+ res arg))
-           (if (== op 2)
-               (set res (* res arg))
-            (exp/syntax))))
+           (if (== op 1)
+               (set res (- res arg))
+            (if (== op 2)
+                (set res (* res arg))
+             (if (== op 3)
+                 (set res (/ res arg))
+              (exp/syntax))))))
          res)
      (exp/syntax)))))
 
@@ -538,25 +584,6 @@
 (defset lang/context val (16 ?val))
 
 ;; Structs
-
-(fun (lang/sizeof sym)
-  (if (== sym (exp/intern "u64"))
-      8
-   (if (== sym (exp/intern "u32"))
-       4
-    (if (== sym (exp/intern "u16"))
-        2
-     (if (== sym (exp/intern "u8"))
-         1
-      (if (== sym (exp/intern "s64"))
-          8
-       (if (== sym (exp/intern "s32"))
-           4
-        (if (== sym (exp/intern "s16"))
-            2
-         (if (== sym (exp/intern "s8"))
-             1
-          (exp/syntax))))))))))
 
 (def (lang/struct ?name . ?fields)
   (begin .
