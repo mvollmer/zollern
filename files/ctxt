@@ -1,4 +1,5 @@
 (struct ctxt/contexts
+  disk
   books
   comp
   mem

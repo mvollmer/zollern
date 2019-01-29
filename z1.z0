@@ -14,6 +14,7 @@
 ;; ctxt-comp is the current compiler-context.
 
 (defstruct context
+  (u64 ctxt-disk)
   (u64 ctxt-books)
   (u64 ctxt-comp))
 
@@ -2643,6 +2644,8 @@
   (set l0 (u64 sp 16))
   (call disk-open)
   (let cp (context ctxt))
+  (let l0 (disk disk))
+  (set (ctxt-disk cp) l0)
   (let l0 (compiler-context cc))
   (set (cc-print-hook l0) 0)
   (set (ctxt-comp cp) l0)

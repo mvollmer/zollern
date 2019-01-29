@@ -1,6 +1,6 @@
 (fun (boot/main)
-  (mem buf 256)
   (mem/init)
   (gfx/init)
   (con/init)
+  (fs/init)
   (shell/main))

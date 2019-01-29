@@ -32,4 +32,6 @@
                (con/out "no user/main function\n"))
               (sys/book-free book))
           (con/out "compilation failed\n"))
-      (con/out "?\n"))))))
+      (if (shell/streq line "list")
+          (fs/list)
+       (con/out "?\n")))))))

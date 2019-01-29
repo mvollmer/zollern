@@ -1,0 +1,64 @@
+;;; Files
+
+;; Files never change once they have been completely written.  Files
+;; that have not yet been completely written can not be found by name.
+;; Writing a file with the same name as an existing file will replace
+;; the old file atomically when it is completely written.
+
+;; Layout
+
+(def fs/block-size (* 16 1024))
+(def fs/slot-size 256)
+(def fs/name-size 64)
+
+(struct fs/disk
+  disk-start
+  disk-end)
+
+(struct fs/header
+  (head-magic u32)
+  (head-version u32))
+
+(struct fs/meta
+  (node-name u8 fs/name-size)
+  (node-size u32)
+  (note-ptr u16 (/ (- fs/slot-size fs/name-size 4) 2)))
+
+(fun (fs/init)
+  (if (!= (fs/head-magic (fs/disk-start (ctxt/disk context)))
+          (+ (* (+ (* (+ (* 76 256) 76) 256) 79) 256) 90))
+      (begin
+       (dbg/out "wrong magic")
+       (sys/call 60 1))))
+
+(fun (fs/list)
+  (var ptr (fs/disk-start (ctxt/disk context)))
+  (var i 1)
+  (while (< i 64)
+   (set ptr (+ ptr fs/slot-size))
+   (set i (+ i 1))
+   (if (u8 ptr)
+       (begin
+        (con/out ptr)
+        (con/out "\n")))))
+
+;; Reading files
+
+;; - (fs/open buf name)
+;;
+;; Find the file named NAME and initialize BUF for use with fs/read.
+;; Returns zero if there is no file named NAME, non-zero otherwise.
+;;
+;; - (fs/close buf)
+;;
+;; Releases the file described by BUF.
+;;
+;; - (fs/read buf)
+;;
+;; Updates BUF to describe the next chunk of its file.  Returns zero
+;; when the file has been read completely.
+
+(struct fs/rbuf
+  (slot u16)
+  (start u64)
+  (end u64))
