@@ -1442,9 +1442,12 @@
   (set l0 (u64 sp 8))
   (push l0)
   (call exp-write)
-  (call newline)
+  (set l0 .newline)
+  (call cc-print)
   (pop l0)
-  (ret))
+  (ret)
+.newline
+  (1 "\n" 0))
 
 (code comp-export-table
   (8 comp-type .comp-type-name)
@@ -2627,9 +2630,7 @@
   (pop x0)
   (ret)
 .BOOT-name
-  (1 "BOOT" 0)
-.newline
-  (1 "\n" 0))
+  (1 "BOOT" 0))
 
 ;; Main
 
