@@ -2,9 +2,9 @@ lang
 dbg
 ctxt
 mem
+fs
 gfx
 ed
 con
-fs
 shell
 boot

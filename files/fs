@@ -31,16 +31,14 @@
        (dbg/out "wrong magic")
        (sys/call 60 1))))
 
-(fun (fs/list)
+(fun (fs/list func)
   (var ptr (fs/disk-start (ctxt/disk context)))
   (var i 1)
   (while (< i 64)
    (set ptr (+ ptr fs/slot-size))
    (set i (+ i 1))
    (if (u8 ptr)
-       (begin
-        (con/out ptr)
-        (con/out "\n")))))
+       (func ptr))))
 
 ;; Reading files
 

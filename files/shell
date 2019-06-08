@@ -10,6 +10,10 @@
    (set b (+ b 1)))
   (== (u8 a) (u8 b)))
 
+(fun (shell/con-out-with-nl ptr)
+  (con/out ptr)
+  (con/out "\n"))
+
 (fun (shell/main)
   (mem line 256)
   (mem file ed/textbuf)
@@ -33,5 +37,5 @@
               (sys/book-free book))
           (con/out "compilation failed\n"))
       (if (shell/streq line "list")
-          (fs/list)
+          (fs/list shell/con-out-with-nl)
        (con/out "?\n")))))))
