@@ -536,6 +536,14 @@
         (if ?a (and . ?rest) 0))
     a))
 
+(def (lang/or ?a . ?rest)
+  ?(if rest
+       (begin
+        (var tmp (exp/gensym))
+        (syntax-expand
+         (if (var ?tmp ?a) ?tmp (or . ?rest))))
+    a))
+
 (def (lang/not ?a)
   (if ?a 0 1))
 
