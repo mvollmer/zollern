@@ -25,3 +25,10 @@
        (set (mem/mem-end ctxt) (+ ptr (* 16 1024)))))
   (set (mem/mem-next ctxt) end)
   ptr)
+
+(fun (mem/cpy dst src size)
+  (while (> size 0)
+   (set (u8 dst) (u8 src))
+   (set dst (+ dst 1))
+   (set src (+ src 1))
+   (set size (- size 1))))

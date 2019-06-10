@@ -21,6 +21,24 @@
   (con/out ptr)
   (con/out "\n"))
 
+(fun (shell/cmd-ed argc argv)
+  (if (== argc 2)
+      (begin
+       (mem edbuf ed/textbuf)
+       (set (ed/textbuf-buf edbuf) (sys/page-get))
+       (set (ed/textbuf-max edbuf) (* 16 1024))
+       (set (ed/textbuf-len edbuf) 0)
+       (mem fbuf fs/rbuf)
+       (if (fs/open fbuf (u64 argv 1))
+           (begin
+            (if (fs/read fbuf)
+                (begin
+                 (mem/cpy (ed/textbuf-buf edbuf) (fs/rbuf-start fbuf) (fs/rbuf-size fbuf))
+                 (set (ed/textbuf-len edbuf) (fs/rbuf-size fbuf))))
+            (fs/close fbuf)))
+       (ed/ed edbuf 0 0 0 1024 768))
+   (con/out "usage: ed FILE\n")))
+
 (fun (shell/main)
   (mem line 256)
   (mem file ed/textbuf)
@@ -48,4 +66,6 @@
           (con/out "compilation failed\n"))
       (if (str/eq arg1 "list")
           (fs/list shell/con-out-with-nl)
-       (con/out "?\n")))))))
+       (if (str/eq arg1 "ed")
+           (shell/cmd-ed argc argv)
+        (con/out "?\n"))))))))
