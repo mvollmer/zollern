@@ -2,6 +2,7 @@ lang
 dbg
 ctxt
 mem
+str
 fs
 gfx
 ed
