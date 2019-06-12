@@ -104,18 +104,23 @@
   (if (< (ed/point ed) (+ (ed/buf ed) (ed/len ed)))
       (set (ed/point ed) (+ (ed/point ed) 1))))
 
-(fun (ed/up ed)
+(fun (ed/up ed n)
   (var p (ed/point ed))
   (var bol (ed/find-bol ed p))
-  (if (> bol (ed/buf ed))
-      (set (ed/point ed) (ed/find-column ed (ed/find-bol ed (- bol 1)) (- p bol)))))
+  (var col (- p bol))
+  (while (and (> n 0) (> bol (ed/buf ed)))
+   (set n (- n 1))
+   (set bol (ed/find-bol ed (- bol 1))))
+  (set (ed/point ed) (ed/find-column ed bol col)))
 
-(fun (ed/down ed)
+(fun (ed/down ed n)
   (var p (ed/point ed))
-  (var bol (ed/find-bol ed p))
+  (var col (- p (ed/find-bol ed p)))
   (var eol (ed/find-eol ed p))
-  (if (< eol (+ (ed/buf ed) (ed/len ed)))
-      (set (ed/point ed) (ed/find-column ed (+ eol 1) (- p bol)))))
+  (while (and (> n 0) (< eol (+ (ed/buf ed) (ed/len ed))))
+   (set n (- n 1))
+   (set eol (ed/find-eol ed (+ eol 1))))
+  (set (ed/point ed) (ed/find-column ed (ed/find-bol ed eol) col)))
 
 (fun (ed/beginning-of-line ed)
   (set (ed/point ed) (ed/find-bol ed (ed/point ed))))
@@ -169,9 +174,13 @@
        (if (== key -17) ;; right
            (ed/right ed))
        (if (== key -16) ;; up
-           (ed/up ed))
+           (ed/up ed 1))
        (if (== key -18) ;; down
-           (ed/down ed))
+           (ed/down ed 1))
+       (if (== key -19) ;; page up
+           (ed/up ed (ed/rows ed)))
+       (if (== key -20) ;; page down
+           (ed/down ed (ed/rows ed)))
        (if (== key -9) ;; backspace
            (ed/backspace ed))
        (if (== key -13) ;; delete
