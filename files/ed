@@ -3,6 +3,31 @@
   (textbuf-len u64)
   (textbuf-max u64))
 
+(fun (ed/textbuf-empty tb)
+  (set (ed/textbuf-buf tb) 0)
+  (set (ed/textbuf-len tb) 0)
+  (set (ed/textbuf-max tb) 0))
+
+(fun (ed/textbuf-set tb buf len max)
+  (set (ed/textbuf-buf tb) buf)
+  (set (ed/textbuf-len tb) len)
+  (set (ed/textbuf-max tb) max))
+
+(fun (ed/textbuf-read-file tb fb)
+  (set (ed/textbuf-buf tb) (sys/page-get))
+  (set (ed/textbuf-max tb) (* 16 1024))
+  (set (ed/textbuf-len tb) 0)
+  (if (fs/read fb)
+      (begin
+       (mem/cpy (ed/textbuf-buf tb) (fs/rbuf-start fb) (fs/rbuf-size fb))
+       (set (ed/textbuf-len tb) (fs/rbuf-size fb)))))
+
+(fun (ed/textbuf-get-char tb pos)
+  (u8 (ed/textbuf-buf tb) pos))
+
+(fun (ed/textbuf-set-char tb pos char)
+  (set (u8 (ed/textbuf-buf tb) pos) char))
+
 (struct ed/data
   ;; Window
   (top u32)
@@ -22,32 +47,38 @@
   (point u64)
   (quit u32))
 
+;; Abstracting the buffer
+
+(def (ed/char ?ed ?pos)
+  (ed/textbuf-get-char (ed/buf ?ed) ?pos))
+
+(defset (ed/char ?ed ?pos) char
+  (ed/textbuf-set-char (ed/buf ?ed) ?pos ?char))
+
 ;; Scanning
 
-(fun (ed/find-bol ed ptr)
-  (while (and (> ptr (ed/buf ed)) (!= (u8 ptr -1) 10))
-   (set ptr (- ptr 1)))
-  ptr)
+(fun (ed/find-bol ed pos)
+  (while (and (> pos 0) (!= (ed/char ed (- pos 1)) 10))
+   (set pos (- pos 1)))
+  pos)
 
-(fun (ed/find-eol ed ptr)
-  (var end (+ (ed/buf ed) (ed/len ed)))
-  (while (and (< ptr end) (!= (u8 ptr) 10))
-   (set ptr (+ ptr 1)))
-  ptr)
+(fun (ed/find-eol ed pos)
+  (while (and (< pos (ed/len ed)) (!= (ed/char ed pos) 10))
+   (set pos (+ pos 1)))
+  pos)
 
-(fun (ed/find-column ed ptr col)
-  (var col-ptr (+ ptr col))
-  (var end (+ (ed/buf ed) (ed/len ed)))
-  (while (and (< ptr col-ptr) (< ptr end) (!= (u8 ptr) 10))
-   (set ptr (+ ptr 1)))
-  ptr)
+(fun (ed/find-column ed pos col)
+  (var col-pos (+ pos col))
+  (while (and (< pos col-pos) (< pos (ed/len ed)) (!= (ed/char ed pos) 10))
+   (set pos (+ pos 1)))
+  pos)
 
 ;; Display
 
-(fun (ed/paint-lines ed ptr start-row n-rows)
+(fun (ed/paint-lines ed pos start-row n-rows)
   (var w (ed/col-width ed))
   (var h (ed/row-height ed))
-  (var end (+ (ed/buf ed) (ed/len ed)))
+  (var end (ed/len ed))
   (var x)
   (var y)
   (var c)
@@ -58,13 +89,13 @@
    (set n-cols (ed/cols ed))
    (set x (ed/lft ed))
    (while (> n-cols 0)
-    (set c (if (>= ptr end) 10 (u8 ptr)))
+    (set c (if (>= pos end) 10 (ed/char ed pos)))
     (set x (+ x (if (== c 10) w (gfx/glyph x y c))))
-    (if (== ptr (ed/point ed))
+    (if (== pos (ed/point ed))
         (gfx/invert-rect (- x w) y w h))
-    (if (>= ptr end)
+    (if (>= pos end)
         (goto all-done))
-    (set ptr (+ ptr 1))
+    (set pos (+ pos 1))
     (if (== c 10)
         (goto row-done))
     (set n-cols (- n-cols 1)))
@@ -94,21 +125,21 @@
 ;; Cursor movement
 
 (fun (ed/left ed)
-  (if (> (ed/point ed) (ed/buf ed))
+  (if (> (ed/point ed) 0)
       (begin
        (set (ed/point ed) (- (ed/point ed) 1))
        1)
    0))
 
 (fun (ed/right ed)
-  (if (< (ed/point ed) (+ (ed/buf ed) (ed/len ed)))
+  (if (< (ed/point ed) (ed/len ed))
       (set (ed/point ed) (+ (ed/point ed) 1))))
 
 (fun (ed/up ed n)
   (var p (ed/point ed))
   (var bol (ed/find-bol ed p))
   (var col (- p bol))
-  (while (and (> n 0) (> bol (ed/buf ed)))
+  (while (and (> n 0) (> bol 0))
    (set n (- n 1))
    (set bol (ed/find-bol ed (- bol 1))))
   (set (ed/point ed) (ed/find-column ed bol col)))
@@ -117,7 +148,7 @@
   (var p (ed/point ed))
   (var col (- p (ed/find-bol ed p)))
   (var eol (ed/find-eol ed p))
-  (while (and (> n 0) (< eol (+ (ed/buf ed) (ed/len ed))))
+  (while (and (> n 0) (< eol (+ (ed/len ed))))
    (set n (- n 1))
    (set eol (ed/find-eol ed (+ eol 1))))
   (set (ed/point ed) (ed/find-column ed (ed/find-bol ed eol) col)))
@@ -132,24 +163,24 @@
 
 (fun (ed/insert ed char)
   ;; (dbg/int "insert" char)
-  (if (< (ed/len ed) (ed/max ed))
+  (if (< (ed/len ed) (ed/textbuf-max (ed/buf ed)))
       (begin
-       (var ptr (+ (ed/buf ed) (ed/len ed)))
-       (while (> ptr (ed/point ed))
-        (set (u8 ptr) (u8 ptr -1))
-        (set ptr (- ptr 1)))
-       (set (u8 ptr) char)
+       (var pos (ed/len ed))
+       (while (> pos (ed/point ed))
+        (set (ed/char ed pos) (ed/char ed (- pos 1)))
+        (set pos (- pos 1)))
+       (set (ed/char ed pos) char)
        (set (ed/len ed) (+ (ed/len ed) 1))
        (set (ed/point ed) (+ (ed/point ed) 1)))))
 
 (fun (ed/delete ed)
-  (if (< (ed/point ed) (+ (ed/buf ed) (ed/len ed)))
+  (if (< (ed/point ed) (ed/len ed))
       (begin
-       (var ptr (ed/point ed))
-       (var end (+ (ed/buf ed) (ed/len ed) -1))
-       (while (< ptr end)
-        (set (u8 ptr) (u8 ptr 1))
-        (set ptr (+ ptr 1)))
+       (var pos (ed/point ed))
+       (var end (- (ed/len ed) 1))
+       (while (< pos end)
+        (set (ed/char ed pos) (ed/char ed (+ pos 1)))
+        (set pos (+ pos 1)))
        (set (ed/len ed) (- (ed/len ed) 1)))))
 
 (fun (ed/backspace ed)
@@ -161,8 +192,6 @@
 (fun (ed/command ed key state)
   ;; (dbg/int "command" key)
   ;; (dbg/int "state" state)
-  (var ptr)
-  (var end)
   (if (== state 0)
       (begin
        (if (== key -11) ;; return
@@ -218,12 +247,11 @@
   (set (ed/col-width ed) (gfx/glyph 0 0 32))
   (set (ed/rows ed) (/ (- bot top) (ed/row-height ed)))
   (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed)))
-  (set (ed/buf ed) (ed/textbuf-buf buf))
-  (set (ed/max ed) (ed/textbuf-max buf))
+  (set (ed/buf ed) buf)
   (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/mode ed) mode)
-  (set (ed/point ed) (ed/buf ed))
-  (set (ed/window-top ed) (ed/buf ed))
+  (set (ed/point ed) 0)
+  (set (ed/window-top ed) 0)
   (set (ed/quit ed) 0)
   (while (not (ed/quit ed))
    (ed/redisplay ed)

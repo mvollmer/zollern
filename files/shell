@@ -25,17 +25,12 @@
   (if (== argc 2)
       (begin
        (mem edbuf ed/textbuf)
-       (set (ed/textbuf-buf edbuf) (sys/page-get))
-       (set (ed/textbuf-max edbuf) (* 16 1024))
-       (set (ed/textbuf-len edbuf) 0)
        (mem fbuf fs/rbuf)
        (if (fs/open fbuf (u64 argv 1))
            (begin
-            (if (fs/read fbuf)
-                (begin
-                 (mem/cpy (ed/textbuf-buf edbuf) (fs/rbuf-start fbuf) (fs/rbuf-size fbuf))
-                 (set (ed/textbuf-len edbuf) (fs/rbuf-size fbuf))))
-            (fs/close fbuf)))
+            (ed/textbuf-read-file edbuf fbuf)
+            (fs/close fbuf))
+        (ed/textbuf-empty edbuf))
        (ed/ed edbuf 0 0 0 1024 768))
    (con/out "usage: ed FILE\n")))
 
@@ -43,9 +38,7 @@
   (mem line 256)
   (mem file ed/textbuf)
   (mem argv (* 8 16))
-  (set (ed/textbuf-buf file) (sys/page-get))
-  (set (ed/textbuf-max file) (* 16 1024))
-  (set (ed/textbuf-len file) 0)
+  (ed/textbuf-set file (sys/page-get) 0 (* 16 1024))
   (while 1
    (shell/readline line 256)
    (var argc (shell/parse-args argv 16 line))
