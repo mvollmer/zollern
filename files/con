@@ -34,9 +34,6 @@
   (set (con/cursor-x ctxt) x)
   (gfx/show))
 
-(fun (con/in buf len)
+(fun (con/in buf)
   (var ctxt (ctxt/con context))
-  (mem tbuf ed/textbuf)
-  (ed/textbuf-set tbuf buf 0 (- len 1))
-  (ed/ed tbuf 1 (con/cursor-x ctxt) (- 768 (con/line-height ctxt)) 1024 768)
-  (set (u8 (+ buf (ed/textbuf-len tbuf))) 0))
+  (ed/ed buf 1 (con/cursor-x ctxt) (- 768 (con/line-height ctxt)) 1024 768))

@@ -3,24 +3,33 @@
   (textbuf-len u64)
   (textbuf-max u64))
 
-(fun (ed/textbuf-empty tb)
+(fun (ed/textbuf-init tb)
   (set (ed/textbuf-buf tb) 0)
   (set (ed/textbuf-len tb) 0)
   (set (ed/textbuf-max tb) 0))
 
-(fun (ed/textbuf-set tb buf len max)
-  (set (ed/textbuf-buf tb) buf)
-  (set (ed/textbuf-len tb) len)
-  (set (ed/textbuf-max tb) max))
+(fun (ed/textbuf-fini tb)
+  (if (ed/textbuf-buf tb)
+      (sys/page-put (ed/textbuf-buf tb))))
+
+(fun (ed/textbuf-grow tb new-max)
+  (if (< new-max (ed/textbuf-max tb))
+      1
+   (if (ed/textbuf-buf tb)
+       0
+    (if (> new-max (* 16 1024))
+        0
+     (begin
+      (set (ed/textbuf-buf tb) (sys/page-get))
+      (set (ed/textbuf-max tb) (* 16 1024))
+      1)))))
 
 (fun (ed/textbuf-read-file tb fb)
-  (set (ed/textbuf-buf tb) (sys/page-get))
-  (set (ed/textbuf-max tb) (* 16 1024))
-  (set (ed/textbuf-len tb) 0)
-  (if (fs/read fb)
-      (begin
-       (mem/cpy (ed/textbuf-buf tb) (fs/rbuf-start fb) (fs/rbuf-size fb))
-       (set (ed/textbuf-len tb) (fs/rbuf-size fb)))))
+  (while (and (fs/read fb)
+              (ed/textbuf-grow tb (+ (ed/textbuf-len tb) (fs/rbuf-size fb))))
+   (begin
+    (mem/cpy (+ (ed/textbuf-buf tb) (ed/textbuf-len tb)) (fs/rbuf-start fb) (fs/rbuf-size fb))
+    (set (ed/textbuf-len tb) (+ (ed/textbuf-len tb) (fs/rbuf-size fb))))))
 
 (fun (ed/textbuf-get-char tb pos)
   (u8 (ed/textbuf-buf tb) pos))
@@ -163,7 +172,7 @@
 
 (fun (ed/insert ed char)
   ;; (dbg/int "insert" char)
-  (if (< (ed/len ed) (ed/textbuf-max (ed/buf ed)))
+  (if (ed/textbuf-grow (ed/buf ed) (+ (ed/len ed) 1))
       (begin
        (var pos (ed/len ed))
        (while (> pos (ed/point ed))
