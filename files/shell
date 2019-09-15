@@ -2,17 +2,14 @@
   (con/out "$ ")
   (set (ed/textbuf-len buf) 0)
   (con/in buf)
-  (var len (ed/textbuf-len buf))
-  (var str (ed/textbuf-buf buf))
-  (if (>= len (* 16 1024))
-      (set len (- (* 16 1024) 1)))
-  (set (u8 str len) 0)
-  (con/out str)
+  (var str (ed/textbuf-maybe-as-string buf))
+  (if str
+      (con/out str))
   (con/out "\n"))
 
 (fun (shell/parse-args argv max-argc buf)
   (var argc 0)
-  (var line (str/skip-whitespace (ed/textbuf-buf buf)))
+  (var line (str/skip-whitespace (ed/textbuf-maybe-as-string buf)))
   (while (and (u8 line) (< argc max-argc))
    (set (u64 argv argc) line)
    (set argc (+ argc 1))
@@ -56,15 +53,16 @@
     (if (str/eq arg1 "edit")
         (ed/ed file 0 0 0 1024 768)
      (if (str/eq arg1 "run")
-         (if (var book (sys/compile "user"
-                                    (ed/textbuf-buf file) (+ (ed/textbuf-buf file) (ed/textbuf-len file))
-                                    con/out 0))
-             (begin
-              (if (var main (sys/book-search-fun book "main"))
-                  (main)
-               (con/out "no user/main function\n"))
-              (sys/book-free book))
-          (con/out "compilation failed\n"))
+         (begin
+          (var text (ed/textbuf-maybe-as-string file))
+          (if text
+              (if (var book (sys/compile "user" text (+ text (ed/textbuf-len file)) con/out 0))
+                  (begin
+                   (if (var main (sys/book-search-fun book "main"))
+                       (main)
+                    (con/out "no user/main function\n"))
+                   (sys/book-free book))
+               (con/out "compilation failed\n"))))
       (if (str/eq arg1 "list")
           (fs/list shell/con-out-with-nl)
        (if (str/eq arg1 "ed")
