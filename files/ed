@@ -14,8 +14,7 @@
    (set i (+ i 1))))
 
 (fun (ed/textbuf-grow tb max)
-  (var page-size (* 16 1024))
-  (var new-page-count (/ (+ max page-size -1) page-size))
+  (var new-page-count (/ (+ max mem/page-size -1) mem/page-size))
   (if (<= new-page-count 32)
       (begin
        (var i (ed/textbuf-page-count tb))
@@ -27,12 +26,12 @@
    0))
 
 (fun (ed/textbuf-get-char tb pos)
-  (var page (/ pos (* 16 1024)))
-  (u8 (ed/textbuf-pages tb page) (- pos (* page 16 1024))))
+  (var page (/ pos mem/page-size))
+  (u8 (ed/textbuf-pages tb page) (- pos (* page mem/page-size))))
 
 (fun (ed/textbuf-set-char tb pos char)
-  (var page (/ pos (* 16 1024)))
-  (set (u8 (ed/textbuf-pages tb page) (- pos (* page 16 1024))) char))
+  (var page (/ pos mem/page-size))
+  (set (u8 (ed/textbuf-pages tb page) (- pos (* page mem/page-size))) char))
 
 (fun (ed/textbuf-read-file tb fb)
   (while (and (fs/read fb)
@@ -49,7 +48,7 @@
 
 (fun (ed/textbuf-maybe-as-string tb)
   (var len (ed/textbuf-len tb))
-  (if (< len (* 16 1024))
+  (if (< len mem/page-size)
       (begin
        (ed/textbuf-grow tb (+ len 1)) ;; this only matters for len == 0
        (var str (ed/textbuf-pages tb 0))

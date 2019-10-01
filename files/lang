@@ -581,6 +581,9 @@
          res)
      (exp/syntax)))))
 
+(def (lang/defconst ?name ?val)
+  (def ?name ?(exp/make-number (const-expr val))))
+
 ;; Stack memory
 
 (def (lang/mem ?name ?size)

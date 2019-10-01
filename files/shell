@@ -34,7 +34,7 @@
            (begin
             (ed/textbuf-read-file edbuf fbuf)
             (fs/close fbuf)))
-       (ed/ed edbuf 0 0 0 1024 768)
+       (ed/ed edbuf 0 0 0 gfx/screen-width gfx/screen-height)
        (ed/textbuf-fini edbuf))
    (con/out "usage: ed FILE\n")))
 
@@ -51,7 +51,7 @@
    (if (str/eq arg1 "quit")
        (sys/call 60 0)
     (if (str/eq arg1 "edit")
-        (ed/ed file 0 0 0 1024 768)
+        (ed/ed file 0 0 0 gfx/screen-width gfx/screen-height)
      (if (str/eq arg1 "run")
          (begin
           (var text (ed/textbuf-maybe-as-string file))

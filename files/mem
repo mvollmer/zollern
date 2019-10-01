@@ -2,6 +2,8 @@
   mem-next
   mem-end)
 
+(defconst mem/page-size (* 16 1024))
+
 (fun (mem/init)
   (var boot-disk (ctxt/disk context))
   (var boot-books (ctxt/books context))
@@ -11,7 +13,7 @@
   (set (ctxt/books context) boot-books)
   (var mem-context (+ page ctxt/contexts))
   (set (mem/mem-next mem-context) (+ mem-context mem/context))
-  (set (mem/mem-end mem-context) (+ page (* 16 1024)))
+  (set (mem/mem-end mem-context) (+ page mem/page-size))
   (set (ctxt/mem context) mem-context))
 
 (fun (mem/alloc size)
@@ -22,7 +24,7 @@
       (begin
        (set ptr (sys/page-get))
        (set end (+ ptr size))
-       (set (mem/mem-end ctxt) (+ ptr (* 16 1024)))))
+       (set (mem/mem-end ctxt) (+ ptr mem/page-size))))
   (set (mem/mem-next ctxt) end)
   ptr)
 

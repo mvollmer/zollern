@@ -7,9 +7,14 @@
 
 ;; Layout
 
-(def fs/block-size (* 16 1024))
-(def fs/slot-size 256)
-(def fs/name-size 64)
+(defconst fs/block-size (* 16 1024))
+(defconst fs/node-size  256)
+(defconst fs/name-size  64)
+(defconst fs/ptr-size   2)
+
+(defconst fs/node-count (- (/ fs/block-size fs/node-size) 1))
+(defconst fs/ptr-count (/ (- fs/node-size fs/name-size 4) fs/ptr-size))
+(defconst fs/block-count (+ (* fs/node-count fs/ptr-count) 1))
 
 (struct fs/disk
   disk-start
@@ -19,23 +24,30 @@
   (head-magic u32)
   (head-version u32))
 
-(struct fs/meta
+(struct fs/node
   (node-name u8 fs/name-size)
   (node-size u32)
-  (node-ptr u16 (/ (- fs/slot-size fs/name-size 4) 2)))
+  (node-ptr u16 fs/ptr-count))
 
 (fun (fs/init)
-  (if (!= (fs/head-magic (fs/disk-start (ctxt/disk context)))
+  (var disk (ctxt/disk context))
+  (if (!= (fs/head-magic (fs/disk-start disk))
           (+ (* (+ (* (+ (* 76 256) 76) 256) 79) 256) 90))
       (begin
-       (dbg/out "wrong magic")
+       (dbg/out "wrong disk magic\n")
+       (sys/call 60 1)))
+  (if (!= (/ (- (fs/disk-end disk) (fs/disk-start disk)) fs/block-size)
+          fs/block-count)
+      (begin
+       (dbg/out "wrong disk block count\n")
        (sys/call 60 1))))
+
 
 (fun (fs/list func)
   (var ptr (fs/disk-start (ctxt/disk context)))
   (var i 1)
   (while (< i 64)
-   (set ptr (+ ptr fs/slot-size))
+   (set ptr (+ ptr fs/node-size))
    (set i (+ i 1))
    (if (u8 ptr)
        (func ptr))))
@@ -57,7 +69,7 @@
 ;; when the file has been read completely.
 
 (struct fs/rbuf
-  (rbuf-slot u16)
+  (rbuf-node u16)
   (rbuf-ptr u16)
   (rbuf-start u64)
   (rbuf-size u64))
@@ -66,10 +78,10 @@
   (var ptr (fs/disk-start (ctxt/disk context)))
   (var i 1)
   (while (< i 64)
-   (set ptr (+ ptr fs/slot-size))
+   (set ptr (+ ptr fs/node-size))
    (if (str/eq ptr name)
        (begin
-        (set (fs/rbuf-slot buf) i)
+        (set (fs/rbuf-node buf) i)
         (set (fs/rbuf-ptr buf) 0)
         1
         (goto done)))
@@ -78,7 +90,7 @@
   (label done))
 
 (fun (fs/read buf)
-  (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-slot buf) fs/slot-size)))
+  (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node buf) fs/node-size)))
   (var ptr (fs/rbuf-ptr buf))
   (var rest-size (- (fs/node-size node) (* ptr fs/block-size)))
   (if (> rest-size 0)
@@ -93,3 +105,10 @@
    0))
 
 (fun (fs/close buf))
+
+;; Writing files
+
+;; - (fs/start wbuf)
+;; - (fs/write wbuf buf len)
+;; - (fs/commit wbuf name)
+;; - (fs/abort wbuf)
