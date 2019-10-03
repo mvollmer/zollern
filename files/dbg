@@ -29,3 +29,29 @@
   (dbg/out ": ")
   (dbg/out s)
   (dbg/out "\n"))
+
+(fun (dbg/assert cond msg)
+  (if (not cond)
+      (begin
+       (dbg/out msg)
+       (dbg/out "\n")
+       (sys/call 60 1))))
+
+(fun (dbg/assert-equal actual expected thing)
+  (if (!= actual expected)
+      (begin
+       (dbg/out "wrong ")
+       (dbg/out thing)
+       (dbg/out "\n")
+       (dbg/int "   actual" actual)
+       (dbg/int " expected" expected)
+       (sys/call 60 1))))
+
+(fun (dbg/assert-less-or-equal value max thing)
+  (if (> value max)
+      (begin
+       (dbg/out thing)
+       (dbg/out " too large\n")
+       (dbg/int "   value" value)
+       (dbg/int " maximum" max)
+       (sys/call 60 1))))

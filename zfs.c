@@ -123,12 +123,49 @@ create (char *dir, char *file)
   fd = open (file, O_WRONLY | O_CREAT, 0666);
   write (fd, disk, sizeof(struct disk));
   close (fd);
+}
 
+void
+extract (char *file, char *dir)
+{
+  char fn[256];
+  int fd;
+
+  struct disk *disk = malloc(sizeof(struct disk));
+
+  fd = open (file, O_RDONLY);
+  read (fd, disk, sizeof(struct disk));
+  close (fd);
+
+  for (int s = 0; s < n_slots; s++)
+    {
+      if (*disk->toc.meta[s].name)
+        {
+          strcpy (fn, dir);
+          strcat (fn, "/");
+          strcat (fn, disk->toc.meta[s].name);
+          fd = open(fn, O_WRONLY | O_CREAT, 0666);
+
+          int sz = disk->toc.meta[s].size;
+          int i = 0;
+          while (sz > 0)
+            {
+              int n = block_size;
+              if (sz < n)
+                n = sz;
+              write (fd, disk->data[disk->toc.meta[s].ptr[i]-1].bytes, n);
+              sz -= n;
+              i += 1;
+            }
+          close(fd);
+        }
+    }
 }
 
 void usage()
 {
   fprintf (stderr, "usage: zfs create DIR DISK\n");
+  fprintf (stderr, "       zfs extract DISK\n");
   exit (1);
 }
 
@@ -137,6 +174,8 @@ main (int argc, char **argv)
 {
   if (strcmp (argv[1], "create") == 0)
     create (argv[2], argv[3]);
+  else if (strcmp (argv[1], "extract") == 0)
+    extract (argv[2], argv[3]);
   else
     usage ();
 }

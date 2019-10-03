@@ -46,6 +46,15 @@
      (set pos (+ pos 1)))
     (set (ed/textbuf-len tb) pos))))
 
+(fun (ed/textbuf-write-file tb fb)
+  (var i 0)
+  (var len (ed/textbuf-len tb))
+  (while (> len 0)
+   (var n (if (< len mem/page-size) len mem/page-size))
+   (fs/write fb (ed/textbuf-pages tb i) n)
+   (set len (- len n))
+   (set i (+ i 1))))
+
 (fun (ed/textbuf-maybe-as-string tb)
   (var len (ed/textbuf-len tb))
   (if (< len mem/page-size)

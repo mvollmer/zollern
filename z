@@ -3,6 +3,7 @@
 run: zfs zfb z1
 	./zfs create files zdisk
 	./zfb ./z1 zdisk
+	rm -rf files && mkdir files && ./zfs extract zdisk files
 
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c

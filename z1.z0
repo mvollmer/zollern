@@ -172,7 +172,7 @@
 (code disk-open
   (push x0)
   (sub sp (sizeof sys-fstat-buf))
-  (set l1 0)
+  (set l1 2) ; O_RDWR
   (call sys-open)
   (cmp l0 0)
   (jl .err)
@@ -183,8 +183,8 @@
   (jl .err)
   (set l0 0)
   (set l1 (st_size sp))
-  (set l2 1) ; PROT_READ
-  (set l3 2) ; MAP_PRIVATE
+  (set l2 3) ; PROT_READ | PROT_WRITE
+  (set l3 1) ; MAP_SHARED
   (set l4 x0)
   (set l5 0)
   (call sys-mmap)
