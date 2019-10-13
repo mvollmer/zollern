@@ -47,6 +47,27 @@
       (fs/remove (u64 argv 1))
    (con/out "usage: remove FILE\n")))
 
+(fun (shell/cmd-run argc argv)
+  (if (== argc 2)
+      (begin
+       (mem rbuf fs/rbuf)
+       (if (fs/open rbuf (u64 argv 1))
+           (begin
+            (if (fs/read rbuf)
+                (if (var book (sys/compile (u64 argv 1)
+                                           (fs/rbuf-start rbuf)
+                                           (+ (fs/rbuf-start rbuf) (fs/rbuf-size rbuf))
+                                           con/out 0))
+                    (begin
+                     (if (var main (sys/book-search-fun book "main"))
+                         (main)
+                      (con/out "no main function\n"))
+                     (sys/book-free book))
+                 (con/out "compilation failed\n")))
+            (fs/close rbuf))
+        (con/out "no such file")))
+   (con/out "usage: run FILE\n")))
+
 (fun (shell/main)
   (mem line ed/textbuf)
   (mem file ed/textbuf)
@@ -61,7 +82,7 @@
        (sys/call 60 0)
     (if (str/eq arg1 "edit")
         (ed/ed file 0 0 0 gfx/screen-width gfx/screen-height)
-     (if (str/eq arg1 "run")
+     (if (str/eq arg1 "edit-run")
          (begin
           (var text (ed/textbuf-maybe-as-string file))
           (if text
@@ -76,6 +97,8 @@
           (fs/list shell/con-out-with-nl)
        (if (str/eq arg1 "ed")
            (shell/cmd-ed argc argv)
-        (if (str/eq arg1 "remove")
-            (shell/cmd-remove argc argv)
-         (con/out "?\n")))))))))
+        (if (str/eq arg1 "run")
+            (shell/cmd-run argc argv)
+         (if (str/eq arg1 "remove")
+             (shell/cmd-remove argc argv)
+          (con/out "?\n"))))))))))
