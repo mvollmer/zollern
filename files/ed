@@ -224,6 +224,46 @@
   (if (ed/left ed)
       (ed/delete ed)))
 
+;; Bare minimum for editing s-exprs
+
+(fun (ed/find-matching-closing-paren ed pos)
+  (var level 0)
+  (var char (ed/char ed pos))
+  (while (and (< pos (ed/len ed))
+              (not (and (== level 1)
+                        (== char 41))))
+   (if (== char 40)
+       (set level (+ level 1))
+    (if (== char 41)
+        (set level (- level 1))))
+   (set pos (+ pos 1))
+   (set char (ed/char ed pos)))
+  pos)
+
+(fun (ed/find-matching-opening-paren ed pos)
+  (var level 0)
+  (var char (ed/char ed pos))
+  (while (and (> pos 0)
+              (not (and (== level 1)
+                        (== char 40))))
+   (if (== char 41)
+       (set level (+ level 1))
+    (if (== char 40)
+        (set level (- level 1))))
+   (set pos (- pos 1))
+   (set char (ed/char ed pos)))
+  pos)
+
+(fun (ed/goto-other-paren ed)
+  (var pos (ed/point ed))
+  (if (< pos (ed/len ed))
+      (begin
+       (if (== (ed/char ed pos) 40) ;; "("
+           (set pos (ed/find-matching-closing-paren ed pos))
+        (if (== (ed/char ed pos) 41) ;; ")"
+            (set pos (ed/find-matching-opening-paren ed pos))))
+       (set (ed/point ed) pos))))
+
 ;; Keys
 
 (fun (ed/command ed key state)
@@ -253,6 +293,8 @@
            (ed/delete ed))))
   (if (== state 16) ;; control
       (begin
+       (if (== key 46) ;; C-.
+           (ed/goto-other-paren ed))
        (if (== key 97) ;; C-a
            (ed/beginning-of-line ed))
        (if (== key 101) ;; C-e
