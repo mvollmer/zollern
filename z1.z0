@@ -264,9 +264,15 @@
   (ret)
 .not-found
   (set l0 x0)
-  (call print)
+  (call cc-print)
   (let l0 (u8 .not-found-message))
-  (jmp panic)
+  (call cc-print)
+  (pop l0)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (set l0 0)
+  (ret)
 .not-found-message
   (1 " not found\n" 0))
 
@@ -1518,16 +1524,14 @@
   (jmp page-put))
 
 (code sys-compile
-  (set l0 (u64 sp 8))
-  (set l1 (u64 sp 16))
-  (set l2 (u64 sp 24))
-  (set l3 (u64 sp 32))
-  (set l4 (u64 sp 40))
+  (set l0 (u64 sp 8))   ;; book
+  (set l1 (u64 sp 16))  ;; print-hook
+  (set l2 (u64 sp 24))  ;; print-hook-data
   (sub sp (sizeof compiler-context))
-  (set (cc-print-hook sp) l3)
-  (set (cc-print-data sp) l4)
+  (set (cc-print-hook sp) l1)
+  (set (cc-print-data sp) l2)
   (set (ctxt-comp cp) sp)
-  (call compile-book-from-membuffer)
+  (call compile-book-from-file)
   (set (ctxt-comp cp) 0)
   (add sp (sizeof compiler-context))
   (ret))
@@ -2571,26 +2575,24 @@
   (set l0 0)
   (ret))
 
-(code compile-book-from-membuffer
-  ;; l0 - book name
-  ;; l1 - start
-  ;; l2 - end
-  (set l3 fbuf)
-  (set (fb-start l3) l1)
-  (set (fb-end l3) l2)
-  (set (fb-ptr l3) l1)
-  (set l1 l3)
-  (jmp compile-book-from-filebuffer))
-
 (code compile-book-from-file
   ;; l0 - book name
-  (push l0)
+  (sub sp (sizeof file-buffer))
   (set l1 l0)
-  (set l0 fbuf)
+  (set l0 sp)
+  (push l1)
   (call find-file)
+  (cmp l0 0)
+  (jne .found)
+  (pop l1)
+  (jmp .out)
+.found
   (set l1 l0)
   (pop l0)
-  (jmp compile-book-from-filebuffer))
+  (call compile-book-from-filebuffer)
+.out
+  (add sp (sizeof file-buffer))
+  (ret))
 
 (data
   boot-fbuf (sizeof file-buffer)
@@ -2606,6 +2608,8 @@
   (set l0 boot-fbuf)
   (set l1 .BOOT-name)
   (call find-file)
+  (cmp l0 0)
+  (je .fail)
   (set x0 l0)
   (set x1 boot-token)
   (set l0 boot-tbuf)
@@ -2621,7 +2625,7 @@
   (call compile-book-from-file)
   (set x2 l0)
   (cmp x2 0)
-  (je .done)
+  (je .fail)
   (call book-register)
   (jmp .loop)
 .done
@@ -2631,7 +2635,12 @@
   (pop x0)
   (ret)
 .BOOT-name
-  (1 "BOOT" 0))
+  (1 "BOOT" 0)
+.fail
+  (set l0 .fail-message)
+  (jmp panic)
+.fail-message
+  (1 "bootstrap compilation failed\n" 0))
 
 ;; Main
 
@@ -2667,8 +2676,6 @@
   (call book-register)
   (let l0 (u64 sp 16))
   (call compile-boot-files)
-  (cmp l0 0)
-  (je .compile-failed)
   (set l1 .main-name)
   (call book-search-fun)
   (cmp l0 0)
@@ -2680,15 +2687,10 @@ run
   (1 "exp" 0)
 .sys-name
   (1 "sys" 0)
-.compile-failed
-  (set l0 .compile-failed-message)
-  (jmp panic)
 .main-undefined
   (set l0 .main-undefined-message)
   (jmp panic)
 .main-name
   (1 "main" 0)
-.compile-failed-message
-  (1 "bootstrap compilation failed\n" 0)
 .main-undefined-message
   (1 "main undefined (or not a function)\n" 0))

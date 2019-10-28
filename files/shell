@@ -50,22 +50,13 @@
 (fun (shell/cmd-run argc argv)
   (if (== argc 2)
       (begin
-       (mem rbuf fs/rbuf)
-       (if (fs/open rbuf (u64 argv 1))
+       (if (var book (sys/compile (u64 argv 1) con/out 0))
            (begin
-            (if (fs/read rbuf)
-                (if (var book (sys/compile (u64 argv 1)
-                                           (fs/rbuf-start rbuf)
-                                           (+ (fs/rbuf-start rbuf) (fs/rbuf-size rbuf))
-                                           con/out 0))
-                    (begin
-                     (if (var main (sys/book-search-fun book "main"))
-                         (main)
-                      (con/out "no main function\n"))
-                     (sys/book-free book))
-                 (con/out "compilation failed\n")))
-            (fs/close rbuf))
-        (con/out "no such file")))
+            (if (var main (sys/book-search-fun book "main"))
+                (main)
+             (con/out "no main function\n"))
+            (sys/book-free book))
+        (con/out "compilation failed\n")))
    (con/out "usage: run FILE\n")))
 
 (fun (shell/main)
