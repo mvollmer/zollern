@@ -112,6 +112,7 @@ create (char *dir, char *file)
             break;
           sz += n;
           disk->toc.meta[s].ptr[i] = ++next_data;
+          next_data += 2;  // force discontinuity to make it more interesting
           if (n < block_size)
             break;
         }
