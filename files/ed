@@ -302,8 +302,9 @@
   (if (== state 32) ;; meta
       (begin
        (if (== key 120) ;; M-x
-           (set (ed/quit ed) 1)))))
-
+           (set (ed/quit ed) 1))
+       (if (== key 114) ;; M-r
+           (set (ed/quit ed) 2)))))
 
 (fun (ed/input ed)
   (mem event gfx/event)
@@ -336,4 +337,5 @@
    (ed/redisplay ed)
    (ed/input ed))
   (gfx/rect lft top (- rgt lft) (- bot top) (gfx/color 255 255 255))
-  (set (ed/textbuf-len buf) (ed/len ed)))
+  (set (ed/textbuf-len buf) (ed/len ed))
+  (ed/quit ed))

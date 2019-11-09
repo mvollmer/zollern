@@ -24,29 +24,6 @@
   (con/out ptr)
   (con/out "\n"))
 
-(fun (shell/cmd-ed argc argv)
-  (if (== argc 2)
-      (begin
-       (mem edbuf ed/textbuf)
-       (mem rbuf fs/rbuf)
-       (mem wbuf fs/wbuf)
-       (ed/textbuf-init edbuf)
-       (if (fs/open rbuf (u64 argv 1))
-           (begin
-            (ed/textbuf-read-file edbuf rbuf)
-            (fs/close rbuf)))
-       (ed/ed edbuf 0 0 0 gfx/screen-width gfx/screen-height)
-       (fs/create wbuf)
-       (ed/textbuf-write-file edbuf wbuf)
-       (fs/commit wbuf (u64 argv 1))
-       (ed/textbuf-fini edbuf))
-   (con/out "usage: ed FILE\n")))
-
-(fun (shell/cmd-remove argc argv)
-  (if (== argc 2)
-      (fs/remove (u64 argv 1))
-   (con/out "usage: remove FILE\n")))
-
 (fun (shell/cmd-run argc argv)
   (if (== argc 2)
       (begin
@@ -58,6 +35,39 @@
             (sys/book-free book))
         (con/out "compilation failed\n")))
    (con/out "usage: run FILE\n")))
+
+(fun (shell/cmd-ed argc argv)
+  (if (== argc 2)
+      (begin
+       (label again)
+       (mem edbuf ed/textbuf)
+       (mem rbuf fs/rbuf)
+       (mem wbuf fs/wbuf)
+       (ed/textbuf-init edbuf)
+       (if (fs/open rbuf (u64 argv 1))
+           (begin
+            (ed/textbuf-read-file edbuf rbuf)
+            (fs/close rbuf)))
+       (var exit-mode (ed/ed edbuf 0 0 0 gfx/screen-width gfx/screen-height))
+       (fs/create wbuf)
+       (ed/textbuf-write-file edbuf wbuf)
+       (fs/commit wbuf (u64 argv 1))
+       (ed/textbuf-fini edbuf)
+       (if (== exit-mode 2)
+           (begin
+            (shell/cmd-run argc argv)
+            (con/out "RET")
+            (mem line ed/textbuf)
+            (ed/textbuf-init line)
+            (con/in line)
+            (con/out "\n")
+            (goto again))))
+   (con/out "usage: ed FILE\n")))
+
+(fun (shell/cmd-remove argc argv)
+  (if (== argc 2)
+      (fs/remove (u64 argv 1))
+   (con/out "usage: remove FILE\n")))
 
 (fun (shell/main)
   (mem line ed/textbuf)
