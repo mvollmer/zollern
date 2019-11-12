@@ -144,3 +144,8 @@
    (set dst-p (+ dst-p skip))
    (set j (+ j 1)))
   (gfx/glyph-advance glyph))
+
+(fun (gfx/put-pixel x y c)
+  (var gfx (ctxt/gfx context))
+  (var dst (+ (gfx/gfx-pixels gfx) (* (+ x (* y gfx/screen-width)) 4)))
+  (set (u32 dst) c))
