@@ -1,7 +1,7 @@
 ;; Mandelbrot
 
 (defconst mandel/NORM 10000)
-(defconst mandel/MAX    100)
+(defconst mandel/MAX    255)
 
 (defconst mandel/re-min -25000)
 (defconst mandel/re-max  10000)
@@ -33,8 +33,8 @@
     (while (< x mandel/x-size)
       (var re (+ mandel/re-min (* x (/ (- mandel/re-max mandel/re-min) mandel/x-size))))
       (var im (+ mandel/im-min (* y (/ (- mandel/im-max mandel/im-min) mandel/y-size))))
-      (var m (mandel/iter re im 100))
-      (gfx/put-pixel x y (if (>= m mandel/MAX) (gfx/color 0 0 0) (gfx/color 255 255 255)))
+      (var c (- 255 (mandel/iter re im)))
+      (gfx/put-pixel x y (gfx/color (* c 16) (* c 1) (* c 32)))
       (set x (+ x 1)))
     (set y (+ y 1)))
   (gfx/show))
