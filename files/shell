@@ -60,6 +60,7 @@
             (mem line ed/textbuf)
             (ed/textbuf-init line)
             (con/in line)
+            (ed/textbuf-fini line)
             (con/out "\n")
             (goto again))))
    (con/out "usage: ed FILE\n")))
