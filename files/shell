@@ -20,8 +20,12 @@
         (set line (str/skip-whitespace (+ line 1))))))
   argc)
 
-(fun (shell/con-out-with-nl ptr)
-  (con/out ptr)
+(fun (shell/con-node-out node)
+  (con/out node)
+  (con/out " ")
+  (con/out-int (fs/node-size node))
+  (con/out " ")
+  (con/out-int (fs/node-time node))
   (con/out "\n"))
 
 (fun (shell/cmd-run argc argv)
@@ -96,7 +100,7 @@
                    (sys/book-free book))
                (con/out "compilation failed\n"))))
       (if (str/eq arg1 "list")
-          (fs/list shell/con-out-with-nl)
+          (fs/list shell/con-node-out)
        (if (str/eq arg1 "ed")
            (shell/cmd-ed argc argv)
         (if (str/eq arg1 "run")

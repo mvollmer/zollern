@@ -167,7 +167,8 @@
 (defstruct disk-meta
   (u8 dm-name 64)
   (u32 dm-size)
-  (u16 dm-ptrs 94))
+  (u32 dm-time)
+  (u16 dm-ptrs 92))
 
 (code disk-open
   (push x0)

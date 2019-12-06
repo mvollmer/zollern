@@ -34,6 +34,23 @@
   (set (con/cursor-x ctxt) x)
   (gfx/show))
 
+(fun (con/out-int n)
+  (if (< n 0)
+      (begin
+       (con/out "-")
+       (set n (- n))))
+  (mem buf 40)
+  (var end (+ buf 40))
+  (var ptr end)
+  (set ptr (- ptr 1))
+  (set (u8 ptr) 0)
+  (while (begin
+          (set ptr (- ptr 1))
+          (set (u8 ptr) (+ (% n 10) 48))
+          (set n (/ n 10))
+          n))
+  (con/out ptr))
+
 (fun (con/in buf)
   (var ctxt (ctxt/con context))
   (ed/ed buf 1 (con/cursor-x ctxt)

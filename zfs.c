@@ -16,14 +16,14 @@
  *
  * A meta slot is 256 bytes and looks like this:
  *
- * | name | size | ptr_1 | ... | ptr_L |
+ * | name | size | time | ptr_1 | ... | ptr_L |
  *
- * The name is 64 bytes, size is 4 bytes and each ptr is 2 bytes.
- * Thus,
+ * The name is 64 bytes, size and time are 4 bytes and each ptr is 2
+ * bytes.  Thus,
  *
  *    M = 16 * 1024 / 256 - 1 = 63,
- *    L = (256 - 64 - 4) / 2 = 94,
- *    N = L * M = 5922.
+ *    L = (256 - 64 - 4 - 4) / 2 = 92,
+ *    N = L * M = 5796.
  *
  * The header is also 256 bytes and looks like this:
  *
@@ -46,7 +46,7 @@
 #define name_size  64
 
 #define n_slots    (block_size / slot_size - 1)
-#define n_ptrs     ((slot_size - name_size - sizeof(uint32_t)) / sizeof(uint16_t))
+#define n_ptrs     ((slot_size - name_size - sizeof(uint32_t) - sizeof(uint32_t)) / sizeof(uint16_t))
 #define n_data     (n_slots * n_ptrs)
 
 struct header {
@@ -58,6 +58,7 @@ struct header {
 struct meta {
   uint8_t name[name_size];
   uint32_t size;
+  uint32_t time;
   uint16_t ptr[n_ptrs];
 };
 
@@ -121,7 +122,7 @@ create (char *dir, char *file)
     }
   closedir (dd);
 
-  fd = open (file, O_WRONLY | O_CREAT, 0666);
+  fd = open (file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
   write (fd, disk, sizeof(struct disk));
   close (fd);
 }

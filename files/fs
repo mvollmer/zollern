@@ -13,7 +13,7 @@
 (defconst fs/ptr-size   2)
 
 (defconst fs/node-count (/ fs/block-size fs/node-size))
-(defconst fs/ptr-count (/ (- fs/node-size fs/name-size 4) fs/ptr-size))
+(defconst fs/ptr-count (/ (- fs/node-size fs/name-size 4 4) fs/ptr-size))
 (defconst fs/block-count (+ (* (- fs/node-count 1) fs/ptr-count) 1))
 
 (struct fs/disk
@@ -27,9 +27,11 @@
 (struct fs/node
   (node-name u8 fs/name-size)
   (node-size u32)
+  (node-time u32)
   (node-ptr u16 fs/ptr-count))
 
 (struct fs/state
+  (state-time u32)
   (state-block-flags u8 fs/block-count)
   (state-block-flags-rover u32)
   (state-node-refs u32 fs/node-count))
@@ -97,6 +99,7 @@
    (set (fs/state-block-flags state i) 0)
    (set i (+ i 1)))
   (set (fs/state-block-flags state 0) 1)
+  (var time 0)
   (var node (fs/disk-start (ctxt/disk context)))
   (set i 1)
   (while (< i fs/node-count)
@@ -105,12 +108,15 @@
    (if (u8 node)
        (begin
         (set (fs/state-node-refs state i) 1)
+        (if (> (fs/node-time node) time)
+            (set time (fs/node-time node)))
         (var n (/ (+ (fs/node-size node) fs/block-size -1) fs/block-size))
         (var j 0)
         (while (< j n)
          (set (fs/state-block-flags state (fs/node-ptr node j)) 1)
          (set j (+ j 1)))))
-   (set i (+ i 1))))
+   (set i (+ i 1)))
+  (set (fs/state-time state) time))
 
 (fun (fs/list func)
   (var ptr (fs/disk-start (ctxt/disk context)))
@@ -235,11 +241,18 @@
                (set (fs/wbuf-ptr wbuf) (+ (fs/wbuf-ptr wbuf) 1)))
            (dbg/assert 0 "disk full"))))))))
 
+(fun (fs/get-time-stamp)
+  (var state (ctxt/fs context))
+  (var time (+ (fs/state-time state) 1))
+  (set (fs/state-time state) time)
+  time)
+
 (fun (fs/commit wbuf name)
   (if (fs/wbuf-node wbuf)
       (begin
        (fs/remove name)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/wbuf-node wbuf) fs/node-size)))
        (mem/cpy node name fs/name-size)
+       (set (fs/node-time node) (fs/get-time-stamp))
        1)
    0))
