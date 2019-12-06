@@ -454,7 +454,12 @@
   (u64 bk-name)
   (u64 bk-next)
   (u64 bk-pages)
-  (u64 bk-globals))
+  (u64 bk-globals)
+  (u64 bk-deps))
+
+(defstruct book-link
+  (u64 bl-link)
+  (u64 bl-book))
 
 ;;; Compiler context
 
@@ -475,6 +480,7 @@
   (u32 cc-level)
   (u32 cc-gensym)
   (u64 cc-fixups)
+  (u64 cc-fixup-deps)
   (u64 cc-curexp)
   (u64 cc-abort-sp)
   (u8 cc-tokenbuf 1024))
@@ -984,6 +990,7 @@
   (set l0 (sizeof book))
   (call code-alloc)
   (set (bk-globals l0) 0)
+  (set (bk-deps l0) 0)
   (set x0 l0)
   (pop l0)
   (push l0)
@@ -995,8 +1002,6 @@
   (call strcpy)
   (set l1 (ctxt-comp cp))
   (set (cc-book l1) x0)
-  (set l1 (ctxt-books cp))
-  (set (bk-next x0) l1)
   (pop x0)
   (ret))
 
@@ -1024,12 +1029,14 @@
   (jmp book-init))
 
 (code compiler-lang-init
+  (call fixup-init)
   (let l0 (u8 .lang-name))
   (set l1 (ctxt-comp cp))
   (set l1 (cc-book l1))
-  (call book-find)
+  (call book-find-as-dep)
   (set l1 (ctxt-comp cp))
   (set (cc-lang-book l1) l0)
+  (call fixup-run)
   (ret)
 .lang-name
   (1 "lang/." 0))
@@ -1161,31 +1168,18 @@
 .done
   (ret))
 
-(code book-find
-  ;; l0 - full name
-  ;; l1 - books
+(code book-get
+  ;; l0 - name
+  ;; l1 - name length
   ;; ->
   ;; l0 - book
-  ;; l1 - suffix
-  (push x2)
-  (set x2 l1)
-  (call skip-book-prefix)
-  (cmp l0 l1)
-  (jne .search)
-  (pop x2)
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-lang-book l0))
-  (ret)
-.search
-  (sub l1 l0)
   (push x0)
   (push x1)
+  (push x2)
   (set x0 l0)
   (set x1 l1)
-  (jmp .test)
+  (set x2 (ctxt-books cp))
 .loop
-  (set x2 (bk-next x2))
-.test
   (cmp x2 0)
   (je .not-found)
   (set l0 (bk-name x2))
@@ -1193,14 +1187,16 @@
   (set l2 x1)
   (call strneq)
   (cmp l0 0)
-  (je .loop)
+  (je .next)
   (set l0 x2)
-  (set l1 x0)
-  (add l1 x1)
-  (add l1 1) ;; skip '/'
+  (jmp .out)
+.next
+  (set x2 (bk-next x2))
+  (jmp .loop)
+.out
+  (pop x2)
   (pop x1)
   (pop x0)
-  (pop x2)
   (ret)
 .not-found
   (set l0 x0)
@@ -1209,6 +1205,84 @@
   (jmp compiler-abort)
 .book-not-found-string
   (1 ": no such book\n" 0))
+
+(code book-find-as-dep
+  ;; l0 - full name
+  ;; l1 - current book
+  ;; ->
+  ;; l0 - book
+  ;; l1 - suffix
+  (push x0)
+  (push x1)
+  (push x2)
+  (push x3)
+  (set x0 l0)
+  (set x2 l1)
+  (call skip-book-prefix)
+  (sub l1 l0)
+  (set x1 l1)
+  ;; check if it's the lang book
+  (cmp x1 0)
+  (jne .not-lang)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-lang-book l0))
+  (sub x1 1)
+  (jmp .out)
+.not-lang
+  ;; check if current book matches
+  (set l0 (bk-name x2))
+  (set l1 x0)
+  (set l2 x1)
+  (call strneq)
+  (cmp l0 0)
+  (je .not-current)
+  (set l0 x2)
+  (jmp .out)
+.not-current
+  ;; check if one of the deps matches
+  (set l0 (ctxt-comp cp))
+  (set x3 (cc-fixup-deps l0))
+.dep-loop
+  (cmp x3 0)
+  (je .not-dep)
+  (set l0 (bl-book x3))
+  (set l0 (bk-name l0))
+  (set l1 x0)
+  (set l2 x1)
+  (call strneq)
+  (cmp l0 0)
+  (je .dep-next)
+  (set l0 (bl-book x3))
+  (jmp .out)
+.dep-next
+  (set x3 (bl-link x3))
+  (jmp .dep-loop)
+.not-dep
+  ;; check if one of the books in the current context matches
+  ;;  if so, add as dep
+  (set l0 x0)
+  (set l1 x1)
+  (call book-get)
+  (set x3 l0)
+  (set l0 (ctxt-comp cp))
+  (let l0 (cc-tmp-pool l0))
+  (set l1 (sizeof book-link))
+  (call mem-pool-alloc)
+  (set l1 (ctxt-comp cp))
+  (set (bl-book l0) x3)
+  (set l2 (cc-fixup-deps l1))
+  (set (bl-link l0) l2)
+  (set (cc-fixup-deps l1) l0)
+  (set l0 x3)
+.out
+  (set l1 x0)
+  (add l1 x1)
+  (add l1 1) ;; skip '/'
+  (pop x3)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret))
 
 (code book-check-current
   ;; l0 - full name
@@ -1298,7 +1372,7 @@
   ;; l0 - global
   (set l1 (ctxt-comp cp))
   (set l1 (cc-book l1))
-  (call book-find)
+  (call book-find-as-dep)
   (cmp l0 0)
   (je .done)
   (call book-search)
@@ -1361,10 +1435,15 @@
 (code fixup-init
   (set l0 (ctxt-comp cp))
   (set (cc-fixups l0) 0)
+  (set l1 (cc-book l0))
+  (set l1 (bk-deps l1))
+  (set (cc-fixup-deps l0) l1)
   (ret))
 
 (code fixup-run
   (push x0)
+  (push x1)
+  (push x2)
   (set x0 (ctxt-comp cp))
   (set x0 (cc-fixups x0))
   (jmp .fixup-test)
@@ -1375,6 +1454,25 @@
 .fixup-test
   (cmp x0 0)
   (jne .fixup-loop)
+  (set x0 (ctxt-comp cp))
+  (set x1 (cc-fixup-deps x0))
+  (set x2 (cc-book x0))
+  (set x0 (bk-deps x2))
+  (jmp .fixup-dep-test)
+.fixup-dep-loop
+  (set l0 (sizeof book-link))
+  (call code-alloc)
+  (set l1 (bl-book x1))
+  (set (bl-book l0) l1)
+  (set l1 (bk-deps x2))
+  (set (bl-link l0) l1)
+  (set (bk-deps x2) l0)
+  (set x1 (bl-link x1))
+.fixup-dep-test
+  (cmp x1 x0)
+  (jne .fixup-dep-loop)
+  (pop x2)
+  (pop x1)
   (pop x0)
   (ret))
 

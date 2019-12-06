@@ -74,6 +74,34 @@
       (fs/remove (u64 argv 1))
    (con/out "usage: remove FILE\n")))
 
+(struct shell/book
+  bk-name
+  bk-next
+  bk-pages
+  bk-globals
+  bk-deps)
+
+(struct shell/book-link
+  bl-link
+  bl-book)
+
+(fun (shell/show-book book)
+  (con/out (shell/bk-name book))
+  (con/out "\n")
+  (con/out "   deps:")
+  (var deps (shell/bk-deps book))
+  (while deps
+   (con/out " ")
+   (con/out (shell/bk-name (shell/bl-book deps)))
+   (set deps (shell/bl-link deps)))
+  (con/out "\n"))
+
+(fun (shell/cmd-books argc argv)
+  (var books (ctxt/books context))
+  (while books
+   (shell/show-book books)
+   (set books (shell/bk-next books))))
+
 (fun (shell/main)
   (mem line ed/textbuf)
   (mem file ed/textbuf)
@@ -107,4 +135,6 @@
             (shell/cmd-run argc argv)
          (if (str/eq arg1 "remove")
              (shell/cmd-remove argc argv)
-          (con/out "?\n"))))))))))
+          (if (str/eq arg1 "books")
+              (shell/cmd-books argc argv)
+           (con/out "?\n")))))))))))
