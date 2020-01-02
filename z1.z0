@@ -1358,6 +1358,26 @@
   (pop x0)
   (ret))
 
+(code fixup-init
+  (set l0 (ctxt-comp cp))
+  (set (cc-fixups l0) 0)
+  (ret))
+
+(code fixup-run
+  (push x0)
+  (set x0 (ctxt-comp cp))
+  (set x0 (cc-fixups x0))
+  (jmp .fixup-test)
+.fixup-loop
+  (set l0 (fx-func x0))
+  (call l0)
+  (set x0 (fx-link x0))
+.fixup-test
+  (cmp x0 0)
+  (jne .fixup-loop)
+  (pop x0)
+  (ret))
+
 ;; Exported functions
 
 (code comp-type
@@ -2232,7 +2252,6 @@
   (cmp (cc-level l1) 0)
   (jne syntax)
   (set (cc-level l1) 1)
-  (set (cc-fixups l1) 0)
   (set l1 (cc-symbols l1))
   (set l2 (- EXP-HASH-SIZE 1))
   (jmp .clear-locals-test)
@@ -2308,18 +2327,6 @@
   (set l2 (ctxt-comp cp))
   (set l2 (cc-next-frame-offset l2))
   (code-emit l1 (sub sp 0xFFFF) l2)
-  (push x0)
-  (set x0 (ctxt-comp cp))
-  (set x0 (cc-fixups x0))
-  (jmp .fixup-test)
-.fixup-loop
-  (set l0 (fx-func x0))
-  (call l0)
-  (set x0 (fx-link x0))
-.fixup-test
-  (cmp x0 0)
-  (jne .fixup-loop)
-  (pop x0)
   (set l1 (ctxt-comp cp))
   (set (cc-level l1) 0)
   (ret))
@@ -2590,11 +2597,13 @@
   (call compiler-init)
   (call compiler-lang-init)
 .loop
+  (call fixup-init)
   (set l0 x0)
   (call exp-read)
   (cmp l0 0)
   (je .done)
   (call comp-expr)
+  (call fixup-run)
   (call exp-reset)
   (jmp .loop)
 .done
