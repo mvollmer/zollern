@@ -451,6 +451,7 @@
 ;; (And a collection of books is a library.)
 
 (defstruct book
+  (u32 bk-refs)
   (u64 bk-name)
   (u64 bk-next)
   (u64 bk-pages)
@@ -989,6 +990,7 @@
   (push l0)
   (set l0 (sizeof book))
   (call code-alloc)
+  (set (bk-refs l0) 1)
   (set (bk-globals l0) 0)
   (set (bk-deps l0) 0)
   (set x0 l0)
@@ -1012,9 +1014,37 @@
   (set (ctxt-books cp) l0)
   (ret))
 
-(code book-free
+(code book-ref
   ;; l0 - book
-  (set l0 (bk-pages l0))
+  (set l1 (bk-refs l0))
+  (add l1 1)
+  (set (bk-refs l0) l1)
+  (ret))
+
+(code book-unref
+  ;; l0 - book
+  (set l1 (bk-refs l0))
+  (sub l1 1)
+  (cmp l1 0)
+  (je .free)
+  (set (bk-refs l0) l1)
+  (ret)
+.free
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (set x1 (bk-deps x0))
+.deps-loop
+  (cmp x1 0)
+  (je .deps-done)
+  (set l0 (bl-book x1))
+  (call book-unref)
+  (set x1 (bl-link x1))
+  (jmp .deps-loop)
+.deps-done
+  (set l0 (bk-pages x0))
+  (pop x1)
+  (pop x0)
   (jmp page-put-many))
 
 (code compiler-init
@@ -1194,6 +1224,9 @@
   (set x2 (bk-next x2))
   (jmp .loop)
 .out
+  (set x0 l0)
+  (call book-ref)
+  (set l0 x0)
   (pop x2)
   (pop x1)
   (pop x0)
@@ -1708,9 +1741,9 @@
   (set l1 (u64 sp 16))
   (jmp book-search-fun))
 
-(code sys-book-free
+(code sys-book-unref
   (set l0 (u64 sp 8))
-  (jmp book-free))
+  (jmp book-unref))
 
 (code sys-export-table
   (8 sys-call .sys-call-name)
@@ -1718,7 +1751,7 @@
   (8 sys-page-put .sys-page-put-name)
   (8 sys-compile .sys-compile-name)
   (8 sys-book-search-fun .sys-book-search-fun-name)
-  (8 sys-book-free .sys-book-free-name)
+  (8 sys-book-unref .sys-book-unref-name)
   (8 mono .sys-mono-name)
   (8 0 0)
 .sys-call-name
@@ -1731,8 +1764,8 @@
   (1 "compile" 0)
 .sys-book-search-fun-name
   (1 "book-search-fun" 0)
-.sys-book-free-name
-  (1 "book-free" 0)
+.sys-book-unref-name
+  (1 "book-unref" 0)
 .sys-mono-name
   (1 "mono" 0))
 

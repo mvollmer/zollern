@@ -36,7 +36,7 @@
             (if (var main (sys/book-search-fun book "main"))
                 (main)
              (con/out "no main function\n"))
-            (sys/book-free book))
+            (sys/book-unref book))
         (con/out "compilation failed\n")))
    (con/out "usage: run FILE\n")))
 
@@ -75,6 +75,7 @@
    (con/out "usage: remove FILE\n")))
 
 (struct shell/book
+  (bk-refs u32)
   bk-name
   bk-next
   bk-pages
@@ -87,8 +88,9 @@
 
 (fun (shell/show-book book)
   (con/out (shell/bk-name book))
-  (con/out "\n")
-  (con/out "   deps:")
+  (con/out "\n   refs: ")
+  (con/out-int (shell/bk-refs book))
+  (con/out "\n   deps:")
   (var deps (shell/bk-deps book))
   (while deps
    (con/out " ")
@@ -114,27 +116,14 @@
    (var arg1 (u64 argv))
    (if (str/eq arg1 "quit")
        (sys/call 60 0)
-    (if (str/eq arg1 "edit")
-        (ed/ed file 0 0 0 gfx/screen-width gfx/screen-height)
-     (if (str/eq arg1 "edit-run")
-         (begin
-          (var text (ed/textbuf-maybe-as-string file))
-          (if text
-              (if (var book (sys/compile "user" text (+ text (ed/textbuf-len file)) con/out 0))
-                  (begin
-                   (if (var main (sys/book-search-fun book "main"))
-                       (main)
-                    (con/out "no user/main function\n"))
-                   (sys/book-free book))
-               (con/out "compilation failed\n"))))
-      (if (str/eq arg1 "list")
-          (fs/list shell/con-node-out)
-       (if (str/eq arg1 "ed")
-           (shell/cmd-ed argc argv)
-        (if (str/eq arg1 "run")
+    (if (str/eq arg1 "list")
+        (fs/list shell/con-node-out)
+     (if (str/eq arg1 "ed")
+         (shell/cmd-ed argc argv)
+      (if (str/eq arg1 "run")
             (shell/cmd-run argc argv)
-         (if (str/eq arg1 "remove")
-             (shell/cmd-remove argc argv)
-          (if (str/eq arg1 "books")
-              (shell/cmd-books argc argv)
-           (con/out "?\n")))))))))))
+       (if (str/eq arg1 "remove")
+           (shell/cmd-remove argc argv)
+        (if (str/eq arg1 "books")
+            (shell/cmd-books argc argv)
+         (con/out "?\n")))))))))
