@@ -22,23 +22,23 @@
 
 (fun (shell/con-node-out node)
   (con/out node)
-  (con/out " ")
+  (con/out ": size ")
   (con/out-int (fs/node-size node))
-  (con/out " ")
+  (con/out ", time ")
   (con/out-int (fs/node-time node))
   (con/out "\n"))
 
 (fun (shell/cmd-run argc argv)
   (if (== argc 2)
       (begin
-       (if (var book (sys/compile (u64 argv 1) con/out 0))
+       (if (var book (sys/book-get (u64 argv 1) con/out 0))
            (begin
             (if (var main (sys/book-search-fun book "main"))
                 (main)
              (con/out "no main function\n"))
             (sys/book-unref book))
         (con/out "compilation failed\n")))
-   (con/out "usage: run FILE\n")))
+   (con/out "usage: run BOOK\n")))
 
 (fun (shell/cmd-ed argc argv)
   (if (== argc 2)
@@ -77,6 +77,7 @@
 (struct shell/book
   (bk-refs u32)
   bk-name
+  (bk-time u32)
   bk-next
   bk-pages
   bk-globals
@@ -88,9 +89,11 @@
 
 (fun (shell/show-book book)
   (con/out (shell/bk-name book))
-  (con/out "\n   refs: ")
+  (con/out ": refs ")
   (con/out-int (shell/bk-refs book))
-  (con/out "\n   deps:")
+  (con/out ", time ")
+  (con/out-int (shell/bk-time book))
+  (con/out ", deps")
   (var deps (shell/bk-deps book))
   (while deps
    (con/out " ")
@@ -116,7 +119,7 @@
    (var arg1 (u64 argv))
    (if (str/eq arg1 "quit")
        (sys/call 60 0)
-    (if (str/eq arg1 "list")
+    (if (str/eq arg1 "files")
         (fs/list shell/con-node-out)
      (if (str/eq arg1 "ed")
          (shell/cmd-ed argc argv)
