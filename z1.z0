@@ -1,7 +1,10 @@
 ;;; Z1 compiler
 
 (code panic
+  (cmp l0 0)
+  (je .no-print)
   (call print)
+.no-print
   (set l0 125)
   (jmp sys-exit))
 
@@ -1085,13 +1088,18 @@
 (code compiler-init
   ;; l0 - book name
   (push l0)
+  (call cc-print)
+  (set l0 .dots)
+  (call cc-print)
   (set l0 (ctxt-comp cp))
   (set (cc-level l0) 0)
   (set (cc-gensym l0) 0)
   (call exp-init)
   (call code-init)
   (pop l0)
-  (jmp book-init))
+  (jmp book-init)
+.dots
+  (1 "...\n" 0))
 
 (code compiler-lang-init
   (call fixup-init)
@@ -1266,6 +1274,8 @@
   (set l1 (bk-time x1))
   (cmp l0 l1)
   (ja .compile-new)
+  ;; XXX - check deps
+  ;; call book-get for each dep, if different from what we have right now, compile-new
   (set l0 x1)
   (call book-ref)
   (set l0 x1)
@@ -1398,12 +1408,8 @@
   (pop x0)
   (ret)
 .not-found
-  (set l0 sp)
-  (call cc-print)
-  (let l0 (u8 .book-not-found-string))
-  (jmp compiler-abort)
-.book-not-found-string
-  (1 ": compilation failed\n" 0))
+  (set l0 0)
+  (jmp compiler-abort))
 
 (code book-check-current
   ;; l0 - full name
@@ -2838,8 +2844,11 @@
   (ret))
 
 (code compiler-abort
-  ;; l0 - message
+  ;; l0 - message or null
+  (cmp l0 0)
+  (je .no-print)
   (call cc-print)
+.no-print
   (call code-abort)
   (set l0 (ctxt-comp cp))
   (set sp (cc-abort-sp l0))
@@ -2860,8 +2869,14 @@
   (call find-file)
   (cmp l0 0)
   (jne .found)
-  (pop l1)
+  (pop l0)
+  (call cc-print)
+  (let l0 (u8 .not-found-message))
+  (call cc-print)
+  (set l0 0)
   (jmp .out)
+.not-found-message
+  (1 ": no such book\n" 0)
 .found
   (set l1 l0)
   (pop l0)
@@ -2924,10 +2939,8 @@ run
 .main-name
   (1 "main" 0)
 .no-boot-file
-  (set l0 .no-boot-file-message)
+  (set l0 0)
   (jmp panic)
-.no-boot-file-message
-  (1 "bootstrap compilation failed\n" 0)
 .main-undefined
   (set l0 .main-undefined-message)
   (jmp panic)

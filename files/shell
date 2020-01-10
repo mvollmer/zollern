@@ -30,14 +30,12 @@
 
 (fun (shell/cmd-run argc argv)
   (if (== argc 2)
-      (begin
-       (if (var book (sys/book-get (u64 argv 1) con/out 0))
-           (begin
-            (if (var main (sys/book-search-fun book "main"))
-                (main)
-             (con/out "no main function\n"))
-            (sys/book-unref book))
-        (con/out "compilation failed\n")))
+      (if (var book (sys/book-get (u64 argv 1) con/out 0))
+          (begin
+           (if (var main (sys/book-search-fun book "main"))
+               (main)
+            (con/out "no main function\n"))
+           (sys/book-unref book)))
    (con/out "usage: run BOOK\n")))
 
 (fun (shell/cmd-ed argc argv)
