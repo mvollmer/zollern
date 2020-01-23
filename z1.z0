@@ -1249,6 +1249,7 @@
   ;; l0 - book
   (push x0)
   (push x1)
+  (push x2)
   (push l1)
   (push l2)
   (set x0 l0)
@@ -1274,16 +1275,43 @@
   (set l1 (bk-time x1))
   (cmp l0 l1)
   (ja .compile-new)
-  ;; XXX - check deps
   ;; call book-get for each dep, if different from what we have right now, compile-new
+  (set x2 (bk-deps x1))
+.check-deps-loop
+  (cmp x2 0)
+  (je .check-deps-done)
+  (set l0 (bl-book x2))
+  (set l0 (bk-name l0))
+  (pop l2)
+  (pop l1)
+  (push l1)
+  (push l2)
+  (call book-get)
+  (cmp l0 0)
+  (jne .got-dep-book)
+  (pop l2)
+  (pop l1)
+  (jmp .no-book)
+.got-dep-book
+  (set l1 (bl-book x2))
+  (cmp l0 l1)
+  (jne .check-deps-compile-new)
+  (call book-unref)
+.check-deps-next
+  (set x2 (bl-link x2))
+  (jmp .check-deps-loop)
+.check-deps-done
   (set l0 x1)
   (call book-ref)
   (set l0 x1)
   (pop l2)
   (pop l1)
+  (pop x2)
   (pop x1)
   (pop x0)
   (ret)
+.check-deps-compile-new
+  (call book-unref)
 .compile-new
   (pop l2)
   (pop l1)
@@ -1304,6 +1332,7 @@
   (call book-register)
   (set l0 x0)
 .no-book
+  (pop x2)
   (pop x1)
   (pop x0)
   (ret))
