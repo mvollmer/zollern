@@ -3,4 +3,12 @@
   (fs/init)
   (gfx/init)
   (con/init)
-  (shell/main))
+  (while 1
+   (var shell (sys/book-get "shell" con/out 0))
+   (if shell
+       (begin
+        (var main (sys/book-search-fun shell "main"))
+        (if main
+            (main)
+         (sys/call 60 13))
+        (sys/book-unref shell)))))
