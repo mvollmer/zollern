@@ -44,12 +44,12 @@
               (fs/state-block-flags state rover))
    (set i (+ i 1))
    (set rover (+ rover 1)))
-  (if (< i fs/block-count)
-      (begin
+  (if ((< i fs/block-count)
        (set (fs/state-block-flags state rover) 1)
        (set (fs/state-block-flags-rover state) (+ rover 1))
        rover)
-   0))
+      (else
+       0)))
 
 (fun (fs/free-block b)
   (var state (ctxt/fs context))
@@ -62,14 +62,13 @@
 (fun (fs/unref-node n)
   (var state (ctxt/fs context))
   (set (fs/state-node-refs state n) (- (fs/state-node-refs state n) 1))
-  (if (not (fs/state-node-refs state n))
-      (begin
+  (if ((not (fs/state-node-refs state n))
        (var node (+ (fs/disk-start (ctxt/disk context)) (* n fs/node-size)))
        (var s (/ (+ (fs/node-size node) fs/block-size -1) fs/block-size))
-        (var j 0)
-        (while (< j s)
-         (set (fs/state-block-flags state (fs/node-ptr node j)) 0)
-         (set j (+ j 1))))))
+       (var j 0)
+       (while (< j s)
+        (set (fs/state-block-flags state (fs/node-ptr node j)) 0)
+        (set j (+ j 1))))))
 
 (fun (fs/alloc-node)
   (var state (ctxt/fs context))
@@ -77,11 +76,11 @@
   (while (and (< i fs/node-count)
               (> (fs/state-node-refs state i) 0))
    (set i (+ i 1)))
-  (if (< i fs/node-count)
-      (begin
+  (if ((< i fs/node-count)
        (fs/ref-node i)
        i)
-   0))
+      (else
+       0)))
 
 (fun (fs/init)
   (var disk (ctxt/disk context))
@@ -105,11 +104,10 @@
   (while (< i fs/node-count)
    (set (fs/state-node-refs state i) 0)
    (set node (+ node fs/node-size))
-   (if (u8 node)
-       (begin
+   (if ((u8 node)
         (set (fs/state-node-refs state i) 1)
-        (if (> (fs/node-time node) time)
-            (set time (fs/node-time node)))
+        (if ((> (fs/node-time node) time)
+             (set time (fs/node-time node))))
         (var n (/ (+ (fs/node-size node) fs/block-size -1) fs/block-size))
         (var j 0)
         (while (< j n)
@@ -124,8 +122,8 @@
   (while (< i fs/node-count)
    (set ptr (+ ptr fs/node-size))
    (set i (+ i 1))
-   (if (u8 ptr)
-       (func ptr))))
+   (if ((u8 ptr)
+        (func ptr)))))
 
 ;; Reading files
 
@@ -154,8 +152,7 @@
   (var i 1)
   (while (< i 64)
    (set ptr (+ ptr fs/node-size))
-   (if (str/eq ptr name)
-       (begin
+   (if ((str/eq ptr name)
         (fs/ref-node i)
         (set (fs/rbuf-node buf) i)
         (set (fs/rbuf-ptr buf) 0)
@@ -169,16 +166,17 @@
   (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node buf) fs/node-size)))
   (var ptr (fs/rbuf-ptr buf))
   (var rest-size (- (fs/node-size node) (* ptr fs/block-size)))
-  (if (> rest-size 0)
-      (begin
+  (if ((> rest-size 0)
        (set (fs/rbuf-ptr buf) (+ ptr 1))
        (set (fs/rbuf-start buf) (+ (fs/disk-start (ctxt/disk context))
                                    (* (fs/node-ptr node ptr) fs/block-size)))
-       (if (> rest-size fs/block-size)
-           (set (fs/rbuf-size buf) fs/block-size)
-        (set (fs/rbuf-size buf) rest-size))
+       (if ((> rest-size fs/block-size)
+            (set (fs/rbuf-size buf) fs/block-size))
+           (else
+            (set (fs/rbuf-size buf) rest-size)))
        1)
-   0))
+      (else
+       0)))
 
 (fun (fs/close buf)
   (fs/unref-node (fs/rbuf-node buf)))
@@ -187,8 +185,7 @@
 
 (fun (fs/remove name)
   (mem rbuf fs/rbuf)
-  (if (fs/open rbuf name)
-      (begin
+  (if ((fs/open rbuf name)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node rbuf) fs/node-size)))
        (set (u8 node) 0)
        (fs/unref-node (fs/rbuf-node rbuf)))))
@@ -209,8 +206,7 @@
 (fun (fs/create wbuf)
   (var n (fs/alloc-node))
   (set (fs/wbuf-node wbuf) n)
-  (if n
-      (begin
+  (if (n
        (var node (+ (fs/disk-start (ctxt/disk context)) (* n fs/node-size)))
        (set (fs/node-size node) 0)
        (set (fs/wbuf-ptr wbuf) 0)
@@ -218,28 +214,26 @@
        (set (fs/wbuf-size wbuf) 0))))
 
 (fun (fs/write wbuf buf len)
-  (if (fs/wbuf-node wbuf)
-      (begin
+  (if ((fs/wbuf-node wbuf)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/wbuf-node wbuf) fs/node-size)))
        (while (> len 0)
-        (if (> (fs/wbuf-size wbuf) 0)
-            (begin
-             (var n (if (< (fs/wbuf-size wbuf) len) (fs/wbuf-size wbuf) len))
+        (if ((> (fs/wbuf-size wbuf) 0)
+             (var n (if ((< (fs/wbuf-size wbuf) len) (fs/wbuf-size wbuf)) (else len)))
              (mem/cpy (fs/wbuf-start wbuf) buf n)
              (set buf (+ buf n))
              (set len (- len n))
              (set (fs/node-size node) (+ (fs/node-size node) n))
              (set (fs/wbuf-start wbuf) (+ (fs/wbuf-start wbuf) n))
              (set (fs/wbuf-size wbuf) (- (fs/wbuf-size wbuf) n)))
-         (begin
-          (var b (fs/alloc-block))
-          (if b
-              (begin
-               (set (fs/node-ptr node (fs/wbuf-ptr wbuf)) b)
-               (set (fs/wbuf-start wbuf) (+ (fs/disk-start (ctxt/disk context)) (* b fs/block-size)))
-               (set (fs/wbuf-size wbuf) fs/block-size)
-               (set (fs/wbuf-ptr wbuf) (+ (fs/wbuf-ptr wbuf) 1)))
-           (dbg/assert 0 "disk full"))))))))
+            (else
+             (var b (fs/alloc-block))
+             (if (b
+                  (set (fs/node-ptr node (fs/wbuf-ptr wbuf)) b)
+                  (set (fs/wbuf-start wbuf) (+ (fs/disk-start (ctxt/disk context)) (* b fs/block-size)))
+                  (set (fs/wbuf-size wbuf) fs/block-size)
+                  (set (fs/wbuf-ptr wbuf) (+ (fs/wbuf-ptr wbuf) 1)))
+                 (else
+                  (dbg/assert 0 "disk full")))))))))
 
 (fun (fs/get-time-stamp)
   (var state (ctxt/fs context))
@@ -248,11 +242,11 @@
   time)
 
 (fun (fs/commit wbuf name)
-  (if (fs/wbuf-node wbuf)
-      (begin
+  (if ((fs/wbuf-node wbuf)
        (fs/remove name)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/wbuf-node wbuf) fs/node-size)))
        (mem/cpy node name fs/name-size)
        (set (fs/node-time node) (fs/get-time-stamp))
        1)
-   0))
+      (else
+       0)))

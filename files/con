@@ -22,11 +22,10 @@
   (var x (con/cursor-x ctxt))
   (var y (- gfx/screen-height (con/line-height ctxt)))
   (while (u8 str)
-   (if (== (u8 str) 10)
-       (goto newline))
+   (if ((== (u8 str) 10)
+        (goto newline)))
    (set x (+ x (gfx/glyph x y (u8 str))))
-   (if (> x 1010)
-       (begin
+   (if ((> x 1010)
         (label newline)
         (con/nl)
         (set x 0)))
@@ -35,8 +34,7 @@
   (gfx/show))
 
 (fun (con/out-int n)
-  (if (< n 0)
-      (begin
+  (if ((< n 0)
        (con/out "-")
        (set n (- n))))
   (mem buf 40)

@@ -15,15 +15,15 @@
 
 (fun (ed/textbuf-grow tb max)
   (var new-page-count (/ (+ max mem/page-size -1) mem/page-size))
-  (if (<= new-page-count 32)
-      (begin
+  (if ((<= new-page-count 32)
        (var i (ed/textbuf-page-count tb))
        (while (< i new-page-count)
         (set (ed/textbuf-pages tb i) (sys/page-get))
         (set i (+ i 1)))
        (set (ed/textbuf-page-count tb) new-page-count)
        1)
-   0))
+      (else
+       0)))
 
 (fun (ed/textbuf-get-char tb pos)
   (var page (/ pos mem/page-size))
@@ -50,20 +50,20 @@
   (var i 0)
   (var len (ed/textbuf-len tb))
   (while (> len 0)
-   (var n (if (< len mem/page-size) len mem/page-size))
+   (var n (if ((< len mem/page-size) len) (else mem/page-size)))
    (fs/write fb (ed/textbuf-pages tb i) n)
    (set len (- len n))
    (set i (+ i 1))))
 
 (fun (ed/textbuf-maybe-as-string tb)
   (var len (ed/textbuf-len tb))
-  (if (< len mem/page-size)
-      (begin
+  (if ((< len mem/page-size)
        (ed/textbuf-grow tb (+ len 1)) ;; this only matters for len == 0
        (var str (ed/textbuf-pages tb 0))
        (set (u8 str len) 0)
        str)
-   0))
+      (else
+       0)))
 
 (struct ed/data
   ;; Window
@@ -126,15 +126,15 @@
    (set n-cols (ed/cols ed))
    (set x (ed/lft ed))
    (while (> n-cols 0)
-    (set c (if (>= pos end) 10 (ed/char ed pos)))
-    (set x (+ x (if (== c 10) w (gfx/glyph x y c))))
-    (if (== pos (ed/point ed))
-        (gfx/invert-rect (- x w) y w h))
-    (if (>= pos end)
-        (goto all-done))
+    (set c (if ((>= pos end) 10) (else (ed/char ed pos))))
+    (set x (+ x (if ((== c 10) w) (else (gfx/glyph x y c)))))
+    (if ((== pos (ed/point ed))
+         (gfx/invert-rect (- x w) y w h)))
+    (if ((>= pos end)
+         (goto all-done)))
     (set pos (+ pos 1))
-    (if (== c 10)
-        (goto row-done))
+    (if ((== c 10)
+         (goto row-done)))
     (set n-cols (- n-cols 1)))
    (label row-done)
    (set y (+ y h))
@@ -150,8 +150,8 @@
           (set n (- n 1 (/ (- p b) (ed/cols ed))))
           (set p (- b 1))
           (and (> b (ed/window-top ed)) (> n 0))))
-  (if (< n 0)
-      (set b (+ b (* (- n) (ed/cols ed)))))
+  (if ((< n 0)
+       (set b (+ b (* (- n) (ed/cols ed))))))
   (set (ed/window-top ed) b))
 
 (fun (ed/redisplay ed)
@@ -162,15 +162,15 @@
 ;; Cursor movement
 
 (fun (ed/left ed)
-  (if (> (ed/point ed) 0)
-      (begin
+  (if ((> (ed/point ed) 0)
        (set (ed/point ed) (- (ed/point ed) 1))
        1)
-   0))
+      (else
+       0)))
 
 (fun (ed/right ed)
-  (if (< (ed/point ed) (ed/len ed))
-      (set (ed/point ed) (+ (ed/point ed) 1))))
+  (if ((< (ed/point ed) (ed/len ed))
+       (set (ed/point ed) (+ (ed/point ed) 1)))))
 
 (fun (ed/up ed n)
   (var p (ed/point ed))
@@ -200,8 +200,7 @@
 
 (fun (ed/insert ed char)
   ;; (dbg/int "insert" char)
-  (if (ed/textbuf-grow (ed/buf ed) (+ (ed/len ed) 1))
-      (begin
+  (if ((ed/textbuf-grow (ed/buf ed) (+ (ed/len ed) 1))
        (var pos (ed/len ed))
        (while (> pos (ed/point ed))
         (set (ed/char ed pos) (ed/char ed (- pos 1)))
@@ -211,8 +210,7 @@
        (set (ed/point ed) (+ (ed/point ed) 1)))))
 
 (fun (ed/delete ed)
-  (if (< (ed/point ed) (ed/len ed))
-      (begin
+  (if ((< (ed/point ed) (ed/len ed))
        (var pos (ed/point ed))
        (var end (- (ed/len ed) 1))
        (while (< pos end)
@@ -221,8 +219,8 @@
        (set (ed/len ed) (- (ed/len ed) 1)))))
 
 (fun (ed/backspace ed)
-  (if (ed/left ed)
-      (ed/delete ed)))
+  (if ((ed/left ed)
+       (ed/delete ed))))
 
 ;; Bare minimum for editing s-exprs
 
@@ -232,9 +230,9 @@
   (while (and (< pos (ed/len ed))
               (not (and (== level 1)
                         (== char 41))))
-   (if (== char 40)
-       (set level (+ level 1))
-    (if (== char 41)
+   (if ((== char 40)
+        (set level (+ level 1)))
+       ((== char 41)
         (set level (- level 1))))
    (set pos (+ pos 1))
    (set char (ed/char ed pos)))
@@ -246,9 +244,9 @@
   (while (and (> pos 0)
               (not (and (== level 1)
                         (== char 40))))
-   (if (== char 41)
-       (set level (+ level 1))
-    (if (== char 40)
+   (if ((== char 41)
+        (set level (+ level 1)))
+       ((== char 40)
         (set level (- level 1))))
    (set pos (- pos 1))
    (set char (ed/char ed pos)))
@@ -256,11 +254,10 @@
 
 (fun (ed/goto-other-paren ed)
   (var pos (ed/point ed))
-  (if (< pos (ed/len ed))
-      (begin
-       (if (== (ed/char ed pos) 40) ;; "("
-           (set pos (ed/find-matching-closing-paren ed pos))
-        (if (== (ed/char ed pos) 41) ;; ")"
+  (if ((< pos (ed/len ed))
+       (if ((== (ed/char ed pos) 40) ;; "("
+            (set pos (ed/find-matching-closing-paren ed pos)))
+           ((== (ed/char ed pos) 41) ;; ")"
             (set pos (ed/find-matching-opening-paren ed pos))))
        (set (ed/point ed) pos))))
 
@@ -269,55 +266,53 @@
 (fun (ed/command ed key state)
   ;; (dbg/int "command" key)
   ;; (dbg/int "state" state)
-  (if (== state 0)
-      (begin
-       (if (== key -11) ;; return
-           (if (== (ed/mode ed) 1)
-               (set (ed/quit ed) 1)
-               (ed/insert ed 10)))
-       (if (== key -15) ;; left
-           (ed/left ed))
-       (if (== key -17) ;; right
-           (ed/right ed))
-       (if (== key -16) ;; up
-           (ed/up ed 1))
-       (if (== key -18) ;; down
-           (ed/down ed 1))
-       (if (== key -19) ;; page up
-           (ed/up ed (ed/rows ed)))
-       (if (== key -20) ;; page down
-           (ed/down ed (ed/rows ed)))
-       (if (== key -9) ;; backspace
-           (ed/backspace ed))
-       (if (== key -13) ;; delete
-           (ed/delete ed))))
-  (if (== state 16) ;; control
-      (begin
-       (if (== key 46) ;; C-.
-           (ed/goto-other-paren ed))
-       (if (== key 97) ;; C-a
-           (ed/beginning-of-line ed))
-       (if (== key 101) ;; C-e
-           (ed/end-of-line ed))))
-  (if (== state 32) ;; meta
-      (begin
-       (if (== key 120) ;; M-x
-           (set (ed/quit ed) 1))
-       (if (== key 114) ;; M-r
-           (set (ed/quit ed) 2)))))
+  (if ((== state 0)
+       (if ((== key -11) ;; return
+            (if ((== (ed/mode ed) 1)
+                 (set (ed/quit ed) 1))
+                (else
+                 (ed/insert ed 10))))
+           ((== key -15) ;; left
+            (ed/left ed))
+           ((== key -17) ;; right
+            (ed/right ed))
+           ((== key -16) ;; up
+            (ed/up ed 1))
+           ((== key -18) ;; down
+            (ed/down ed 1))
+           ((== key -19) ;; page up
+            (ed/up ed (ed/rows ed)))
+           ((== key -20) ;; page down
+            (ed/down ed (ed/rows ed)))
+           ((== key -9) ;; backspace
+            (ed/backspace ed))
+           ((== key -13) ;; delete
+            (ed/delete ed))))
+           ((== state 16) ;; control
+            (if ((== key 46) ;; C-.
+                 (ed/goto-other-paren ed))
+                ((== key 97) ;; C-a
+                 (ed/beginning-of-line ed))
+                ((== key 101) ;; C-e
+                 (ed/end-of-line ed))))
+           ((== state 32) ;; meta
+            (if ((== key 120) ;; M-x
+                 (set (ed/quit ed) 1))
+                ((== key 114) ;; M-r
+                 (set (ed/quit ed) 2))))))
 
 (fun (ed/input ed)
   (mem event gfx/event)
   (gfx/read-event event)
-  (if (== (gfx/ev-type event) 1)
-      (sys/call 60 0))
-  (if (== (gfx/ev-type event) 2)
-      (begin
+  (if ((== (gfx/ev-type event) 1)
+       (sys/call 60 0))
+      ((== (gfx/ev-type event) 2)
        (var input (gfx/ev-input event))
        (var state (gfx/ev-state event))
-       (if (and (> input 0) (== state 0))
-           (ed/insert ed input)
-        (ed/command ed input state)))))
+       (if ((and (> input 0) (== state 0))
+            (ed/insert ed input))
+           (else
+            (ed/command ed input state))))))
 
 (fun (ed/ed buf mode lft top rgt bot)
   (mem ed ed/data)

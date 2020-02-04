@@ -7,8 +7,7 @@
 (fun (dbg/int l n)
   (dbg/out l)
   (dbg/out ": ")
-  (if (< n 0)
-      (begin
+  (if ((< n 0)
        (dbg/out "-")
        (set n (- n))))
   (mem buf 40)
@@ -31,15 +30,13 @@
   (dbg/out "\n"))
 
 (fun (dbg/assert cond msg)
-  (if (not cond)
-      (begin
+  (if ((not cond)
        (dbg/out msg)
        (dbg/out "\n")
        (sys/call 60 1))))
 
 (fun (dbg/assert-equal actual expected thing)
-  (if (!= actual expected)
-      (begin
+  (if ((!= actual expected)
        (dbg/out "wrong ")
        (dbg/out thing)
        (dbg/out "\n")
@@ -48,8 +45,7 @@
        (sys/call 60 1))))
 
 (fun (dbg/assert-less-or-equal value max thing)
-  (if (> value max)
-      (begin
+  (if ((> value max)
        (dbg/out thing)
        (dbg/out " too large\n")
        (dbg/int "   value" value)

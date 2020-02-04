@@ -18,8 +18,8 @@
   (while (< i mandel/MAX)
     (var re_i_2 (/ (* re_i re_i) mandel/NORM))
     (var im_i_2 (/ (* im_i im_i) mandel/NORM))
-    (if (> (+ re_i_2 im_i_2) (* 4 mandel/NORM))
-        (goto out))
+    (if ((> (+ re_i_2 im_i_2) (* 4 mandel/NORM))
+         (goto out)))
     (set im_i (+ (* 2 (/ (* re_i im_i) mandel/NORM)) im))
     (set re_i (+ re_i_2 (- im_i_2) re))
     (set i (+ i 1)))
@@ -38,5 +38,3 @@
       (set x (+ x 1)))
     (set y (+ y 1)))
   (gfx/show))
-
-

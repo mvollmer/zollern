@@ -20,8 +20,7 @@
   (var ctxt (ctxt/mem context))
   (var ptr (mem/mem-next ctxt))
   (var end (+ ptr size))
-  (if (> end (mem/mem-end ctxt))
-      (begin
+  (if ((> end (mem/mem-end ctxt))
        (set ptr (sys/page-get))
        (set end (+ ptr size))
        (set (mem/mem-end ctxt) (+ ptr mem/page-size))))
