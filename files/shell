@@ -48,7 +48,7 @@
        (if ((fs/open rbuf (u64 argv 1))
             (ed/textbuf-read-file edbuf rbuf)
             (fs/close rbuf)))
-       (var exit-mode (ed/ed edbuf 0 0 0 gfx/screen-width gfx/screen-height))
+       (var exit-mode (ed/ed edbuf 0 0 0 (gfx/width) (gfx/height)))
        (fs/create wbuf)
        (ed/textbuf-write-file edbuf wbuf)
        (fs/commit wbuf (u64 argv 1))

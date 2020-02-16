@@ -114,7 +114,8 @@ struct event {
 
 enum {
   EV_QUIT = 1,
-  EV_INPUT = 2
+  EV_INPUT = 2,
+  EV_SIZE = 3
 };
 
 enum {
@@ -172,31 +173,13 @@ int meta_mask;
 int x11_fd = -1;
 
 void
-configure (int width, int height)
+setup_window ()
 {
-  pixels = mmap (NULL, width*height*4, PROT_READ | PROT_WRITE, MAP_SHARED,
-                 PIXELS_FD, 0);
-
-  if (pixels == MAP_FAILED)
-    exitf (1, "pixels map: %m");
-
-  window = SDL_CreateWindow ("SDL",
-                             SDL_WINDOWPOS_UNDEFINED,
-                             SDL_WINDOWPOS_UNDEFINED,
-                             width,
-                             height,
-                             SDL_WINDOW_SHOWN);
+  window = SDL_CreateWindow ("Z",
+                             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0,
+                             SDL_WINDOW_BORDERLESS | SDL_WINDOW_MAXIMIZED);
 
   if (window == NULL)
-    exitf (1, "%s\n", SDL_GetError());
-
-  fb = SDL_CreateRGBSurfaceFrom (pixels, width, height,
-                                 32, 4*width,
-                                 0x00FF0000,
-                                 0x0000FF00,
-                                 0x000000FF,
-                                 0x00000000);
-  if (fb == NULL)
     exitf (1, "%s\n", SDL_GetError());
 
   SDL_VERSION(&syswm_info.version);
@@ -223,6 +206,25 @@ configure (int width, int height)
     }
 
   x11_fd = ConnectionNumber(syswm_info.info.x11.display);
+}
+
+void
+configure (int width, int height)
+{
+  pixels = mmap (NULL, width*height*4, PROT_READ | PROT_WRITE, MAP_SHARED,
+                 PIXELS_FD, 0);
+
+  if (pixels == MAP_FAILED)
+    exitf (1, "pixels map: %m");
+
+  fb = SDL_CreateRGBSurfaceFrom (pixels, width, height,
+                                 32, 4*width,
+                                 0x00FF0000,
+                                 0x0000FF00,
+                                 0x000000FF,
+                                 0x00000000);
+  if (fb == NULL)
+    exitf (1, "%s\n", SDL_GetError());
 }
 
 void
@@ -338,6 +340,11 @@ handle_event (SDL_Event *e)
     {
       send_event (EV_QUIT, 0, 0, 0, 0);
       return 1;
+    }
+  else if (e->type == SDL_WINDOWEVENT
+           && e->window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+    {
+      send_event (EV_SIZE, e->window.data1, e->window.data2, 0, 0);
     }
   else if (e->type == SDL_SYSWMEVENT)
     {
@@ -503,6 +510,8 @@ main (int argc, char **argv)
   close (COMMANDS_FD);
 
   events_pending = 1;
+
+  setup_window ();
 
   while (1)
     {

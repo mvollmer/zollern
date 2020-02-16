@@ -1,8 +1,7 @@
 (struct gfx/context
+  gfx-screen-width
+  gfx-screen-height
   gfx-pixels)
-
-(defconst gfx/screen-width 1024)
-(defconst gfx/screen-height 768)
 
 (struct gfx/event
   (ev-type u16)
@@ -16,6 +15,12 @@
   (cmd-arg1 u32)
   (cmd-arg2 u32)
   (cmd-arg3 u32))
+
+(fun (gfx/width)
+  (gfx/gfx-screen-width (ctxt/gfx context)))
+
+(fun (gfx/height)
+  (gfx/gfx-screen-height (ctxt/gfx context)))
 
 (fun (gfx/cmd op arg1 arg2 arg3)
   (mem cmd gfx/command)
@@ -39,20 +44,26 @@
 
 (fun (gfx/init)
   (set (ctxt/gfx context) (mem/alloc gfx/context))
-  (var bytes (* gfx/screen-width gfx/screen-height 4))
+  (mem event gfx/event)
+  (while (begin
+          (gfx/read-event event)
+          (!= (gfx/ev-type event) 3)))
+  (set (gfx/gfx-screen-width (ctxt/gfx context)) (gfx/ev-x event))
+  (set (gfx/gfx-screen-height (ctxt/gfx context)) (gfx/ev-y event))
+  (var bytes (* (gfx/width) (gfx/height) 4))
   (if ((< (sys/call 77 3 bytes) 0)
        (sys/call 60 12)))
   (set (gfx/gfx-pixels (ctxt/gfx context))
        (sys/call 9 0 bytes 3 1 3 0))
-  (gfx/cmd 1 gfx/screen-width gfx/screen-height))
+  (gfx/cmd 1 (gfx/width) (gfx/height)))
 
 (fun (gfx/color r g b)
   (+ (* (+ (* r 256) g) 256) b))
 
 (fun (gfx/rect x y w h c)
   (var gfx (ctxt/gfx context))
-  (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y gfx/screen-width)) 4)))
-  (var skip (* (- gfx/screen-width w) 4))
+  (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) 4)))
+  (var skip (* (- (gfx/width) w) 4))
   (var i)
   (var j)
   (set j 0)
@@ -67,8 +78,8 @@
 
 (fun (gfx/invert-rect x y w h)
   (var gfx (ctxt/gfx context))
-  (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y gfx/screen-width)) 4)))
-  (var skip (* (- gfx/screen-width w) 4))
+  (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) 4)))
+  (var skip (* (- (gfx/width) w) 4))
   (var white (gfx/color 255 255 255))
   (var i)
   (var j)
@@ -84,9 +95,9 @@
 
 (fun (gfx/copy-rect-up x1 y1 w h x2 y2)
   (var gfx (ctxt/gfx context))
-  (var src (+ (gfx/gfx-pixels gfx) (* (+ x1 (* y1 gfx/screen-width)) 4)))
-  (var dst (+ (gfx/gfx-pixels gfx) (* (+ x2 (* y2 gfx/screen-width)) 4)))
-  (var skip (* (- gfx/screen-width w) 4))
+  (var src (+ (gfx/gfx-pixels gfx) (* (+ x1 (* y1 (gfx/width))) 4)))
+  (var dst (+ (gfx/gfx-pixels gfx) (* (+ x2 (* y2 (gfx/width))) 4)))
+  (var skip (* (- (gfx/width) w) 4))
   (var i)
   (var j)
   (set j 0)
@@ -129,8 +140,8 @@
   (set x (+ x (gfx/glyph-offset-x glyph)))
   (set y (+ y (gfx/glyph-offset-y glyph)))
   (var src-p (+ glyph gfx/glyph-header))
-  (var dst-p (+ (gfx/gfx-pixels gfx) (* (+ x (* y gfx/screen-width)) 4)))
-  (var skip (* (- gfx/screen-width w) 4))
+  (var dst-p (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) 4)))
+  (var skip (* (- (gfx/width) w) 4))
   (var i)
   (var j)
   (set j 0)
@@ -147,5 +158,5 @@
 
 (fun (gfx/put-pixel x y c)
   (var gfx (ctxt/gfx context))
-  (var dst (+ (gfx/gfx-pixels gfx) (* (+ x (* y gfx/screen-width)) 4)))
+  (var dst (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) 4)))
   (set (u32 dst) c))
