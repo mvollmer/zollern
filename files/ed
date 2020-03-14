@@ -73,6 +73,7 @@
   (col-width u32)
   (rows u32)
   (cols u32)
+  (layout-cb u64)
   ;; Buffer
   (buf u64)
   (len u64)
@@ -112,6 +113,11 @@
 
 ;; Display
 
+(fun (ed/clear ed)
+  (gfx/rect (ed/lft ed) (ed/top ed)
+            (* (ed/cols ed) (ed/col-width ed)) (* (ed/rows ed) (ed/row-height ed))
+            (gfx/color 255 255 255)))
+
 (fun (ed/paint-lines ed pos start-row n-rows)
   (var w (ed/col-width ed))
   (var h (ed/row-height ed))
@@ -121,7 +127,6 @@
   (var c)
   (var n-cols)
   (set y (+ (ed/top ed) (* start-row h)))
-  (gfx/rect (ed/lft ed) y (* (ed/cols ed) w) (* n-rows h) (gfx/color 255 255 255))
   (while (> n-rows 0)
    (set n-cols (ed/cols ed))
    (set x (ed/lft ed))
@@ -156,6 +161,7 @@
 
 (fun (ed/redisplay ed)
   (ed/frame ed)
+  (ed/clear ed)
   (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed))
   (gfx/show))
 
@@ -306,6 +312,10 @@
   (gfx/read-event event)
   (if ((== (gfx/ev-type event) 1)
        (sys/call 60 0))
+      ((== (gfx/ev-type event) 3)
+       (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
+       ((ed/layout-cb ed) ed (gfx/ev-x event) (gfx/ev-y event))
+       (ed/redisplay ed))
       ((== (gfx/ev-type event) 2)
        (var input (gfx/ev-input event))
        (var state (gfx/ev-state event))
@@ -314,23 +324,27 @@
            (else
             (ed/command ed input state))))))
 
-(fun (ed/ed buf mode lft top rgt bot)
-  (mem ed ed/data)
+(fun (ed/resize ed lft top rgt bot)
   (set (ed/top ed) top)
   (set (ed/lft ed) lft)
   (set (ed/row-height ed) (- (gfx/font-ascent sys/mono) (gfx/font-descent sys/mono)))
   (set (ed/col-width ed) (gfx/glyph 0 0 32))
   (set (ed/rows ed) (/ (- bot top) (ed/row-height ed)))
-  (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed)))
+  (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed))))
+
+(fun (ed/ed buf mode layout-cb)
+  (mem ed ed/data)
   (set (ed/buf ed) buf)
   (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/mode ed) mode)
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
   (set (ed/quit ed) 0)
+  (set (ed/layout-cb ed) layout-cb)
+  (layout-cb ed)
   (while (not (ed/quit ed))
    (ed/redisplay ed)
    (ed/input ed))
-  (gfx/rect lft top (- rgt lft) (- bot top) (gfx/color 255 255 255))
+  (ed/clear ed)
   (set (ed/textbuf-len buf) (ed/len ed))
   (ed/quit ed))

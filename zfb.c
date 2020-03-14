@@ -176,8 +176,8 @@ void
 setup_window ()
 {
   window = SDL_CreateWindow ("Z",
-                             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0,
-                             SDL_WINDOW_BORDERLESS | SDL_WINDOW_MAXIMIZED);
+                             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 512, 512,
+                             SDL_WINDOW_MAXIMIZED | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE);
 
   if (window == NULL)
     exitf (1, "%s\n", SDL_GetError());
@@ -211,6 +211,13 @@ setup_window ()
 void
 configure (int width, int height)
 {
+  if (fb)
+    {
+      int ow = fb->w, oh = fb->h;
+      SDL_FreeSurface (fb);
+      munmap (pixels, ow*oh*4);
+    }
+
   pixels = mmap (NULL, width*height*4, PROT_READ | PROT_WRITE, MAP_SHARED,
                  PIXELS_FD, 0);
 
