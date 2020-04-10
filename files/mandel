@@ -29,6 +29,8 @@
 (fun (mandel/main)
   (var y 0)
   (while (< y mandel/y-size)
+    (if ((== (% y 10) 0)
+         (gfx/show)))
     (var x 0)
     (while (< x mandel/x-size)
       (var re (+ mandel/re-min (* x (/ (- mandel/re-max mandel/re-min) mandel/x-size))))
