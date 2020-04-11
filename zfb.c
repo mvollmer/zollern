@@ -165,8 +165,6 @@ send_event (int type, int x, int y, int state, int input)
 SDL_Window *window;
 SDL_Surface *fb;
 
-int display_fd = -1;
-
 void
 setup_window ()
 {
@@ -176,18 +174,6 @@ setup_window ()
 
   if (window == NULL)
     exitf (1, "%s\n", SDL_GetError());
-
-  SDL_SysWMinfo syswm_info;
-  SDL_VERSION(&syswm_info.version);
-  if (!SDL_GetWindowWMInfo(window, &syswm_info))
-    exitf (1, "%s\n", SDL_GetError());
-
-  if (syswm_info.subsystem == SDL_SYSWM_X11)
-    display_fd = ConnectionNumber(syswm_info.info.x11.display);
-  else if (syswm_info.subsystem == SDL_SYSWM_WAYLAND)
-    display_fd = wl_display_get_fd (syswm_info.info.wl.display);
-  else
-    exitf (1, "Not supported\n");
 }
 
 void
@@ -276,13 +262,31 @@ state_from_mod (SDL_Keymod mod)
   return state;
 }
 
-int
+int command_event_type;
+
+void
+execute_command (struct command *cmd)
+{
+  if (verbose)
+    printf ("C %d\n", cmd->op);
+
+  switch (cmd->op)
+    {
+    case OP_CONF:
+      configure (cmd->arg1, cmd->arg2);
+      break;
+    case OP_SHOW:
+      show ();
+      break;
+    }
+}
+
+void
 handle_event (SDL_Event *e)
 {
   if (e->type == SDL_QUIT)
     {
       send_event (EV_QUIT, 0, 0, 0, 0);
-      return 1;
     }
   else if (e->type == SDL_WINDOWEVENT
            && e->window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
@@ -310,55 +314,42 @@ handle_event (SDL_Event *e)
           send_event (EV_INPUT, 0, 0, state, input);
         }
     }
-
-  return 0;
-}
-
-int events_pending;
-
-void
-pump_events ()
-{
-  SDL_Event e;
-  while (SDL_PollEvent (&e) != 0)
+  else if (e->type == command_event_type)
     {
-      if (handle_event (&e))
-        return;
+      struct command cmd;
+      cmd.op = e->wheel.which;
+      cmd.arg1 = e->wheel.x;
+      cmd.arg2 = e->wheel.y;
+      cmd.arg3 = e->wheel.direction;
+      execute_command (&cmd);
     }
 
-  events_pending = 0;
+  // XXX - mouse events
 }
 
-void
-execute_command (struct command *cmd)
-{
-  if (verbose)
-    printf ("C %d\n", cmd->op);
-
-  switch (cmd->op)
-    {
-    case OP_CONF:
-      configure (cmd->arg1, cmd->arg2);
-      break;
-    case OP_SHOW:
-      show ();
-      break;
-    }
-}
-
-void
-read_and_execute_command ()
+int
+read_commands (void *unused)
 {
   struct command cmd;
-  int n = read (commands_in_fd, &cmd, sizeof (cmd));
-  if (n == 0)
-    exitf (0, "done");
-  else if (n < 0)
-    exitf (1, "read: %m");
-  else if (n != sizeof (cmd))
-    exitf (1, "short read: %d", n);
 
-  execute_command (&cmd);
+  while (1)
+    {
+      int n = read (commands_in_fd, &cmd, sizeof (cmd));
+      if (n == 0)
+        exitf (0, "done");
+      else if (n < 0)
+        exitf (1, "read: %m");
+      else if (n != sizeof (cmd))
+        exitf (1, "short read: %d", n);
+
+      SDL_Event event;
+      event.type = command_event_type;
+      event.wheel.which = cmd.op;
+      event.wheel.x = cmd.arg1;
+      event.wheel.y = cmd.arg2;
+      event.wheel.direction = cmd.arg3;
+      SDL_PushEvent (&event);
+    }
 }
 
 void
@@ -433,52 +424,16 @@ main (int argc, char **argv)
   close (EVENTS_FD);
   close (COMMANDS_FD);
 
-  events_pending = 1;
-
   setup_window ();
+
+  command_event_type = SDL_RegisterEvents (1);
+  SDL_CreateThread (read_commands, "command pump", NULL);
 
   while (1)
     {
-      struct pollfd fds[2];
-      int nfds;
-
-      fds[0].fd = commands_in_fd;
-      fds[0].events = POLLIN;
-      nfds = 1;
-
-      if (events_pending)
-        {
-          fds[1].fd = events_out_fd;
-          fds[1].events = POLLOUT;
-          nfds = 2;
-        }
-      else if (display_fd >= 0)
-        {
-          fds[1].fd = display_fd;
-          fds[1].events = POLLIN;
-          nfds = 2;
-        }
-
-      if (poll (fds, nfds, -1) < 0)
-        exitf(1, "poll: %m");
-
-      if (fds[0].revents & POLLIN)
-        read_and_execute_command ();
-      else if (fds[0].revents & POLLHUP)
-        exitf (0, "done");
-      else if (fds[0].revents != 0)
-        exitf (1, "poll commands");
-
-      if (nfds == 2)
-        {
-          if (fds[1].fd == display_fd && (fds[1].revents & POLLIN))
-            events_pending = 1;
-          else if (fds[1].fd == events_out_fd && (fds[1].revents & POLLOUT))
-            pump_events ();
-          else if (fds[1].revents & POLLHUP)
-            exitf (0, "done");
-          else if (fds[1].revents != 0)
-            exitf (1, "poll events");
-        }
+      SDL_Event event;
+      if (!SDL_WaitEvent (&event))
+        exitf (1, "Error while reading SDL events: %s\n", SDL_GetError());
+      handle_event (&event);
     }
 }

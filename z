@@ -15,7 +15,7 @@ font.z0: zttf z
 	./zttf /usr/share/fonts/dejavu/DejaVuSansMono.ttf 14 mono >font.z0
 
 zfb: zfb.c
-	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt -lX11 -lwayland-client
+	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt
 
 zttf: zttf.c
 	gcc -g -o zttf zttf.c $$(freetype-config --cflags --libs)
