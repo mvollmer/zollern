@@ -262,6 +262,29 @@ state_from_mod (SDL_Keymod mod)
   return state;
 }
 
+int
+state_from_buttons (int buttons)
+{
+  int state = 0;
+  if (buttons & SDL_BUTTON(SDL_BUTTON_LEFT))
+    state |= EV_STATE_BTN_1;
+  if (buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE))
+    state |= EV_STATE_BTN_2;
+  if (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT))
+    state |= EV_STATE_BTN_3;
+  return state;
+}
+
+void
+send_input_event (int input)
+{
+  int x, y, state;
+  state = state_from_mod (SDL_GetModState()) | state_from_buttons (SDL_GetMouseState(&x, &y));
+  if (input > 0)
+    state &= ~EV_STATE_SHIFT;
+  send_event (EV_INPUT, x, y, state, input);
+}
+
 int command_event_type;
 
 void
@@ -297,22 +320,39 @@ handle_event (SDL_Event *e)
     {
       int mod = SDL_GetModState();
       if ((mod & ~KMOD_SHIFT) == 0)
-        {
-          // XXX - include mouse position and button state
-          send_event (EV_INPUT, 0, 0, 0, e->text.text[0]);
-        }
+        send_input_event (e->text.text[0]);
     }
   else if (e->type == SDL_KEYDOWN)
     {
       int input = input_from_code (e->key.keysym.sym, e->key.keysym.mod);
       if (input != 0)
         {
-          int state = state_from_mod (e->key.keysym.mod);
-          if (input > 0)
-            state &= ~EV_STATE_SHIFT;
-          // XXX - include mouse position and button state
-          send_event (EV_INPUT, 0, 0, state, input);
+          send_input_event (input);
         }
+    }
+  else if (e->type == SDL_MOUSEBUTTONDOWN)
+    {
+      int input = 0;
+      if (e->button.button == SDL_BUTTON_LEFT)
+        input = -EV_BTN_1_PRESS;
+      else if (e->button.button == SDL_BUTTON_MIDDLE)
+        input = -EV_BTN_2_PRESS;
+      else if (e->button.button == SDL_BUTTON_RIGHT)
+        input = -EV_BTN_3_PRESS;
+      if (input)
+        send_input_event (input);
+    }
+  else if (e->type == SDL_MOUSEBUTTONUP)
+    {
+      int input = 0;
+      if (e->button.button == SDL_BUTTON_LEFT)
+        input = -EV_BTN_1_RELEASE;
+      else if (e->button.button == SDL_BUTTON_MIDDLE)
+        input = -EV_BTN_2_RELEASE;
+      else if (e->button.button == SDL_BUTTON_RIGHT)
+        input = -EV_BTN_3_RELEASE;
+      if (input)
+        send_input_event (input);
     }
   else if (e->type == command_event_type)
     {
