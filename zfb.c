@@ -163,6 +163,7 @@ send_event (int type, int x, int y, int state, int input)
 }
 
 SDL_Window *window;
+SDL_Renderer *renderer;
 SDL_Surface *fb;
 
 void
@@ -174,6 +175,8 @@ setup_window ()
 
   if (window == NULL)
     exitf (1, "%s\n", SDL_GetError());
+
+  renderer = SDL_CreateRenderer (window, -1, 0);
 }
 
 void
@@ -205,9 +208,10 @@ configure (int width, int height)
 void
 show ()
 {
-  SDL_Surface *surface = SDL_GetWindowSurface (window);
-  SDL_BlitSurface (fb, NULL, surface, NULL);
-  SDL_UpdateWindowSurface (window);
+  SDL_Texture *texture = SDL_CreateTextureFromSurface (renderer, fb);
+  SDL_RenderCopy (renderer, texture, NULL, NULL);
+  SDL_RenderPresent (renderer);
+  SDL_DestroyTexture (texture);
 }
 
 int
