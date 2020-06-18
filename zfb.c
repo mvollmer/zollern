@@ -280,10 +280,10 @@ state_from_buttons (int buttons)
 }
 
 void
-send_input_event (int input)
+send_input_event (int input, int mod)
 {
   int x, y, state;
-  state = state_from_mod (SDL_GetModState()) | state_from_buttons (SDL_GetMouseState(&x, &y));
+  state = state_from_mod (mod) | state_from_buttons (SDL_GetMouseState(&x, &y));
   if (input > 0)
     state &= ~EV_STATE_SHIFT;
   send_event (EV_INPUT, x, y, state, input);
@@ -322,17 +322,25 @@ handle_event (SDL_Event *e)
     }
   else if (e->type == SDL_TEXTINPUT)
     {
+      // XXX - SDL reports KMOD_RALT for AltGr, so let's hack the two
+      //       cases on my keyboard that I use AltGr for...
       int mod = SDL_GetModState();
+      if (e->text.text[0] == '~' || e->text.text[0] == '@')
+        mod &= ~KMOD_RALT;
       if ((mod & ~KMOD_SHIFT) == 0)
-        send_input_event (e->text.text[0]);
+        send_input_event (e->text.text[0], mod);
     }
   else if (e->type == SDL_KEYDOWN)
     {
+      // XXX - SDL reports KMOD_RALT for AltGr, so let's hack the two
+      //       cases on my keyboard that I use AltGr for...
+      if ((e->key.keysym.mod & KMOD_RALT) &&
+          (e->key.keysym.sym == '+' || e->key.keysym.sym == 'q'))
+        return;
+
       int input = input_from_code (e->key.keysym.sym, e->key.keysym.mod);
       if (input != 0)
-        {
-          send_input_event (input);
-        }
+          send_input_event (input, e->key.keysym.mod);
     }
   else if (e->type == SDL_MOUSEBUTTONDOWN)
     {
@@ -344,7 +352,7 @@ handle_event (SDL_Event *e)
       else if (e->button.button == SDL_BUTTON_RIGHT)
         input = -EV_BTN_3_PRESS;
       if (input)
-        send_input_event (input);
+        send_input_event (input,SDL_GetModState());
     }
   else if (e->type == SDL_MOUSEBUTTONUP)
     {
@@ -356,7 +364,7 @@ handle_event (SDL_Event *e)
       else if (e->button.button == SDL_BUTTON_RIGHT)
         input = -EV_BTN_3_RELEASE;
       if (input)
-        send_input_event (input);
+        send_input_event (input, SDL_GetModState());
     }
   else if (e->type == command_event_type)
     {
