@@ -46,14 +46,20 @@
      (set pos (+ pos 1)))
     (set (ed/textbuf-len tb) pos))))
 
-(fun (ed/textbuf-write-file tb fb)
-  (var i 0)
-  (var len (ed/textbuf-len tb))
+(fun (ed/textbuf-write-region tb fb pos len)
+  (var page (/ pos mem/page-size))
+  (set pos (- pos (* page mem/page-size)))
   (while (> len 0)
-   (var n (if ((< len mem/page-size) len) (else mem/page-size)))
-   (fs/write fb (ed/textbuf-pages tb i) n)
+   (var n (- mem/page-size pos))
+   (if ((< len n)
+        (set n len)))
+   (fs/write fb (+ (ed/textbuf-pages tb page) pos) n)
    (set len (- len n))
-   (set i (+ i 1))))
+   (set pos 0)
+   (set page (+ page 1))))
+
+(fun (ed/textbuf-write-file tb fb)
+  (ed/textbuf-write-region tb fb 0 (ed/textbuf-len tb)))
 
 (fun (ed/textbuf-maybe-as-string tb)
   (var len (ed/textbuf-len tb))
@@ -82,6 +88,7 @@
   (mode u32)
   ;; Editing state
   (window-top u64)
+  (mark u64)
   (point u64)
   (quit u32))
 
@@ -135,6 +142,11 @@
     (set x (+ x (if ((== c 10) w) (else (gfx/glyph x y c)))))
     (if ((== pos (ed/point ed))
          (gfx/invert-rect (- x w) y w h)))
+    (if ((and (!= c 10)
+              (>= (ed/mark ed) 0)
+              (>= pos (ed/mark ed))
+              (< pos (ed/point ed)))
+         (gfx/tint-rect (- x w) y w h 160 160 160)))
     (if ((>= pos end)
          (goto all-done)))
     (set pos (+ pos 1))
@@ -215,6 +227,21 @@
        (set (ed/len ed) (+ (ed/len ed) 1))
        (set (ed/point ed) (+ (ed/point ed) 1)))))
 
+(fun (ed/insert-string ed str n)
+  (if ((ed/textbuf-grow (ed/buf ed) (+ (ed/len ed) n))
+       (var pos (+ (ed/len ed) n -1))
+       (var end (+ (ed/point ed) n -1))
+       (while (> pos end)
+        (set (ed/char ed pos) (ed/char ed (- pos n)))
+        (set pos (- pos 1)))
+       (set pos (ed/point ed))
+       (while (<= pos end)
+        (set (ed/char ed pos) (u8 str))
+        (set pos (+ pos 1))
+        (set str (+ str 1)))
+       (set (ed/len ed) (+ (ed/len ed) n))
+       (set (ed/point ed) (+ (ed/point ed) n)))))
+
 (fun (ed/delete ed)
   (if ((< (ed/point ed) (ed/len ed))
        (var pos (ed/point ed))
@@ -223,6 +250,14 @@
         (set (ed/char ed pos) (ed/char ed (+ pos 1)))
         (set pos (+ pos 1)))
        (set (ed/len ed) (- (ed/len ed) 1)))))
+
+(fun (ed/delete-string ed n)
+  (var pos (ed/point ed))
+  (var end (- (ed/len ed) n))
+  (while (< pos end)
+    (set (ed/char ed pos) (ed/char ed (+ pos n)))
+    (set pos (+ pos 1)))
+  (set (ed/len ed) pos))
 
 (fun (ed/backspace ed)
   (if ((ed/left ed)
@@ -267,6 +302,32 @@
             (set pos (ed/find-matching-opening-paren ed pos))))
        (set (ed/point ed) pos))))
 
+;; Region
+
+(fun (ed/copy-region ed)
+  (if ((and (!= (ed/mark ed) -1)
+            (< (ed/mark ed) (ed/point ed)))
+       (mem wbuf fs/wbuf)
+       (fs/create wbuf)
+       (ed/textbuf-write-region (ed/buf ed) wbuf
+                                (ed/mark ed) (- (ed/point ed) (ed/mark ed)))
+       (fs/commit wbuf ".clip"))))
+
+(fun (ed/cut-region ed)
+  (if ((and (!= (ed/mark ed) -1)
+            (< (ed/mark ed) (ed/point ed)))
+       (ed/copy-region ed)
+       (var n (- (ed/point ed) (ed/mark ed)))
+       (set (ed/point ed) (ed/mark ed))
+       (ed/delete-string ed n))))
+       
+(fun (ed/paste ed)
+  (mem rbuf fs/rbuf)
+  (if ((fs/open rbuf ".clip")
+       (while (fs/read rbuf)
+        (ed/insert-string ed (fs/rbuf-start rbuf) (fs/rbuf-size rbuf)))
+       (fs/close rbuf))))
+
 ;; Keys
 
 (fun (ed/command ed key state)
@@ -295,14 +356,26 @@
            ((== key -13) ;; delete
             (ed/delete ed))))
            ((== state 16) ;; control
-            (if ((== key 46) ;; C-.
+            (if ((== key 32) ;; C-SPC
+                 (set (ed/mark ed) (ed/point ed)))
+                ((== key 103) ;; C-g
+                 (set (ed/mark ed) -1))
+                ((== key 46) ;; C-.
                  (ed/goto-other-paren ed))
+                ((== key 119) ;; C-w
+                 (ed/cut-region ed)
+                 (set (ed/mark ed) -1))
+                ((== key 121) ;; C-y
+                 (ed/paste ed))
                 ((== key 97) ;; C-a
                  (ed/beginning-of-line ed))
                 ((== key 101) ;; C-e
                  (ed/end-of-line ed))))
            ((== state 32) ;; meta
-            (if ((== key 120) ;; M-x
+            (if ((== key 119) ;; M-w
+                 (ed/copy-region ed)
+                 (set (ed/mark ed) -1))
+                ((== key 120) ;; M-x
                  (set (ed/quit ed) 1))
                 ((== key 114) ;; M-r
                  (set (ed/quit ed) 2))))))
@@ -337,6 +410,7 @@
   (set (ed/buf ed) buf)
   (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/mode ed) mode)
+  (set (ed/mark ed) -1)
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
   (set (ed/quit ed) 0)
