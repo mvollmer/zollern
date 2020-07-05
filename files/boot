@@ -9,4 +9,7 @@
              (main))
             (else
              (sys/call 60 13)))
-        (sys/book-unref shell)))))
+        (sys/book-unref shell))
+       (else
+        (gfx/wait)
+        (sys/call 60 14)))))
