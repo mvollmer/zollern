@@ -89,6 +89,8 @@
   ;; Editing state
   (window-top u64)
   (mark u64)
+  (highlight-1 u64)
+  (highlight-2 u64)
   (point u64)
   (quit u32))
 
@@ -147,6 +149,9 @@
               (>= pos (ed/mark ed))
               (< pos (ed/point ed)))
          (gfx/tint-rect (- x w) y w h 160 160 160)))
+    (if ((or (== pos (ed/highlight-1 ed))
+             (== pos (ed/highlight-2 ed)))
+         (gfx/tint-rect (- x w) y w h 250 200 0)))
     (if ((>= pos end)
          (goto all-done)))
     (set pos (+ pos 1))
@@ -293,14 +298,15 @@
    (set char (ed/char ed pos)))
   pos)
 
-(fun (ed/goto-other-paren ed)
-  (var pos (ed/point ed))
-  (if ((< pos (ed/len ed))
-       (if ((== (ed/char ed pos) 40) ;; "("
-            (set pos (ed/find-matching-closing-paren ed pos)))
-           ((== (ed/char ed pos) 41) ;; ")"
-            (set pos (ed/find-matching-opening-paren ed pos))))
-       (set (ed/point ed) pos))))
+(fun (ed/highlight ed)
+  (set (ed/highlight-1 ed) -1)
+  (set (ed/highlight-2 ed) -1)
+  (var p (- (ed/point ed) 1))
+  (if ((>= p 0)
+       (var c (ed/char ed p))
+       (if ((== c 41)
+            (set (ed/highlight-1 ed) p)
+            (set (ed/highlight-2 ed) (ed/find-matching-opening-paren ed p)))))))
 
 ;; Region
 
@@ -360,8 +366,6 @@
                  (set (ed/mark ed) (ed/point ed)))
                 ((== key 103) ;; C-g
                  (set (ed/mark ed) -1))
-                ((== key 46) ;; C-.
-                 (ed/goto-other-paren ed))
                 ((== key 119) ;; C-w
                  (ed/cut-region ed)
                  (set (ed/mark ed) -1))
@@ -417,6 +421,7 @@
   (set (ed/layout-cb ed) layout-cb)
   (layout-cb ed)
   (while (not (ed/quit ed))
+   (ed/highlight ed)
    (ed/redisplay ed)
    (ed/input ed))
   (ed/clear ed)
