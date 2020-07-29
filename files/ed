@@ -308,6 +308,82 @@
             (set (ed/highlight-1 ed) p)
             (set (ed/highlight-2 ed) (ed/find-matching-opening-paren ed p)))))))
 
+(fun (ed/looking-at ed pos str)
+  (while (and (u8 str)
+              (< pos (ed/len ed))
+              (== (ed/char ed pos) (u8 str)))
+    (set str (+ str 1))
+    (set pos (+ pos 1)))
+  (== (u8 str) 0))
+
+(fun (ed/indent-to ed level)
+  (var p (ed/point ed))
+  (var b (ed/find-bol ed p))
+  (while (and (< b (ed/len ed))
+              (== (ed/char ed b) 32)
+              (> level 0))
+    (set b (+ b 1))
+    (set level (- level 1)))
+  (set (ed/point ed) b)
+  (if ((> level 0)
+       (while (> level 0)
+         (ed/insert ed 32)
+         (set level (- level 1))))
+      (else
+       (while (and (< (ed/point ed) (ed/len ed))
+                   (== (ed/char ed b) 32))
+         (ed/delete ed)))))
+
+(fun (ed/indent ed)
+  (var p (ed/point ed))
+  ;; Find beginning of line
+  (set p (ed/find-bol ed p))
+  (if ((< p 1)
+       (ed/indent-to ed 0)
+       (goto return)))
+  ;; Find backwards: (newline or open paren) on level zero
+  (var level 0)
+  (set p (- p 2))
+  (while (and (> p 0)
+              (not (and (or (== (ed/char ed p) 10)
+                            (== (ed/char ed p) 40))
+                        (<= level 0))))
+    (if ((== (ed/char ed p) 40) (set level (- level 1)))
+        ((== (ed/char ed p) 41) (set level (+ level 1))))
+    (set p (- p 1)))
+  ;; Find what follows
+  (var pp p)
+  (while (begin
+           (set pp (+ pp 1))
+           (and (< pp (ed/len ed))
+                (== (ed/char ed pp) 32))))
+  (if ((== (ed/char ed p) 10)
+       ;; Indent to same level as this line
+       (ed/indent-to ed (- pp p 1)))
+      ((and (< pp (ed/len ed)) (== (ed/char ed pp) 40))
+       ;; If another open paren follows the stopping paren, indent to that
+       (ed/indent-to ed (- pp (ed/find-bol ed pp))))
+      ((or (== (ed/find-bol ed p) p)
+           (ed/looking-at ed pp "while")
+           (ed/looking-at ed pp "begin"))
+       ;; If the stopping paren is at the beginning of its line, or we are looking at a known keyword, indent to level of stopping paren plus 2
+       (ed/indent-to ed (+ (- p (ed/find-bol ed p)) 2)))
+      (else
+       ;; Indent to whatever follows
+       (var ppp pp)
+       (while (not (or (>= ppp (ed/len ed))
+                       (== (ed/char ed ppp) 32)
+                       (== (ed/char ed ppp) 10)))
+         (set ppp (+ ppp 1)))
+       (while (and (< ppp (ed/len ed)) (== (ed/char ed ppp) 32))
+         (set ppp (+ ppp 1)))
+       (if ((or (>= ppp (ed/len ed)) (== (ed/char ed ppp) 10))
+            ;;; Nothing follows, indent to level of whatever followed the stopping paren
+            (ed/indent-to ed (- pp (ed/find-bol ed pp))))
+           (else
+            (ed/indent-to ed (- ppp (ed/find-bol ed ppp)))))))
+  (label return))
+
 ;; Region
 
 (fun (ed/copy-region ed)
@@ -360,7 +436,9 @@
            ((== key -9) ;; backspace
             (ed/backspace ed))
            ((== key -13) ;; delete
-            (ed/delete ed))))
+            (ed/delete ed))
+           ((== key -10) ;; tab
+            (ed/indent ed))))
            ((== state 16) ;; control
             (if ((== key 32) ;; C-SPC
                  (set (ed/mark ed) (ed/point ed)))
