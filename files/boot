@@ -4,12 +4,12 @@
   (gfx/init)
   (con/init)
   (while 1
-   (if ((var shell (sys/book-get "shell" con/out 0))
-        (if ((var main (sys/book-search-fun shell "main"))
-             (main))
-            (else
-             (sys/call 60 13)))
-        (sys/book-unref shell))
-       (else
-        (gfx/wait)
-        (sys/call 60 14)))))
+    (if ((var shell (sys/book-get "shell" con/out 0))
+         (if ((var main (sys/book-search-fun shell "main"))
+              (main))
+             (else
+              (sys/call 60 13)))
+         (sys/book-unref shell))
+        (else
+         (gfx/wait)
+         (sys/call 60 14)))))

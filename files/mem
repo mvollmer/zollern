@@ -29,7 +29,7 @@
 
 (fun (mem/cpy dst src size)
   (while (> size 0)
-   (set (u8 dst) (u8 src))
-   (set dst (+ dst 1))
-   (set src (+ src 1))
-   (set size (- size 1))))
+    (set (u8 dst) (u8 src))
+    (set dst (+ dst 1))
+    (set src (+ src 1))
+    (set size (- size 1))))

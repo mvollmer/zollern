@@ -1,7 +1,7 @@
 (fun (dbg/out str)
   (var ptr str)
   (while (u8 ptr)
-   (set ptr (+ ptr 1)))
+    (set ptr (+ ptr 1)))
   (sys/call 1 2 str (- ptr str)))
 
 (fun (dbg/int l n)
@@ -16,10 +16,10 @@
   (set ptr (- ptr 1))
   (set (u8 ptr) 0)
   (while (begin
-          (set ptr (- ptr 1))
-          (set (u8 ptr) (+ (% n 10) 48))
-          (set n (/ n 10))
-          n))
+           (set ptr (- ptr 1))
+           (set (u8 ptr) (+ (% n 10) 48))
+           (set n (/ n 10))
+           n))
   (dbg/out ptr)
   (dbg/out "\n"))
 
