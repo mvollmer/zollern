@@ -357,7 +357,7 @@
            (set pp (+ pp 1))
            (and (< pp (ed/len ed))
                 (== (ed/char ed pp) 32))))
-  (if ((== (ed/char ed p) 10)
+  (if ((or (and (== p 0) (> level 0)) (== (ed/char ed p) 10))
        ;; Indent to same level as this line
        (ed/indent-to ed (- pp p 1)))
       ((and (< pp (ed/len ed)) (== (ed/char ed pp) 40))
