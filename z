@@ -1,7 +1,7 @@
 #! /bin/make -f
 
 run: zfs zfb z1
-	./zfs create files zdisk
+	test -e zdisk || ./zfs create files zdisk
 	./zfb ./z1 zdisk
 	rm -rf files && mkdir files && ./zfs extract zdisk files
 
