@@ -26,7 +26,7 @@
   (var x (con/cursor-x ctxt))
   (var y (- (gfx/height) (con/line-height ctxt)))
   (while (u8 str)
-    (if ((== (u8 str) 10)
+    (if ((== (u8 str) ch/nl)
          (goto newline)))
     (set x (+ x (gfx/glyph x y (u8 str))))
     (if ((> x (- (gfx/width) 14))

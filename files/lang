@@ -654,3 +654,19 @@
                   (syntax-expand (def ?name ?(exp/make-number offset)))
                   defs))
        defs)))
+
+;; Enums
+
+(def (lang/enum . ?members)
+  (begin .
+    ?(begin
+       (var defs 0)
+       (var value 0)
+       (while members
+         (var name (exp/global (exp/first members)))
+         (set defs (exp/make-pair
+                    (syntax-expand (def ?name ?(exp/make-number value)))
+                    defs))
+         (set members (exp/rest members))
+         (set value (+ value 1)))
+       defs)))

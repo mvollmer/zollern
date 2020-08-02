@@ -85,7 +85,7 @@
 (fun (fs/init)
   (var disk (ctxt/disk context))
   (dbg/assert-equal (fs/head-magic (fs/disk-start disk))
-                    (+ (* (+ (* (+ (* 76 256) 76) 256) 79) 256) 90)
+                    (+ (* (+ (* (+ (* ch/L 256) ch/L) 256) ch/O) 256) ch/Z)
                     "disk magic")
   (dbg/assert-equal (/ (- (fs/disk-end disk) (fs/disk-start disk)) fs/block-size)
                     fs/block-count

@@ -105,18 +105,18 @@
 ;; Scanning
 
 (fun (ed/find-bol ed pos)
-  (while (and (> pos 0) (!= (ed/char ed (- pos 1)) 10))
+  (while (and (> pos 0) (!= (ed/char ed (- pos 1)) ch/nl))
     (set pos (- pos 1)))
   pos)
 
 (fun (ed/find-eol ed pos)
-  (while (and (< pos (ed/len ed)) (!= (ed/char ed pos) 10))
+  (while (and (< pos (ed/len ed)) (!= (ed/char ed pos) ch/nl))
     (set pos (+ pos 1)))
   pos)
 
 (fun (ed/find-column ed pos col)
   (var col-pos (+ pos col))
-  (while (and (< pos col-pos) (< pos (ed/len ed)) (!= (ed/char ed pos) 10))
+  (while (and (< pos col-pos) (< pos (ed/len ed)) (!= (ed/char ed pos) ch/nl))
     (set pos (+ pos 1)))
   pos)
 
@@ -140,11 +140,11 @@
     (set n-cols (ed/cols ed))
     (set x (ed/lft ed))
     (while (> n-cols 0)
-      (set c (if ((>= pos end) 10) (else (ed/char ed pos))))
-      (set x (+ x (if ((== c 10) w) (else (gfx/glyph x y c)))))
+      (set c (if ((>= pos end) ch/nl) (else (ed/char ed pos))))
+      (set x (+ x (if ((== c ch/nl) w) (else (gfx/glyph x y c)))))
       (if ((== pos (ed/point ed))
            (gfx/invert-rect (- x w) y w h)))
-      (if ((and (!= c 10)
+      (if ((and (!= c ch/nl)
                 (>= (ed/mark ed) 0)
                 (>= pos (ed/mark ed))
                 (< pos (ed/point ed)))
@@ -155,7 +155,7 @@
       (if ((>= pos end)
            (goto all-done)))
       (set pos (+ pos 1))
-      (if ((== c 10)
+      (if ((== c ch/nl)
            (goto row-done)))
       (set n-cols (- n-cols 1)))
     (label row-done)
@@ -275,10 +275,10 @@
   (var char (ed/char ed pos))
   (while (and (< pos (ed/len ed))
               (not (and (== level 1)
-                        (== char 41))))
-    (if ((== char 40)
+                        (== char ch/rp))))
+    (if ((== char ch/lp)
          (set level (+ level 1)))
-        ((== char 41)
+        ((== char ch/rp)
          (set level (- level 1))))
     (set pos (+ pos 1))
     (set char (ed/char ed pos)))
@@ -289,10 +289,10 @@
   (var char (ed/char ed pos))
   (while (and (> pos 0)
               (not (and (== level 1)
-                        (== char 40))))
-    (if ((== char 41)
+                        (== char ch/lp))))
+    (if ((== char ch/rp)
          (set level (+ level 1)))
-        ((== char 40)
+        ((== char ch/lp)
          (set level (- level 1))))
     (set pos (- pos 1))
     (set char (ed/char ed pos)))
@@ -304,7 +304,7 @@
   (var p (- (ed/point ed) 1))
   (if ((>= p 0)
        (var c (ed/char ed p))
-       (if ((== c 41)
+       (if ((== c ch/rp)
             (set (ed/highlight-1 ed) p)
             (set (ed/highlight-2 ed) (ed/find-matching-opening-paren ed p)))))))
 
@@ -320,18 +320,18 @@
   (var p (ed/point ed))
   (var b (ed/find-bol ed p))
   (while (and (< b (ed/len ed))
-              (== (ed/char ed b) 32)
+              (== (ed/char ed b) ch/spc)
               (> level 0))
     (set b (+ b 1))
     (set level (- level 1)))
   (set (ed/point ed) b)
   (if ((> level 0)
        (while (> level 0)
-         (ed/insert ed 32)
+         (ed/insert ed ch/spc)
          (set level (- level 1))))
       (else
        (while (and (< (ed/point ed) (ed/len ed))
-                   (== (ed/char ed b) 32))
+                   (== (ed/char ed b) ch/spc))
          (ed/delete ed)))))
 
 (fun (ed/indent ed)
@@ -345,22 +345,22 @@
   (var level 0)
   (set p (- p 2))
   (while (and (> p 0)
-              (not (and (or (== (ed/char ed p) 10)
-                            (== (ed/char ed p) 40))
+              (not (and (or (== (ed/char ed p) ch/nl)
+                            (== (ed/char ed p) ch/lp))
                         (<= level 0))))
-    (if ((== (ed/char ed p) 40) (set level (- level 1)))
-        ((== (ed/char ed p) 41) (set level (+ level 1))))
+    (if ((== (ed/char ed p) ch/lp) (set level (- level 1)))
+        ((== (ed/char ed p) ch/rp) (set level (+ level 1))))
     (set p (- p 1)))
   ;; Find what follows
   (var pp p)
   (while (begin
            (set pp (+ pp 1))
            (and (< pp (ed/len ed))
-                (== (ed/char ed pp) 32))))
-  (if ((or (and (== p 0) (> level 0)) (== (ed/char ed p) 10))
+                (== (ed/char ed pp) ch/spc))))
+  (if ((or (and (== p 0) (> level 0)) (== (ed/char ed p) ch/nl))
        ;; Indent to same level as this line
        (ed/indent-to ed (- pp p 1)))
-      ((and (< pp (ed/len ed)) (== (ed/char ed pp) 40))
+      ((and (< pp (ed/len ed)) (== (ed/char ed pp) ch/lp))
        ;; If another open paren follows the stopping paren, indent to that
        (ed/indent-to ed (- pp (ed/find-bol ed pp))))
       ((or (== (ed/find-bol ed p) p)
@@ -372,12 +372,12 @@
        ;; Indent to whatever follows
        (var ppp pp)
        (while (not (or (>= ppp (ed/len ed))
-                       (== (ed/char ed ppp) 32)
-                       (== (ed/char ed ppp) 10)))
+                       (== (ed/char ed ppp) ch/spc)
+                       (== (ed/char ed ppp) ch/nl)))
          (set ppp (+ ppp 1)))
-       (while (and (< ppp (ed/len ed)) (== (ed/char ed ppp) 32))
+       (while (and (< ppp (ed/len ed)) (== (ed/char ed ppp) ch/spc))
          (set ppp (+ ppp 1)))
-       (if ((or (>= ppp (ed/len ed)) (== (ed/char ed ppp) 10))
+       (if ((or (>= ppp (ed/len ed)) (== (ed/char ed ppp) ch/nl))
             ;;; Nothing follows, indent to level of whatever followed the stopping paren
             (ed/indent-to ed (- pp (ed/find-bol ed pp))))
            (else
@@ -453,26 +453,26 @@
                 (else
                  (ed/indent ed))))))
       ((== state 16) ;; control
-       (if ((== key 32) ;; C-SPC
+       (if ((== key ch/spc) ;; C-SPC
             (set (ed/mark ed) (ed/point ed)))
-           ((== key 103) ;; C-g
+           ((== key ch/g) ;; C-g
             (set (ed/mark ed) -1))
-           ((== key 119) ;; C-w
+           ((== key ch/w) ;; C-w
             (ed/cut-region ed)
             (set (ed/mark ed) -1))
-           ((== key 121) ;; C-y
+           ((== key ch/y) ;; C-y
             (ed/paste ed))
-           ((== key 97) ;; C-a
+           ((== key ch/a) ;; C-a
             (ed/beginning-of-line ed))
-           ((== key 101) ;; C-e
+           ((== key ch/e) ;; C-e
             (ed/end-of-line ed))))
       ((== state 32) ;; meta
-       (if ((== key 119) ;; M-w
+       (if ((== key ch/w) ;; M-w
             (ed/copy-region ed)
             (set (ed/mark ed) -1))
-           ((== key 120) ;; M-x
+           ((== key ch/x) ;; M-x
             (set (ed/quit ed) 1))
-           ((== key 114) ;; M-r
+           ((== key ch/r) ;; M-r
             (set (ed/quit ed) 2))))))
 
 (fun (ed/input ed)
@@ -496,7 +496,7 @@
   (set (ed/top ed) top)
   (set (ed/lft ed) lft)
   (set (ed/row-height ed) (- (gfx/font-ascent sys/mono) (gfx/font-descent sys/mono)))
-  (set (ed/col-width ed) (gfx/glyph 0 0 32))
+  (set (ed/col-width ed) (gfx/glyph 0 0 ch/spc))
   (set (ed/rows ed) (/ (- bot top) (ed/row-height ed)))
   (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed))))
 

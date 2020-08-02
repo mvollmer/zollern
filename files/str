@@ -5,11 +5,11 @@
   (== (u8 a) (u8 b)))
 
 (fun (str/skip-whitespace ptr)
-  (while (or (== (u8 ptr) 32) (== (u8 ptr) 10))
+  (while (or (== (u8 ptr) ch/spc) (== (u8 ptr) ch/nl))
     (set ptr (+ ptr 1)))
   ptr)
 
 (fun (str/skip-non-whitespace ptr)
-  (while (and (u8 ptr) (!= (u8 ptr) 32) (!= (u8 ptr) 10))
+  (while (and (u8 ptr) (!= (u8 ptr) ch/spc) (!= (u8 ptr) ch/nl))
     (set ptr (+ ptr 1)))
   ptr)
