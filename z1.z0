@@ -2959,10 +2959,10 @@
   (call book-get)
   (cmp l0 0)
   (je .no-boot-file)
-  (set l1 .main-name)
+  (set l1 .start-name)
   (call book-search-fun)
   (cmp l0 0)
-  (je .main-undefined)
+  (je .start-undefined)
 run
   (call l0)
   (jmp sys-exit)
@@ -2972,13 +2972,13 @@ run
   (1 "sys" 0)
 .boot-name
   (1 "boot" 0)
-.main-name
-  (1 "main" 0)
+.start-name
+  (1 "start" 0)
 .no-boot-file
   (set l0 0)
   (jmp panic)
-.main-undefined
-  (set l0 .main-undefined-message)
+.start-undefined
+  (set l0 .start-undefined-message)
   (jmp panic)
-.main-undefined-message
-  (1 "main undefined (or not a function)\n" 0))
+.start-undefined-message
+  (1 "start undefined (or not a function)\n" 0))

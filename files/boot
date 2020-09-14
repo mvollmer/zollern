@@ -1,4 +1,4 @@
-(fun (boot/main)
+(fun (boot/start)
   (mem/init)
   (fs/init)
   (gfx/init)
