@@ -32,13 +32,11 @@
 (data
   mem-free-pages 8
   mem-next 8
-  mem-brk 8)
+  mem-end 8)
 
 (code mem-init
-  (set l0 0)
-  (call sys-brk)
-  (set (u64 mem-brk) l0)
-  (set (u64 mem-next) l0)
+  (set (u64 mem-next) 0)
+  (set (u64 mem-end) 0)
   (ret))
 
 (def PAGE_SIZE (* 16 1024))
@@ -52,7 +50,7 @@
   (ret)
 .make-page
   (set l0 (u64 mem-next))
-  (set l1 (u64 mem-brk))
+  (set l1 (u64 mem-end))
   (cmp l0 l1)
   (je .get-mem)
   (set l1 l0)
@@ -60,13 +58,20 @@
   (set (u64 mem-next) l1)
   (ret)
 .get-mem
-  (add l1 (* 2 1024 1024))
-  (set (u64 mem-brk) l1)
-  (set l0 l1)
-  (call sys-brk)
-  (set l1 (u64 mem-brk))
-  (cmp l1 l0)
-  (je .make-page)
+  (set l0 0)
+  (set l1 (* 2 1024 1024))
+  (set l2 7) ; PROT_READ | PROT_WRITE | PROT_EXEC
+  (set l3 34) ; MAP_ANONYMOUS | MAP_PRIVATE
+  (set l4 -1)
+  (set l5 0)
+  (call sys-mmap)
+  (cmp l0 0)
+  (jl .oom)
+  (set (u64 mem-next) l0)
+  (add l0 (* 2 1024 1024))
+  (set (u64 mem-end) l0)
+  (jmp .make-page)
+.oom
   (let l0 (u8 .message))
   (jmp panic)
 .message
