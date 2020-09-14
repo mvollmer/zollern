@@ -13,3 +13,18 @@
   (while (and (u8 ptr) (!= (u8 ptr) ch/spc) (!= (u8 ptr) ch/nl))
     (set ptr (+ ptr 1)))
   ptr)
+
+(fun (str/cpy dest str)
+  (while (u8 str)
+    (set (u8 dest) (u8 str))
+    (set str (+ str 1))
+    (set dest (+ dest 1)))
+  (set (u8 dest) 0))
+
+(fun (str/len str)
+  (var n 0)
+  (while (u8 str)
+    (set n (+ n 1))
+    (set str (+ str 1)))
+  n)
+

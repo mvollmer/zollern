@@ -116,14 +116,14 @@
     (set i (+ i 1)))
   (set (fs/state-time state) time))
 
-(fun (fs/list func)
+(fun (fs/list func data)
   (var ptr (fs/disk-start (ctxt/disk context)))
   (var i 1)
   (while (< i fs/node-count)
     (set ptr (+ ptr fs/node-size))
     (set i (+ i 1))
     (if ((u8 ptr)
-         (func ptr)))))
+         (func ptr data)))))
 
 ;; Reading files
 
