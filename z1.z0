@@ -1396,8 +1396,10 @@
 .not-dep
   ;; check if one of the books in the current context matches
   ;;  if so, add as dep
+  (set x3 sp)
   (sub sp x1)
   (sub sp 1)
+  (and sp -8)
   (set l1 x0)
   (set l2 x1)
   (set l3 sp)
@@ -1419,8 +1421,7 @@
   (call book-get)
   (cmp l0 0)
   (je .not-found)
-  (add sp x1)
-  (add sp 1)
+  (set sp x3)
   (set x3 l0)
   (set l0 (ctxt-comp cp))
   (let l0 (cc-tmp-pool l0))
@@ -1747,6 +1748,7 @@
   (add l0 2)
   (set x2 sp)
   (sub sp l0)
+  (and sp -8)
   (set l0 sp)
   (set l1 x1)
   (call strcpy)
