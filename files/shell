@@ -62,6 +62,7 @@
 (fun (shell/layout-for-create ed inst)
   (var x 24)
   (var y (+ 28 (* 16 (shell/max inst))))
+  (shell/paint inst)
   (gfx/rect 20 y 200 16 (gfx/color 255 255 255))
   (ed/resize ed 24 y (+ x 200) (+ y 20)))
 
@@ -70,7 +71,7 @@
   (ed/textbuf-init name)
   (ed/ed name 1 shell/layout-for-create inst)
   (var str (ed/textbuf-maybe-as-string name))
-  (if (str
+  (if ((and str (u8 str))
        (mem wbuf fs/wbuf)
        (fs/create wbuf)
        (fs/commit wbuf str)
@@ -120,6 +121,9 @@
   (gfx/read-event event)
   (if ((== (gfx/ev-type event) 1)
        (sys/call 60 0))
+      ((== (gfx/ev-type event) 3)
+       (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
+       (shell/paint inst))
       ((== (gfx/ev-type event) 2)
        (var input (gfx/ev-input event))
        (var state (gfx/ev-state event))
