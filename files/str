@@ -28,3 +28,8 @@
     (set str (+ str 1)))
   n)
 
+(fun (str/cmp a b)
+  (while (and (u8 a) (== (u8 a) (u8 b)))
+    (set a (+ a 1))
+    (set b (+ b 1)))
+  (- (u8 b) (u8 a)))
