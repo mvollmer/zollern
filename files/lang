@@ -499,6 +499,7 @@
 
 (def (lang/defprim-accessor ?name ?size ?a)
   (begin
+    (def ?name ?size)
     (def (?name ??ptr ??(idx))
          ??(if (idx
                 ?(if ((== (exp/number-value size) 1)

@@ -44,7 +44,7 @@
   (set (u64 nodes (+ i 1)) 0))
 
 (fun (shell/paint inst)
-  (mem nodes (* 128 8))
+  (mem nodes (* 128 u64))
   (set (u64 nodes 0) 0)
   (fs/list shell/insert-node nodes)
   (gfx/rect 0 0 (gfx/width) (gfx/height) (gfx/color 255 255 255))
