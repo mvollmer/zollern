@@ -220,6 +220,31 @@
 (fun (ed/end-of-line ed)
   (set (ed/point ed) (ed/find-eol ed (ed/point ed))))
 
+(fun (ed/is-wordchar ch)
+  (or (and (>= ch ch/a)
+           (<= ch ch/z))
+      (and (>= ch ch/A)
+           (<= ch ch/Z))
+      (and (>= ch ch/d0)
+           (<= ch ch/d9))))
+
+(fun (ed/left-word ed)
+  (if ((ed/left ed)
+       (while (and (> (ed/point ed) 0)
+                   (not (ed/is-wordchar (ed/char ed (ed/point ed)))))
+         (ed/left ed))
+       (while (and (> (ed/point ed) 0)
+                   (ed/is-wordchar (ed/char ed (- (ed/point ed) 1))))
+         (ed/left ed)))))
+
+(fun (ed/right-word ed)
+  (while (and (< (ed/point ed) (ed/len ed))
+              (not (ed/is-wordchar (ed/char ed (ed/point ed)))))
+    (ed/right ed))
+  (while (and (< (ed/point ed) (ed/len ed))
+              (ed/is-wordchar (ed/char ed (ed/point ed))))
+    (ed/right ed)))
+
 ;; Text modifications
 
 (fun (ed/insert ed char)
@@ -268,6 +293,11 @@
 (fun (ed/backspace ed)
   (if ((ed/left ed)
        (ed/delete ed))))
+
+(fun (ed/backspace-word ed)
+  (var end (ed/point ed))
+  (ed/left-word ed)
+  (ed/delete-string ed (- end (ed/point ed))))
 
 ;; Bare minimum for editing s-exprs
 
@@ -444,6 +474,10 @@
             (ed/up ed (ed/rows ed)))
            ((== key -20) ;; page down
             (ed/down ed (ed/rows ed)))
+           ((== key -21) ;; end
+            (ed/end-of-line ed))
+           ((== key -22) ;; home
+            (ed/beginning-of-line ed))
            ((== key -9) ;; backspace
             (ed/backspace ed))
            ((== key -13) ;; delete
@@ -465,8 +499,16 @@
             (ed/paste ed))
            ((== key ch/a) ;; C-a
             (ed/beginning-of-line ed))
+           ((== key ch/d) ;; C-d
+            (ed/delete ed))
            ((== key ch/e) ;; C-e
-            (ed/end-of-line ed))))
+            (ed/end-of-line ed))
+           ((== key -15) ;; left
+            (ed/left-word ed))
+           ((== key -17) ;; right
+            (ed/right-word ed))
+           ((== key -9) ;; backspace
+            (ed/backspace-word ed))))
       ((== state 32) ;; meta
        (if ((== key ch/w) ;; M-w
             (ed/copy-region ed)
