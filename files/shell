@@ -20,7 +20,7 @@
 
 (fun (shell/paint-node inst index node)
   (var y (+ 28 (* 16 index)))
-  (shell/paint-string 24 y node)
+  (shell/paint-string 24 y (fs/node-name node))
   (if ((>= (shell/cur inst) 0)
        (if ((== index (shell/cur inst))
             (gfx/invert-rect 20 y 200 16)
@@ -33,7 +33,7 @@
   (var i 0)
   (var tmp)
   (while (and (u64 nodes i)
-              (> (str/cmp (u64 nodes i) node) 0))
+              (> (str/cmp (fs/node-name (u64 nodes i)) (fs/node-name node)) 0))
     (set i (+ i 1)))
   (while (u64 nodes i)
     (set tmp (u64 nodes i))

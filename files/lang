@@ -639,8 +639,11 @@
                (if (field-array-spec
                     (syntax-expand
                      (begin
-                       (def (?field-name ??ptr ??idx)
-                            (?field-accessor (+ ??ptr ?field-loc) ??idx))
+                       (def (?field-name ??ptr ??(idx))
+                            ??(if (idx
+                                   (syntax-expand (?field-accessor (+ ??ptr ?field-loc) ??idx)))
+                                  (else
+                                   (syntax-expand (+ ??ptr ?field-loc)))))
                        (defset (?field-name ??ptr ??idx) val
                                (set (?field-accessor (+ ??ptr ?field-loc) ??idx) ??val)))))
                    (else
