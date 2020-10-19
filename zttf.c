@@ -215,8 +215,9 @@ void render_pixels(Font *font, const char *id)
                 if (glyph->image.data == NULL)
                   continue;
 
-                printf ("(code %s.%d", id, glyph->code);
-                printf ("\n  (1 %d %d %d %d %d 0 0 0)",
+                printf ("(data %s_%d", id, glyph->code);
+                printf ("\n  (0");
+                printf ("\n    (1 %d %d %d %d %d 0 0 0)",
                         glyph->image.w,
                         glyph->image.h,
                         glyph->offset_x,
@@ -224,13 +225,13 @@ void render_pixels(Font *font, const char *id)
                         glyph->advance);
 		for(y=0; y<glyph->image.h; ++y)
                   {
-                    printf ("\n  (1");
+                    printf ("\n    (1");
                     for(x=0; x<glyph->image.w; ++x)
-                      printf (" 0x%02x",
+                      printf (" %d",
                               glyph->image.data[x+y*glyph->image.w] & 0xFF);
                     printf (")");
 		}
-                printf(")\n\n");
+                printf("))\n\n");
 	}
 }
 
@@ -238,22 +239,24 @@ void render_data(Font *font, const char *id)
 {
   unsigned i;
 
-  printf ("(code %s.glyphs", id);
+  printf ("(data %s_glyphs", id);
+  printf ("\n  (0");
   for(i=0; i<font->n_glyphs; ++i)
     {
       const Glyph *g=&font->glyphs[i];
       if (g->image.data)
         {
-          printf ("\n  (8 %s.%d)", id, g->code);
+          printf ("\n    (4 %s_%d)", id, g->code);
         }
       else
         {
-          printf ("\n  (8 0)");
+          printf ("\n    (4 0)");
         }
     }
-  printf (")\n\n");
+  printf ("))\n\n");
 
-  printf ("(code %s\n", id);
-  printf ("  (8 %s.glyphs)\n", id);
-  printf ("  (1 %d %d))\n", font->ascent, font->descent);
+  printf ("(data %s\n", id);
+  printf ("  (0\n");
+  printf ("    (4 %s_glyphs)\n", id);
+  printf ("    (1 %d %d)))\n", font->ascent, font->descent);
 }

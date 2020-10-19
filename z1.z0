@@ -1876,7 +1876,6 @@
   (8 sys-book-get .sys-book-get-name)
   (8 sys-book-search-fun .sys-book-search-fun-name)
   (8 sys-book-unref .sys-book-unref-name)
-  (8 mono .sys-mono-name)
   (8 0 0)
 .sys-call-name
   (1 "call" 0)
@@ -1889,9 +1888,7 @@
 .sys-book-search-fun-name
   (1 "book-search-fun" 0)
 .sys-book-unref-name
-  (1 "book-unref" 0)
-.sys-mono-name
-  (1 "mono" 0))
+  (1 "book-unref" 0))
 
 (code export-globals
   (push x1)
@@ -2586,6 +2583,110 @@
   (set (cc-level l1) 0)
   (ret))
 
+(code comp-data
+  (set l1 (ctxt-comp cp))
+  (cmp (cc-level l1) 0)
+  (jne syntax)
+  (parse-symbol l0 l1)
+  (parse-exp l0 l2)
+  (parse-eol l0)
+  (push l2)
+  (let l0 (u8 l1 (sizeof exp-symbol)))
+  (call book-check-current)
+  (push l1)
+  (call book-search)
+  (cmp l0 0)
+  (jne error-redef-global)
+  (pop l0)
+  (call globals-define)
+  (set (glb-type l0) def-type-func)
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-code-ptr l1))
+  (set (glb-val l0) l1)
+  (pop l0)
+  (call comp-data-body)
+  (ret))
+
+(code comp-data-table
+  (8 comp-data-body)  ; 0
+  (8 comp-data-u8)    ; 1
+  (8 comp-data-u16)   ; 2
+  (8 comp-data-u32)   ; 3
+  (8 comp-data-u64)   ; 4
+  comp-data-table-end)
+
+(def comp-data-table-size (>> (- comp-data-table-end comp-data-table) 3))
+
+(code comp-data-body
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (parse-num x0 l1 comp-data-table-size)
+  (set l0 comp-data-table)
+  (set x1 (u64 l0 l1))
+.next
+  (cmp x0 0)
+  (je .done)
+  (parse-exp x0 l0)
+  (call x1)
+  (jmp .next)
+.done
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code comp-data-eval
+  (assert-type l0 exp-type-number .not-number)
+  (set l0 (exp-num-val l0))
+  (ret)
+.not-number
+  (assert-type l0 exp-type-symbol .not-symbol)
+  (call lookup)
+  (cmp l0 def-type-func)
+  (jne syntax)
+  (set l0 l1)
+  (ret))
+
+(code comp-data-u64
+  (call comp-data-eval)
+  (push l0)
+  (call code-start)
+  (pop l1)
+  (set (u64 l0) l1)
+  (add l0 8)
+  (call code-end)
+  (ret))
+
+(code comp-data-u32
+  (call comp-data-eval)
+  (push l0)
+  (call code-start)
+  (pop l1)
+  (set (u32 l0) l1)
+  (add l0 4)
+  (call code-end)
+  (ret))
+
+(code comp-data-u16
+  (call comp-data-eval)
+  (push l0)
+  (call code-start)
+  (pop l1)
+  (set (u16 l0) l1)
+  (add l0 2)
+  (call code-end)
+  (ret))
+
+(code comp-data-u8
+  (call comp-data-eval)
+  (push l0)
+  (call code-start)
+  (pop l1)
+  (set (u8 l0) l1)
+  (add l0 1)
+  (call code-end)
+  (ret))
+
 (code comp-macro
   (set l1 (ctxt-comp cp))
   (cmp (cc-level l1) 0)
@@ -2681,23 +2782,24 @@
   (8 comp-begin)    ; 0
   (8 comp-func)     ; 1
   (8 comp-macro)    ; 2
-  (8 comp-label)    ; 3
-  (8 comp-goto)     ; 4
-  (8 comp-if)       ; 5
-  (8 comp-unop)     ; 6
-  (8 comp-binop)    ; 7
-  (8 comp-polop)    ; 8
-  (8 comp-var)      ; 9
-  (8 comp-set)      ; 10
-  (8 comp-loc)      ; 11
-  (8 comp-memref)   ; 12
-  (8 comp-memset)   ; 13
-  (8 comp-mem)      ; 14
-  (8 comp-ctxt)     ; 15
-  (8 comp-set-ctxt) ; 16
+  (8 comp-data)     ; 3
+  (8 comp-label)    ; 4
+  (8 comp-goto)     ; 5
+  (8 comp-if)       ; 6
+  (8 comp-unop)     ; 7
+  (8 comp-binop)    ; 8
+  (8 comp-polop)    ; 9
+  (8 comp-var)      ; 10
+  (8 comp-set)      ; 11
+  (8 comp-loc)      ; 12
+  (8 comp-memref)   ; 13
+  (8 comp-memset)   ; 14
+  (8 comp-mem)      ; 15
+  (8 comp-ctxt)     ; 16
+  (8 comp-set-ctxt) ; 17
   comp-expr-table-end)
 
-(def comp-first-local-only 3)
+(def comp-first-local-only 4)
 
 (def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
 

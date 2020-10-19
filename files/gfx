@@ -152,9 +152,8 @@
   (glyph-unused-2 u8)
   (glyph-unused-3 u8))
 
-(fun (gfx/glyph x y c)
+(fun (gfx/glyph font x y c)
   (var gfx (ctxt/gfx context))
-  (var font sys/mono)
   (var glyph 0)
   (if ((< c 128)
        (set glyph (u64 (gfx/font-glyphs font) c))))

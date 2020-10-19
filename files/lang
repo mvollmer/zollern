@@ -28,10 +28,10 @@
 
 (1 (lang/$defprim form)
   (0
-   (9 gensym) (10 gensym (exp/global (exp/gensym)))
-   (9 name-cell) (10 name-cell (exp/rest form))
-   (9 a-cell) (10 a-cell (exp/rest name-cell))
-   (9 b-cell) (10 b-cell (exp/rest a-cell))
+   (10 gensym) (11 gensym (exp/global (exp/gensym)))
+   (10 name-cell) (11 name-cell (exp/rest form))
+   (10 a-cell) (11 a-cell (exp/rest name-cell))
+   (10 b-cell) (11 b-cell (exp/rest a-cell))
    (exp/make-pair
     (exp/make-number 0)
     (exp/make-pair
@@ -45,12 +45,12 @@
          0))
        (exp/make-pair
         (exp/make-pair
-         (5 b-cell (exp/intern "$prim-2") (exp/intern "$prim-1"))
+         (6 b-cell (exp/intern "$prim-2") (exp/intern "$prim-1"))
          (exp/make-pair
           (exp/intern "form")
           (exp/make-pair
            (exp/first a-cell)
-           (5 b-cell
+           (6 b-cell
               (exp/make-pair
                (exp/first b-cell)
                0)
@@ -78,31 +78,32 @@
 (defprim lang/begin      0)
 (defprim lang/prim-fun   1)
 (defprim lang/prim-mac   2)
-(defprim lang/label      3)
-(defprim lang/goto       4)
-(defprim lang/prim-if    5)
-(defprim lang/prim-var   9)
-(defprim lang/set       10)
-(defprim lang/loc       11)
-(defprim lang/prim-mem  14)
+(defprim lang/data       3)
+(defprim lang/label      4)
+(defprim lang/goto       5)
+(defprim lang/prim-if    6)
+(defprim lang/prim-var  10)
+(defprim lang/set       11)
+(defprim lang/loc       12)
+(defprim lang/prim-mem  15)
 
-(defprim lang/prim-neg   6 0)
-(defprim lang/bit-not    6 1)
+(defprim lang/prim-neg   7 0)
+(defprim lang/bit-not    7 1)
 
-(defprim lang/==         7 0)
-(defprim lang/!=         7 1)
-(defprim lang/<          7 2)
-(defprim lang/<=         7 3)
-(defprim lang/>          7 4)
-(defprim lang/>=         7 5)
-(defprim lang/%          7 6)
+(defprim lang/==         8 0)
+(defprim lang/!=         8 1)
+(defprim lang/<          8 2)
+(defprim lang/<=         8 3)
+(defprim lang/>          8 4)
+(defprim lang/>=         8 5)
+(defprim lang/%          8 6)
 
-(defprim lang/+          8 0)
-(defprim lang/prim-minus 8 1)
-(defprim lang/*          8 2)
-(defprim lang//          8 3)
+(defprim lang/+          9 0)
+(defprim lang/prim-minus 9 1)
+(defprim lang/*          9 2)
+(defprim lang//          9 3)
 
-(defprim lang/prim-u64  12 3)
+(defprim lang/prim-u64  13 3)
 
 ;; Syntax templates, aka quasi-quote
 
@@ -480,9 +481,6 @@
                   (syntax-expand ?exp))
              (prim-mac ?name 2 ?$name)))))))
 
-(def (lang/defset-prim ?name ?a)
-  (defset (?name ??ptr) val (13 ?a ??ptr ??val)))
-
 ;; Memory access
 
 (fun (lang/sizeof sym)
@@ -503,16 +501,16 @@
     (def (?name ??ptr ??(idx))
          ??(if (idx
                 ?(if ((== (exp/number-value size) 1)
-                      (syntax-expand (syntax-expand (12 ?a (+ ??ptr ??idx)))))
+                      (syntax-expand (syntax-expand (13 ?a (+ ??ptr ??idx)))))
                      (else
-                      (syntax-expand (syntax-expand (12 ?a (+ ??ptr (* ??idx ?size))))))))
+                      (syntax-expand (syntax-expand (13 ?a (+ ??ptr (* ??idx ?size))))))))
                (else
-                (syntax-expand (12 ?a ??ptr)))))
+                (syntax-expand (13 ?a ??ptr)))))
     (defset (?name ??ptr ??(idx)) val
             ??(if (idx
-                   (syntax-expand (13 ?a (+ ??ptr (* ??idx ?size)) ??val)))
+                   (syntax-expand (14 ?a (+ ??ptr (* ??idx ?size)) ??val)))
                   (else
-                   (syntax-expand (13 ?a ??ptr ??val)))))))
+                   (syntax-expand (14 ?a ??ptr ??val)))))))
 
 (defprim-accessor lang/u8  1 0)
 (defprim-accessor lang/u16 2 1)
@@ -566,7 +564,7 @@
        (exp/number-value form))
       ((is-prim form 0)
        (const-expr (exp/first (exp/rest form))))
-      ((is-prim form 8)
+      ((is-prim form 9)
        (var op (exp/number-value (exp/first (exp/rest form))))
        (var args (exp/rest (exp/rest form)))
        (var res (const-expr (exp/first args)))
@@ -598,8 +596,8 @@
 
 ;; Context
 
-(def lang/context (15))
-(defset lang/context val (16 ?val))
+(def lang/context (16))
+(defset lang/context val (17 ?val))
 
 ;; Structs
 
