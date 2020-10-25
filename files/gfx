@@ -145,9 +145,9 @@
 (struct gfx/glyph-header
   (glyph-width    u8)
   (glyph-height   u8)
-  (glyph-offset-x u8)
-  (glyph-offset-y u8)
-  (glyph-advance  u8)
+  (glyph-offset-x s8)
+  (glyph-offset-y s8)
+  (glyph-advance  s8)
   (glyph-unused-1 u8)
   (glyph-unused-2 u8)
   (glyph-unused-3 u8))

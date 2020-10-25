@@ -14,6 +14,7 @@ z1: z0 pre.z0 std.z0 z1.z0
 files/fonts: zttf z
 	./zttf /usr/share/fonts/dejavu/DejaVuSansMono.ttf 14 fonts/mono >files/fonts
 	./zttf /usr/share/fonts/dejavu/DejaVuSans.ttf 14 fonts/sans >>files/fonts
+	./zttf /usr/share/fonts/dejavu/DejaVuSans.ttf 18 fonts/sans-l >>files/fonts
 
 zfb: zfb.c
 	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt
