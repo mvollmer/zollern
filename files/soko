@@ -1,0 +1,183 @@
+;; Sokoban
+
+(struct soko/data
+  quit
+  dozer-dir
+  dozer-x
+  dozer-y
+  (tiles u8 (* 20 20)))
+
+(fun (soko/paint-dozer x y dir)
+  (if ((== dir 0) ; up
+       (gfx/rect (+ x 10) (+ y 7) 10 20 (gfx/color 185 155 20))
+       (gfx/rect (+ x 2) (+ y 8) 5 18 (gfx/color 128 128 128))
+       (gfx/rect (+ x 23) (+ y 8) 5 18 (gfx/color 128 128 128))
+       (gfx/rect (+ x 2) y 26 4 (gfx/color 0 0 0)))
+      ((== dir 1) ; left
+       (gfx/rect (+ x 7) (+ y 10) 20 10 (gfx/color 185 155 20))
+       (gfx/rect (+ x 8) (+ y 2) 18 5 (gfx/color 128 128 128))
+       (gfx/rect (+ x 8) (+ y 23) 18 5 (gfx/color 128 128 128))
+       (gfx/rect x (+ y 2) 4 26 (gfx/color 0 0 0)))
+      ((== dir 2) ; down
+       (gfx/rect (+ x 10) (+ y 3) 10 20 (gfx/color 185 155 20))
+       (gfx/rect (+ x 2) (+ y 4) 5 18 (gfx/color 128 128 128))
+       (gfx/rect (+ x 23) (+ y 4) 5 18 (gfx/color 128 128 128))
+       (gfx/rect (+ x 2) (+ y 26) 26 4 (gfx/color 0 0 0)))
+      ((== dir 3) ; right
+       (gfx/rect (+ x 3) (+ y 10) 20 10 (gfx/color 185 155 20))
+       (gfx/rect (+ x 4) (+ y 2) 18 5 (gfx/color 128 128 128))
+       (gfx/rect (+ x 4) (+ y 23) 18 5 (gfx/color 128 128 128))
+       (gfx/rect (+ x 26) (+ y 2) 4 26 (gfx/color 0 0 0)))))
+
+(fun (soko/paint-box x y)
+  (gfx/rect (+ x 2) (+ y 2) 26 8 (gfx/color 128 80 10))
+  (gfx/rect (+ x 2) (+ y 11) 26 8 (gfx/color 128 80 10))
+  (gfx/rect (+ x 2) (+ y 20) 26 8 (gfx/color 128 80 10)))
+
+(fun (soko/paint-wall x y)
+  (gfx/rect x y 7 14 (gfx/color 168 80 10))
+  (gfx/rect (+ x 8) y 22 14 (gfx/color 168 80 10))
+  (gfx/rect x (+ y 15) 21 14 (gfx/color 168 80 10))
+  (gfx/rect (+ x 22) (+ y 15) 8 14 (gfx/color 168 80 10)))
+
+(fun (soko/paint-target x y)
+  (gfx/rect x y 30 30 (gfx/color 200 255 200)))
+
+(fun (soko/paint-level inst)
+  (gfx/rect 10 10 600 600 (gfx/color 255 255 255))
+  (var y 0)
+  (while (< y 20)
+    (var x 0)
+    (while (< x 20)
+      (var t (soko/tiles inst (+ x (* y 20))))
+      (if ((== t 1)
+           (soko/paint-wall (+ 10 (* x 30)) (+ 10 (* y 30))))
+          ((== t 2)
+           (soko/paint-target (+ 10 (* x 30)) (+ 10 (* y 30))))
+          ((== t 3)
+           (soko/paint-box (+ 10 (* x 30)) (+ 10 (* y 30))))
+          ((== t 4)
+           (soko/paint-target (+ 10 (* x 30)) (+ 10 (* y 30)))
+           (soko/paint-box (+ 10 (* x 30)) (+ 10 (* y 30)))))
+      (if ((and (== x (soko/dozer-x inst))
+                (== y (soko/dozer-y inst)))
+           (soko/paint-dozer (+ 10 (* x 30)) (+ 10 (* y 30)) (soko/dozer-dir inst))))
+      (set x (+ x 1)))
+    (set y (+ y 1)))
+  (gfx/show))
+           
+(fun (soko/init-level inst level)
+  (var y 0)
+  (while (< y 20)
+    (var x 0)
+    (while (< x 20)
+      (var idx (+ x (* y 20)))
+      (var t (u8 level idx))
+      (if ((== t 9)
+           (set (soko/dozer-x inst) x)
+           (set (soko/dozer-y inst) y)
+           (set (soko/dozer-dir inst) 0)
+           (set t 0)))
+      (set (soko/tiles inst idx) t)
+      (set x (+ x 1)))
+    (set y (+ y 1))))
+
+(fun (soko/move-box inst x y dx dy)
+  (var nx (+ x dx))
+  (var ny (+ y dy))
+  (if ((and (>= nx 0) (>= ny 0)
+            (< nx 20) (< ny 20))
+       (var t (soko/tiles inst (+ nx (* 20 ny))))
+       (if ((or (== t 0) (== t 2))
+            (if ((== t 0)
+                 (set (soko/tiles inst (+ nx (* 20 ny))) 3))
+                (else
+                 (set (soko/tiles inst (+ nx (* 20 ny))) 4)))
+            (if ((== (soko/tiles inst (+ x (* 20 y))) 3)
+                 (set (soko/tiles inst (+ x (* 20 y))) 0))
+                (else
+                 (set (soko/tiles inst (+ x (* 20 y))) 2)))
+            1)
+           (else
+            0)))
+      (else
+       0)))
+
+(fun (soko/move-dozer inst dir dx dy)
+  (set (soko/dozer-dir inst) dir)
+  (var x (+ (soko/dozer-x inst) dx))
+  (var y (+ (soko/dozer-y inst) dy))
+  (if ((and (>= x 0) (>= y 0)
+            (< x 20) (< y 20))
+       (var t (soko/tiles inst (+ x (* 20 y))))
+       (if ((or (== t 0)
+                (== t 2)
+                (and (or (== t 3) (== t 4))
+                     (soko/move-box inst x y dx dy)))
+            (set (soko/dozer-x inst) x)
+            (set (soko/dozer-y inst) y))))))
+
+(data soko/level-1
+  (0
+   (1 0 0 0 0 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 1 3 0 0 1 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 1 1 1 0 0 3 1 1 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 1 0 0 3 0 3 0 1 0 0 0 0 0 0 0 0 0 0)
+   (1 1 1 1 0 1 0 1 1 0 1 0 0 0 1 1 1 1 1 1 0)
+   (1 1 0 0 0 1 0 1 1 0 1 1 1 1 1 0 0 2 2 1 0)
+   (1 1 0 3 0 0 3 0 0 0 0 0 0 0 0 0 0 2 2 1 0)
+   (1 1 1 1 1 1 0 1 1 1 0 1 9 1 1 0 0 2 2 1 0)
+   (1 0 0 0 0 1 0 0 0 0 0 1 1 1 1 1 1 1 1 1 0)
+   (1 0 0 0 0 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+   (1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+
+;     #####
+;     #   #
+;     #$  #
+;   ###  $##
+;   #  $ $ #
+; ### # ## #   ######
+; #   # ## #####  ..#
+; # $  $          ..#
+; ##### ### #@##  ..#
+;     #     #########
+;     #######
+
+(fun (soko/input inst)
+  (mem event gfx/event)
+  (gfx/read-event event)
+  (if ((== (gfx/ev-type event) 1)
+       (sys/call 60 0))
+      ((== (gfx/ev-type event) 3)
+       (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
+       (soko/paint-level inst))
+      ((== (gfx/ev-type event) 2)
+       (var input (gfx/ev-input event))
+       (var state (gfx/ev-state event))
+       (if ((== input ch/q)
+            (set (soko/quit inst) 1))
+           ((== input -15) ; left
+            (soko/move-dozer inst 1 -1 0))
+           ((== input -16) ; up
+            (soko/move-dozer inst 0 0 -1))
+           ((== input -17) ; right
+            (soko/move-dozer inst 3 1 0))
+           ((== input -18) ; down
+            (soko/move-dozer inst 2 0 1))))))
+
+(fun (soko/main)
+  (mem inst soko/data)
+  (soko/init-level inst soko/level-1)
+  (set (soko/quit inst) 0)
+  (while (not (soko/quit inst))
+    (soko/paint-level inst)
+    (soko/input inst)))
