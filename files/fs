@@ -187,8 +187,9 @@
   (mem rbuf fs/rbuf)
   (if ((fs/open rbuf name)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node rbuf) fs/node-size)))
-       (set (u8 node) 0)
-       (fs/unref-node (fs/rbuf-node rbuf)))))
+       (set (fs/node-name node 0) 0)
+       (fs/unref-node (fs/rbuf-node rbuf))
+       (fs/close rbuf))))
 
 ;; Writing files
 
