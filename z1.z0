@@ -1159,26 +1159,40 @@
 (def (code-emit-1 ?ptr (begin ?first) ?repl)
   (code-emit-1 ?ptr ?first ?repl))
 
-(code code-alloc
+(code code-grow
   ;; l0 - size
-  ;; =>
-  ;; l0 - ptr
-  (push l0)
+  (cmp l0 PAGE_SIZE)
+  (jge .too-large)
   (set l1 (ctxt-comp cp))
   (set l2 (cc-code-ptr l1))
   (set l3 l2)
   (add l3 l0)
   (set l0 (cc-code-end l1))
   (cmp l3 l0)
-  (jae .new-page)
+  (jl .done)
+  (call code-new-page)
+.done
+  (ret)
+.too-large
+  (let l0 (u8 .too-large-string))
+  (jmp error)
+.too-large-string
+  (1 "too large" 0))
+
+(code code-alloc
+  ;; l0 - size
+  ;; =>
+  ;; l0 - ptr
+  (push l0)
+  (call code-grow)
   (pop l0)
+  (set l1 (ctxt-comp cp))
+  (set l2 (cc-code-ptr l1))
+  (set l3 l2)
+  (add l3 l0)
   (set l0 l2)
   (set (cc-code-ptr l1) l3)
-  (ret)
-.new-page
-  (call code-new-page)
-  (pop l0)
-  (jmp code-alloc))
+  (ret))
 
 (code code-start
   (set l1 (ctxt-comp cp))
@@ -2584,13 +2598,13 @@
   (ret))
 
 (code comp-data
+  (push x0)
   (set l1 (ctxt-comp cp))
   (cmp (cc-level l1) 0)
   (jne syntax)
   (parse-symbol l0 l1)
-  (parse-exp l0 l2)
+  (parse-exp l0 x0)
   (parse-eol l0)
-  (push l2)
   (let l0 (u8 l1 (sizeof exp-symbol)))
   (call book-check-current)
   (push l1)
@@ -2599,12 +2613,67 @@
   (jne error-redef-global)
   (pop l0)
   (call globals-define)
+  (push l0)
+  (set l0 x0)
+  (call comp-data-size-body)
+  (call code-grow)
+  (pop l0)
   (set (glb-type l0) def-type-func)
   (set l1 (ctxt-comp cp))
   (set l1 (cc-code-ptr l1))
   (set (glb-val l0) l1)
-  (pop l0)
+  (set l0 x0)
   (call comp-data-body)
+  (pop x0)
+  (ret))
+
+(code comp-data-size-table
+  (8 comp-data-size-body)  ; 0
+  (8 comp-data-size-u8)    ; 1
+  (8 comp-data-size-u16)   ; 2
+  (8 comp-data-size-u32)   ; 3
+  (8 comp-data-size-u64)   ; 4
+  comp-data-size-table-end)
+
+(def comp-data-size-table-size (>> (- comp-data-size-table-end comp-data-size-table) 3))
+
+(code comp-data-size-body
+  (push x0)
+  (push x1)
+  (push x2)
+  (set x0 l0)
+  (parse-num x0 l1 comp-data-size-table-size)
+  (set l0 comp-data-size-table)
+  (set x1 (u64 l0 l1))
+  (set x2 0)
+.next
+  (cmp x0 0)
+  (je .done)
+  (parse-exp x0 l0)
+  (call x1)
+  (add x2 l0)
+  (jmp .next)
+.done
+  (set l0 x2)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code comp-data-size-u64
+  (set l0 8)
+  (ret))
+
+(code comp-data-size-u32
+  (set l0 4)
+  (ret))
+
+(code comp-data-size-u16
+  (set l0 2)
+  (ret))
+
+(code comp-data-size-u8
+  (set l0 1)
   (ret))
 
 (code comp-data-table
