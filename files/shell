@@ -78,7 +78,7 @@
 
 (fun (shell/layout-for-create ed inst)
   (var x 24)
-  (var y (+ 28 (* 16 (shell/max inst))))
+  (var y (+ 32 (* 16 (shell/max inst))))
   (shell/paint inst)
   (gfx/rect 20 y 200 16 (gfx/color 255 255 255))
   (ed/resize ed 24 y (+ x 200) (+ y 20)))
