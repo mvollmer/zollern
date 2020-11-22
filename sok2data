@@ -1,0 +1,64 @@
+#! /bin/python
+
+level_count = 0
+
+level_width = 0
+level_height = 0
+level_tiles = [ ]
+
+def level_add(l):
+    global level_width, level_height, level_tiles
+    level_width = max(level_width, len(l)-1)
+    level_height += 1
+    tiles = [ ]
+    for t in l:
+        if t == '#':
+            tiles += [ 1 ]
+        elif t == '.':
+            tiles += [ 2 ]
+        elif t == '$':
+            tiles += [ 3 ]
+        elif t == '*':
+            tiles += [ 4 ]
+        elif t == '@':
+            tiles += [ 9 ]
+        elif t != "\n":
+            tiles += [ 0 ]
+    level_tiles += [ tiles ]
+
+def p(str):
+    print(str, end="")
+
+def level_end():
+    global level_count, level_width, level_height, level_tiles
+    if level_height > 0:
+        p("\n(data soko/level_%s" % level_count)
+        p("\n  (0")
+        p("\n    (1 %s %s)" % (level_width, level_height))
+        for y in range(0, level_height):
+            p("\n    (1")
+            for x in range(0, level_width):
+                if x < len(level_tiles[y]):
+                    p(" %s" % level_tiles[y][x])
+                else:
+                    p(" 0")
+            p(")")
+        p("))\n")
+        # print(level_width, level_height, level_tiles)
+        level_width = 0
+        level_height = 0
+        level_tiles = [ ]
+        level_count += 1
+
+for l in open("files/sokoban-levels").readlines():
+    if l.lstrip() != "" and l.lstrip()[0] == "#":
+        level_add(l)
+    else:
+        level_end()
+
+p("\n(data soko/levels")
+p("\n  (0")
+for l in range(0, level_count):
+    p("\n    (4 soko/level_%s)" % l)
+p("\n    (4 0)")
+p("))\n")
