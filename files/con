@@ -67,4 +67,4 @@
 
 (fun (con/in buf)
   (var ctxt (ctxt/con context))
-  (ed/ed buf 1 con/layout-last-line))
+  (ed/ed 0 buf 1 con/layout-last-line))

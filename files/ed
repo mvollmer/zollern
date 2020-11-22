@@ -73,8 +73,10 @@
 
 (struct ed/data
   ;; Window
-  (top u32)
   (lft u32)
+  (top u32)
+  (rgt u32)
+  (bot u32)
   (row-height u32)
   (col-width u32)
   (rows u32)
@@ -87,6 +89,7 @@
   (max u64)
   ;; Mode
   (mode u32)
+  (title u64)
   ;; Editing state
   (window-top u64)
   (mark u64)
@@ -125,7 +128,7 @@
 
 (fun (ed/clear ed)
   (gfx/rect (ed/lft ed) (ed/top ed)
-            (* (ed/cols ed) (ed/col-width ed)) (* (ed/rows ed) (ed/row-height ed))
+            (- (ed/rgt ed) (ed/lft ed)) (- (ed/bot ed) (ed/top ed))
             (gfx/color 255 255 255)))
 
 (fun (ed/paint-lines ed pos start-row n-rows)
@@ -177,10 +180,22 @@
        (set b (+ b (* (- n) (ed/cols ed))))))
   (set (ed/window-top ed) b))
 
+(fun (ed/paint-status-line ed)
+  (var x (ed/lft ed))
+  (var y (- (ed/bot ed) (ed/row-height ed)))
+  (var txt (ed/title ed))
+  (while (u8 txt)
+    (set x (+ x (gfx/glyph fonts/mono x y (u8 txt))))
+    (set txt (+ txt 1)))
+  (gfx/tint-rect (ed/lft ed) y (- (ed/rgt ed) (ed/lft ed)) (ed/row-height ed)
+                 200 200 200))
+
 (fun (ed/redisplay ed)
   (ed/frame ed)
   (ed/clear ed)
   (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed))
+  (if ((== (ed/mode ed) 0) 
+       (ed/paint-status-line ed)))
   (gfx/show))
 
 ;; Cursor movement
@@ -536,17 +551,22 @@
             (ed/command ed input state))))))
 
 (fun (ed/resize ed lft top rgt bot)
-  (set (ed/top ed) top)
   (set (ed/lft ed) lft)
+  (set (ed/top ed) top)
+  (set (ed/rgt ed) rgt)
+  (set (ed/bot ed) bot)
   (set (ed/row-height ed) (- (gfx/font-ascent fonts/mono) (gfx/font-descent fonts/mono)))
   (set (ed/col-width ed) (gfx/glyph fonts/mono 0 0 ch/spc))
   (set (ed/rows ed) (/ (- bot top) (ed/row-height ed)))
+  (if ((== (ed/mode ed) 0)
+       (set (ed/rows ed) (- (ed/rows ed) 1))))
   (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed))))
 
-(fun (ed/ed buf mode layout-cb layout-data)
+(fun (ed/ed title buf mode layout-cb layout-data)
   (mem ed ed/data)
   (set (ed/buf ed) buf)
   (set (ed/len ed) (ed/textbuf-len buf))
+  (set (ed/title ed) title)
   (set (ed/mode ed) mode)
   (set (ed/mark ed) -1)
   (set (ed/point ed) 0)
