@@ -71,6 +71,8 @@
       (else
        0)))
 
+(defconst ed/search-len-max 128)
+
 (struct ed/data
   ;; Window
   (lft u32)
@@ -90,6 +92,10 @@
   ;; Mode
   (mode u32)
   (title u64)
+  ;; Search state
+  (search-len s32)
+  (search-match-len s32)
+  (search-buf u8 ed/search-len-max)
   ;; Editing state
   (window-top u64)
   (mark u64)
@@ -156,6 +162,10 @@
       (if ((or (== pos (ed/highlight-1 ed))
                (== pos (ed/highlight-2 ed)))
            (gfx/tint-rect (- x w) y w h 250 200 0)))
+      (if ((and (>= (ed/search-len ed) 0)
+                (> pos (ed/point ed))
+                (< pos (+ (ed/point ed) (ed/search-match-len ed))))
+           (gfx/tint-rect (- x w) y w h 100 250 0)))
       (if ((>= pos end)
            (goto all-done)))
       (set pos (+ pos 1))
@@ -183,10 +193,25 @@
 (fun (ed/paint-status-line ed)
   (var x (ed/lft ed))
   (var y (- (ed/bot ed) (ed/row-height ed)))
-  (var txt (ed/title ed))
-  (while (u8 txt)
-    (set x (+ x (gfx/glyph fonts/mono x y (u8 txt))))
-    (set txt (+ txt 1)))
+  (if ((>= (ed/search-len ed) 0)
+       (set x (+ x (gfx/glyph fonts/mono x y ch/s)))
+       (set x (+ x (gfx/glyph fonts/mono x y ch/:)))
+       (set x (+ x (gfx/glyph fonts/mono x y ch/spc)))
+       (var buf (ed/search-buf ed))
+       (var len (ed/search-len ed))
+       (var i 0)
+       (while (< i len)
+         (var w (gfx/glyph fonts/mono x y (u8 buf)))
+         (if ((>= i (ed/search-match-len ed))
+              (gfx/tint-rect x y w (ed/row-height ed) 255 0 0)))
+         (set x (+ x w))
+         (set buf (+ buf 1))
+         (set i (+ i 1))))
+      (else
+       (var txt (ed/title ed))
+       (while (u8 txt)
+         (set x (+ x (gfx/glyph fonts/mono x y (u8 txt))))
+         (set txt (+ txt 1)))))
   (gfx/tint-rect (ed/lft ed) y (- (ed/rgt ed) (ed/lft ed)) (ed/row-height ed)
                  200 200 200))
 
@@ -194,7 +219,7 @@
   (ed/frame ed)
   (ed/clear ed)
   (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed))
-  (if ((== (ed/mode ed) 0) 
+  (if ((== (ed/mode ed) 0)
        (ed/paint-status-line ed)))
   (gfx/show))
 
@@ -259,6 +284,34 @@
   (while (and (< (ed/point ed) (ed/len ed))
               (ed/is-wordchar (ed/char ed (ed/point ed))))
     (ed/right ed)))
+
+(fun (ed/looking-at ed pos str)
+  (while (and (u8 str)
+              (< pos (ed/len ed))
+              (== (ed/char ed pos) (u8 str)))
+    (set str (+ str 1))
+    (set pos (+ pos 1)))
+  (== (u8 str) 0))
+
+(fun (ed/search-region ed pattern start end)
+  (var p start)
+  (while (and (< p end)
+              (not (ed/looking-at ed p pattern)))
+    (set p (+ p 1)))
+  (if ((ed/looking-at ed p pattern)
+       p)
+      (else
+       -1)))
+
+(fun (ed/search ed pattern)
+  (var p (ed/search-region ed pattern (ed/point ed) (ed/len ed)))
+  (if ((== p -1)
+       (set p (ed/search-region ed pattern 0 (ed/point ed)))))
+  (if ((>= p 0)
+       (set (ed/point ed) p)
+       1)
+      (else
+       0)))
 
 ;; Text modifications
 
@@ -353,14 +406,6 @@
        (if ((== c ch/rp)
             (set (ed/highlight-1 ed) p)
             (set (ed/highlight-2 ed) (ed/find-matching-opening-paren ed p)))))))
-
-(fun (ed/looking-at ed pos str)
-  (while (and (u8 str)
-              (< pos (ed/len ed))
-              (== (ed/char ed pos) (u8 str)))
-    (set str (+ str 1))
-    (set pos (+ pos 1)))
-  (== (u8 str) 0))
 
 (fun (ed/indent-to ed level)
   (var p (ed/point ed))
@@ -468,6 +513,32 @@
 
 ;; Keys
 
+(fun (ed/search-insert ed char)
+  (if ((< (ed/search-len ed) (- ed/search-len-max 1))
+       (set (u8 (ed/search-buf ed) (ed/search-len ed)) char)
+       (set (ed/search-len ed) (+ 1 (ed/search-len ed)))
+       (set (u8 (ed/search-buf ed) (ed/search-len ed)) 0)
+       (if ((ed/search ed (ed/search-buf ed))
+            (set (ed/search-match-len ed) (ed/search-len ed)))))))
+
+(fun (ed/search-command ed key state)
+  (if ((== state 0)
+       (if ((== key -9) ;; backspace
+            (if ((> (ed/search-len ed) 0)
+                 (set (ed/search-len ed) (- (ed/search-len ed) 1))
+                 (set (u8 (ed/search-buf ed) (ed/search-len ed)) 0))))
+           ((== key -11) ;; return
+            (set (ed/search-len ed) -1))))
+      ((== state 16) ;; control
+       (if ((== key ch/s) ;; C-s
+            (set (ed/search-len ed) (str/len (ed/search-buf ed)))
+            (if ((< (ed/point ed) (- (ed/len ed) 1))
+                 (set (ed/point ed) (+ (ed/point ed) 1))
+                 (if ((not (ed/search ed (ed/search-buf ed)))
+                      (set (ed/point ed) (- (ed/point ed) 1)))
+                     (else
+                      (set (ed/search-match-len ed) (ed/search-len ed))))))))))))
+
 (fun (ed/command ed key state)
   ;; (dbg/int "command" key)
   ;; (dbg/int "state" state)
@@ -518,6 +589,9 @@
             (ed/delete ed))
            ((== key ch/e) ;; C-e
             (ed/end-of-line ed))
+           ((== key ch/s) ;; C-s
+            (set (ed/search-len ed) 0)
+            (set (ed/search-match-len ed) 0))
            ((== key -15) ;; left
             (ed/left-word ed))
            ((== key -17) ;; right
@@ -546,9 +620,15 @@
        (var input (gfx/ev-input event))
        (var state (gfx/ev-state event))
        (if ((and (> input 0) (== state 0))
-            (ed/insert ed input))
+            (if ((>= (ed/search-len ed) 0)
+                 (ed/search-insert ed input))
+                (else
+                 (ed/insert ed input))))
            (else
-            (ed/command ed input state))))))
+            (if ((>= (ed/search-len ed) 0)
+                 (ed/search-command ed input state))
+                (else
+                 (ed/command ed input state))))))))
 
 (fun (ed/resize ed lft top rgt bot)
   (set (ed/lft ed) lft)
@@ -568,6 +648,8 @@
   (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/title ed) title)
   (set (ed/mode ed) mode)
+  (set (ed/search-len ed) -1)
+  (set (ed/search-buf ed 0) 0)
   (set (ed/mark ed) -1)
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
