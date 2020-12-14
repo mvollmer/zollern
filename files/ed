@@ -102,6 +102,8 @@
   (highlight-1 u64)
   (highlight-2 u64)
   (point u64)
+  (last-input s32)
+  (last-state s32)
   (quit u32))
 
 ;; Abstracting the buffer
@@ -487,19 +489,25 @@
 
 ;; Region
 
-(fun (ed/copy-region ed)
+(fun (ed/copy-region ed append)
   (if ((and (!= (ed/mark ed) -1)
             (< (ed/mark ed) (ed/point ed)))
        (mem wbuf fs/wbuf)
        (fs/create wbuf)
+       (if (append
+            (mem rbuf fs/rbuf)
+            (if ((fs/open rbuf ".clip")
+                 (while (fs/read rbuf)
+                   (fs/write wbuf (fs/rbuf-start rbuf) (fs/rbuf-size rbuf)))
+                 (fs/close rbuf)))))
        (ed/textbuf-write-region (ed/buf ed) wbuf
                                 (ed/mark ed) (- (ed/point ed) (ed/mark ed)))
        (fs/commit wbuf ".clip"))))
 
-(fun (ed/cut-region ed)
+(fun (ed/cut-region ed append)
   (if ((and (!= (ed/mark ed) -1)
             (< (ed/mark ed) (ed/point ed)))
-       (ed/copy-region ed)
+       (ed/copy-region ed append)
        (var n (- (ed/point ed) (ed/mark ed)))
        (set (ed/point ed) (ed/mark ed))
        (ed/delete-string ed n))))
@@ -510,6 +518,16 @@
        (while (fs/read rbuf)
          (ed/insert-string ed (fs/rbuf-start rbuf) (fs/rbuf-size rbuf)))
        (fs/close rbuf))))
+
+(fun (ed/kill-line ed append)
+  (var eol (ed/find-eol ed (ed/point ed)))
+  (if ((and (== eol (ed/point ed))
+            (< eol (ed/len ed)))
+       (set eol (+ eol 1))))
+  (set (ed/mark ed) (ed/point ed))
+  (set (ed/point ed) eol)
+  (ed/cut-region ed append)
+  (set (ed/mark ed) -1))
 
 ;; Keys
 
@@ -538,6 +556,10 @@
                       (set (ed/point ed) (- (ed/point ed) 1)))
                      (else
                       (set (ed/search-match-len ed) (ed/search-len ed))))))))))))
+
+(fun (ed/last-input-was ed key state)
+  (and (== (ed/last-input ed) key)
+       (== (ed/last-state ed) state)))
 
 (fun (ed/command ed key state)
   ;; (dbg/int "command" key)
@@ -579,7 +601,7 @@
            ((== key ch/g) ;; C-g
             (set (ed/mark ed) -1))
            ((== key ch/w) ;; C-w
-            (ed/cut-region ed)
+            (ed/cut-region ed 0)
             (set (ed/mark ed) -1))
            ((== key ch/y) ;; C-y
             (ed/paste ed))
@@ -592,6 +614,8 @@
            ((== key ch/s) ;; C-s
             (set (ed/search-len ed) 0)
             (set (ed/search-match-len ed) 0))
+           ((== key ch/k) ;; C-k
+            (ed/kill-line ed (ed/last-input-was ed key state)))
            ((== key -15) ;; left
             (ed/left-word ed))
            ((== key -17) ;; right
@@ -600,7 +624,7 @@
             (ed/backspace-word ed))))
       ((== state 32) ;; meta
        (if ((== key ch/w) ;; M-w
-            (ed/copy-region ed)
+            (ed/copy-region ed 0)
             (set (ed/mark ed) -1))
            ((== key ch/x) ;; M-x
             (set (ed/quit ed) 1))
@@ -628,7 +652,9 @@
             (if ((>= (ed/search-len ed) 0)
                  (ed/search-command ed input state))
                 (else
-                 (ed/command ed input state))))))))
+                 (ed/command ed input state)))))
+       (set (ed/last-input ed) input)
+       (set (ed/last-state ed) state))))
 
 (fun (ed/resize ed lft top rgt bot)
   (set (ed/lft ed) lft)
