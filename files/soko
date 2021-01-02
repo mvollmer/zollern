@@ -4,7 +4,6 @@
 (defconst soko/height 20)
 
 (struct soko/data
-  quit
   dozer-dir
   dozer-x
   dozer-y
@@ -133,47 +132,43 @@
             (set (soko/dozer-x inst) x)
             (set (soko/dozer-y inst) y))))))
 
-(fun (soko/input inst)
-  (mem event gfx/event)
-  (gfx/read-event event)
-  (if ((== (gfx/ev-type event) 1)
-       (sys/call 60 0))
-      ((== (gfx/ev-type event) 3)
-       (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
-       (soko/paint-level inst))
-      ((== (gfx/ev-type event) 2)
-       (var input (gfx/ev-input event))
-       (var state (gfx/ev-state event))
-       (if ((== input ch/q)
-            (set (soko/quit inst) 1))
-           ((== input ch/r)
-            (soko/init-level inst))
-           ((== input -15) ; left
-            (soko/move-dozer inst 1 -1 0))
-           ((== input -16) ; up
-            (soko/move-dozer inst 0 0 -1))
-           ((== input -17) ; right
-            (soko/move-dozer inst 3 1 0))
-           ((== input -18) ; down
-            (soko/move-dozer inst 2 0 1))
-           ((== input -19) ; page up
-            (if ((> (soko/cur-level inst) 0)
-                 (set (soko/cur-level inst) (- (soko/cur-level inst) 1))
-                 (soko/init-level inst))))
-           ((== input -20) ; page down
-            (if ((u64 (soko/levels inst) (+ (soko/cur-level inst) 1))
-                 (set (soko/cur-level inst) (+ (soko/cur-level inst) 1))
-                 (soko/init-level inst))))))))
+(fun (soko/efun-resize inst x y w h)
+  (soko/paint-level inst))
+
+(fun (soko/efun-input inst state input)
+  (if ((== input ch/q)
+       (gfx/loop-quit))
+      ((== input ch/r)
+       (soko/init-level inst))
+      ((== input -15) ; left
+       (soko/move-dozer inst 1 -1 0))
+      ((== input -16) ; up
+       (soko/move-dozer inst 0 0 -1))
+      ((== input -17) ; right
+       (soko/move-dozer inst 3 1 0))
+      ((== input -18) ; down
+       (soko/move-dozer inst 2 0 1))
+      ((== input -19) ; page up
+       (if ((> (soko/cur-level inst) 0)
+            (set (soko/cur-level inst) (- (soko/cur-level inst) 1))
+            (soko/init-level inst))))
+      ((== input -20) ; page down
+       (if ((u64 (soko/levels inst) (+ (soko/cur-level inst) 1))
+            (set (soko/cur-level inst) (+ (soko/cur-level inst) 1))
+            (soko/init-level inst)))))
+  (soko/paint-level inst))
+
+(data soko/efuns
+  (4 soko/efun-resize
+     soko/efun-input))
 
 (fun (soko/run levels)
   (mem inst soko/data)
   (set (soko/levels inst) levels)
   (set (soko/cur-level inst) 0)
   (soko/init-level inst)
-  (set (soko/quit inst) 0)
-  (while (not (soko/quit inst))
-    (soko/paint-level inst)
-    (soko/input inst)))
+  (soko/paint-level inst)
+  (gfx/loop inst soko/efuns))
 
 (data soko/level_0
   (0

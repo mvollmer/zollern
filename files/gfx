@@ -1,7 +1,8 @@
 (struct gfx/context
   gfx-screen-width
   gfx-screen-height
-  gfx-pixels)
+  gfx-pixels
+  gfx-loop-quit)
 
 (struct gfx/event
   (ev-type u16)
@@ -183,3 +184,28 @@
 (fun (gfx/put-pixel x y c)
   (var gfx (ctxt/gfx context))
   (set (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)) c))
+
+;; Event loop
+
+(struct gfx/event-functions
+  efun-resize
+  efun-input)
+
+(fun (gfx/loop-quit)
+  (var gfx (ctxt/gfx context))
+  (set (gfx/gfx-loop-quit gfx) 1))
+
+(fun (gfx/loop instance functions)
+  (var gfx (ctxt/gfx context))
+  (set (gfx/gfx-loop-quit gfx) 0)
+  (while (not (gfx/gfx-loop-quit gfx))
+    (mem event gfx/event)
+    (gfx/read-event event)
+    (if ((== (gfx/ev-type event) 1)
+         (sys/call 60 0))
+        ((== (gfx/ev-type event) 3)
+         (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
+         ((gfx/efun-resize functions) instance (gfx/width) (gfx/height)))
+        ((== (gfx/ev-type event) 2)
+         ((gfx/efun-input functions) instance (gfx/ev-state event) (gfx/ev-input event) (gfx/ev-x event) (gfx/ev-y event)))))
+  (set (gfx/gfx-loop-quit gfx) 0))

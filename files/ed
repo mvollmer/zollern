@@ -104,7 +104,11 @@
   (point u64)
   (last-input s32)
   (last-state s32)
-  (quit u32))
+  (exit-code u32))
+
+(fun (ed/quit ed code)
+  (set (ed/exit-code ed) code)
+  (gfx/loop-quit))
 
 ;; Abstracting the buffer
 
@@ -567,7 +571,7 @@
   (if ((== state 0)
        (if ((== key -11) ;; return
             (if ((== (ed/mode ed) 1)
-                 (set (ed/quit ed) 1))
+                 (ed/quit ed 1))
                 (else
                  (ed/insert ed 10))))
            ((== key -15) ;; left
@@ -627,34 +631,33 @@
             (ed/copy-region ed 0)
             (set (ed/mark ed) -1))
            ((== key ch/x) ;; M-x
-            (set (ed/quit ed) 1))
+            (ed/quit ed 1))
            ((== key ch/r) ;; M-r
-            (set (ed/quit ed) 2))))))
+            (ed/quit ed 2))))))
 
-(fun (ed/input ed)
-  (mem event gfx/event)
-  (gfx/read-event event)
-  (if ((== (gfx/ev-type event) 1)
-       (sys/call 60 0))
-      ((== (gfx/ev-type event) 3)
-       (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
-       ((ed/layout-cb ed) ed (ed/layout-data ed) (gfx/ev-x event) (gfx/ev-y event))
-       (ed/redisplay ed))
-      ((== (gfx/ev-type event) 2)
-       (var input (gfx/ev-input event))
-       (var state (gfx/ev-state event))
-       (if ((and (> input 0) (== state 0))
-            (if ((>= (ed/search-len ed) 0)
-                 (ed/search-insert ed input))
-                (else
-                 (ed/insert ed input))))
+(fun (ed/efun-resize ed x y width height)
+  ((ed/layout-cb ed) ed (ed/layout-data ed) width height)
+  (ed/redisplay ed))
+
+(fun (ed/efun-input ed state input)
+  (if ((and (> input 0) (== state 0))
+       (if ((>= (ed/search-len ed) 0)
+            (ed/search-insert ed input))
            (else
-            (if ((>= (ed/search-len ed) 0)
-                 (ed/search-command ed input state))
-                (else
-                 (ed/command ed input state)))))
-       (set (ed/last-input ed) input)
-       (set (ed/last-state ed) state))))
+            (ed/insert ed input))))
+      (else
+       (if ((>= (ed/search-len ed) 0)
+            (ed/search-command ed input state))
+           (else
+            (ed/command ed input state)))))
+  (set (ed/last-input ed) input)
+  (set (ed/last-state ed) state)
+  (ed/highlight ed)
+  (ed/redisplay ed))
+  
+(data ed/efuns
+  (4 ed/efun-resize
+     ed/efun-input))
 
 (fun (ed/resize ed lft top rgt bot)
   (set (ed/lft ed) lft)
@@ -679,14 +682,13 @@
   (set (ed/mark ed) -1)
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
-  (set (ed/quit ed) 0)
+  (set (ed/exit-code ed) 0)
   (set (ed/layout-cb ed) layout-cb)
   (set (ed/layout-data ed) layout-data)
   (layout-cb ed layout-data)
-  (while (not (ed/quit ed))
-    (ed/highlight ed)
-    (ed/redisplay ed)
-    (ed/input ed))
+  (ed/highlight ed)
+  (ed/redisplay ed)
+  (gfx/loop ed ed/efuns)
   (ed/clear ed)
   (set (ed/textbuf-len buf) (ed/len ed))
-  (ed/quit ed))
+  (ed/exit-code ed))
