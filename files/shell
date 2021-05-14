@@ -104,6 +104,15 @@
   (sys/page-put name)
   (set (shell/create-textbuf inst) 0))
 
+(fun (shell/wait-for-ret)
+  (shell/paint-string fonts/mono (- (gfx/width) 50) (- (gfx/height) 20) "RET")
+  (gfx/show)
+  (mem event gfx/event)
+  (while (begin
+           (gfx/read-event event)
+           (not (and (== (gfx/ev-type event) 2)
+                     (== (gfx/ev-input event) -11))))))
+
 (fun (shell/ed inst)
   (label again)
   (mem edbuf ed/textbuf)
@@ -121,12 +130,7 @@
        (set (shell/cur inst) -1)
        (if ((== exit-mode 2)
             (shell/run inst)
-            (con/out "RET")
-            (mem line ed/textbuf)
-            (ed/textbuf-init line)
-            (con/in line)
-            (ed/textbuf-fini line)
-            (con/out "\n")
+            (shell/wait-for-ret)
             (goto again))))))
 
 (fun (shell/remove inst)
