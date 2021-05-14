@@ -83,8 +83,6 @@
   (col-width u32)
   (rows u32)
   (cols u32)
-  (layout-cb u64)
-  (layout-data u64)
   ;; Buffer
   (buf u64)
   (len u64)
@@ -221,13 +219,25 @@
   (gfx/tint-rect (ed/lft ed) y (- (ed/rgt ed) (ed/lft ed)) (ed/row-height ed)
                  200 200 200))
 
-(fun (ed/redisplay ed)
+(fun (ed/resize ed x y w h)
+  (set (ed/lft ed) x)
+  (set (ed/top ed) y)
+  (set (ed/rgt ed) (+ x w))
+  (set (ed/bot ed) (+ y h))
+  (set (ed/row-height ed) (- (gfx/font-ascent fonts/mono) (gfx/font-descent fonts/mono)))
+  (set (ed/col-width ed) (gfx/glyph fonts/mono 0 0 ch/spc))
+  (set (ed/rows ed) (/ h (ed/row-height ed)))
+  (if ((== (ed/mode ed) 0)
+       (set (ed/rows ed) (- (ed/rows ed) 1))))
+  (set (ed/cols ed) (/ w (ed/col-width ed))))
+
+(fun (ed/paint ed x y w h)
+  (ed/resize ed x y w h)
   (ed/frame ed)
   (ed/clear ed)
   (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed))
   (if ((== (ed/mode ed) 0)
-       (ed/paint-status-line ed)))
-  (gfx/show))
+       (ed/paint-status-line ed))))
 
 ;; Cursor movement
 
@@ -635,11 +645,7 @@
            ((== key ch/r) ;; M-r
             (ed/quit ed 2))))))
 
-(fun (ed/efun-resize ed x y width height)
-  ((ed/layout-cb ed) ed (ed/layout-data ed) width height)
-  (ed/redisplay ed))
-
-(fun (ed/efun-input ed state input)
+(fun (ed/input ed state input)
   (if ((and (> input 0) (== state 0))
        (if ((>= (ed/search-len ed) 0)
             (ed/search-insert ed input))
@@ -652,26 +658,9 @@
             (ed/command ed input state)))))
   (set (ed/last-input ed) input)
   (set (ed/last-state ed) state)
-  (ed/highlight ed)
-  (ed/redisplay ed))
+  (ed/highlight ed))
 
-(data ed/efuns
-  (4 ed/efun-resize
-     ed/efun-input))
-
-(fun (ed/resize ed lft top rgt bot)
-  (set (ed/lft ed) lft)
-  (set (ed/top ed) top)
-  (set (ed/rgt ed) rgt)
-  (set (ed/bot ed) bot)
-  (set (ed/row-height ed) (- (gfx/font-ascent fonts/mono) (gfx/font-descent fonts/mono)))
-  (set (ed/col-width ed) (gfx/glyph fonts/mono 0 0 ch/spc))
-  (set (ed/rows ed) (/ (- bot top) (ed/row-height ed)))
-  (if ((== (ed/mode ed) 0)
-       (set (ed/rows ed) (- (ed/rows ed) 1))))
-  (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed))))
-
-(fun (ed/new title buf mode layout-cb layout-data)
+(fun (ed/new title buf mode)
   (var ed (sys/page-get))
   (set (ed/buf ed) buf)
   (set (ed/len ed) (ed/textbuf-len buf))
@@ -683,18 +672,21 @@
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
   (set (ed/exit-code ed) 0)
-  (set (ed/layout-cb ed) layout-cb)
-  (set (ed/layout-data ed) layout-data)
   ed)
 
 (fun (ed/free ed)
   (sys/page-put ed))
 
-(fun (ed/ed title buf mode layout-cb layout-data)
-  (var ed (ed/new title buf mode layout-cb layout-data))
-  (layout-cb ed layout-data)
+(fun (ed/paint-with-border ed x y w h)
+  (ed/paint ed (+ x 4) (+ y 4) (- w 8) (- h 8)))
+
+(data ed/efuns
+  (4 ed/paint-with-border
+     ed/input))
+
+(fun (ed/ed title buf mode)
+  (var ed (ed/new title buf mode))
   (ed/highlight ed)
-  (ed/redisplay ed)
   (gfx/loop ed ed/efuns)
   (ed/clear ed)
   (set (ed/textbuf-len buf) (ed/len ed))

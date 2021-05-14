@@ -53,18 +53,6 @@
            n))
   (con/out ptr))
 
-(fun (con/layout-last-line ed)
-  (var ctxt (ctxt/con context))
-  (if ((or (!= (con/screen-width ctxt) (gfx/width))
-           (!= (con/screen-height ctxt) (gfx/height)))
-       (gfx/rect 0 0 (gfx/width) (gfx/height) (gfx/color 255 255 255))
-       (set (con/screen-width ctxt) (gfx/width))
-       (set (con/screen-height ctxt) (gfx/height))
-       (set (con/cursor-x ctxt) 0)))
-  (ed/resize ed
-             (con/cursor-x ctxt) (- (gfx/height) (con/line-height ctxt))
-             (gfx/width) (gfx/height)))
-
 (fun (con/in buf)
   (var ctxt (ctxt/con context))
-  (ed/ed 0 buf 1 con/layout-last-line))
+  (ed/ed 0 buf 1)) ;; XXX

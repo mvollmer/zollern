@@ -188,16 +188,21 @@
 ;; Event loop
 
 (struct gfx/event-functions
-  efun-resize
+  efun-paint
   efun-input)
 
 (fun (gfx/loop-quit)
   (var gfx (ctxt/gfx context))
   (set (gfx/gfx-loop-quit gfx) 1))
 
+(fun (gfx/paint instance functions)
+  ((gfx/efun-paint functions) instance 0 0 (gfx/width) (gfx/height))
+  (gfx/show))
+
 (fun (gfx/loop instance functions)
   (var gfx (ctxt/gfx context))
   (set (gfx/gfx-loop-quit gfx) 0)
+  (gfx/paint instance functions)
   (while (not (gfx/gfx-loop-quit gfx))
     (mem event gfx/event)
     (gfx/read-event event)
@@ -205,7 +210,10 @@
          (sys/call 60 0))
         ((== (gfx/ev-type event) 3)
          (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
-         ((gfx/efun-resize functions) instance (gfx/width) (gfx/height)))
+         (gfx/paint instance functions))
         ((== (gfx/ev-type event) 2)
-         ((gfx/efun-input functions) instance (gfx/ev-state event) (gfx/ev-input event) (gfx/ev-x event) (gfx/ev-y event)))))
+         ((gfx/efun-input functions) instance
+                          (gfx/ev-state event) (gfx/ev-input event)
+                          (gfx/ev-x event) (gfx/ev-y event))
+         (gfx/paint instance functions))))
   (set (gfx/gfx-loop-quit gfx) 0))

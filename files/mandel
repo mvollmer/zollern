@@ -49,9 +49,9 @@
     (set y (+ y 1)))
   (gfx/show))
 
-(fun (mandel/efun-resize inst x y w h))
+(fun (mandel/paint inst x y w h))
 
-(fun (mandel/efun-input inst state input event-x event-y)
+(fun (mandel/input inst state input event-x event-y)
   (if ((== input -11)
        (gfx/loop-quit))
       ((== input -9)
@@ -76,8 +76,8 @@
        (mandel/render inst))))
 
 (data mandel/efuns
-  (4 mandel/efun-resize
-     mandel/efun-input))
+  (4 mandel/paint
+     mandel/input))
 
 (fun (mandel/main)
   (mem inst mandel/data)

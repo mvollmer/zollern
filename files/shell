@@ -20,16 +20,16 @@
          (set x (+ x (gfx/glyph font x y (u8 str))))))
     (set str (+ str 1))))
 
-(fun (shell/paint-node inst index node)
-  (var y (+ 32 (* 16 index)))
-  (shell/paint-string fonts/sans 24 y (fs/node-name node))
+(fun (shell/paint-node inst x y index node)
+  (set y (+ y 32 (* 16 index)))
+  (shell/paint-string fonts/sans (+ x 24) y (fs/node-name node))
   (if ((>= (shell/cur inst) 0)
        (if ((== index (shell/cur inst))
-            (gfx/invert-rect 20 y 200 16)
+            (gfx/invert-rect (+ x 20) y 200 16)
             (str/cpy (shell/cur-name inst) node))))
       ((str/eq (shell/cur-name inst) node)
        (set (shell/cur inst) index)
-       (gfx/invert-rect 20 y 200 16))))
+       (gfx/invert-rect (+ x 20) y 200 16))))
 
 (fun (shell/insert-node node nodes)
   (var i 0)
@@ -45,28 +45,26 @@
   (set (u64 nodes i) node)
   (set (u64 nodes (+ i 1)) 0))
 
-(fun (shell/paint inst)
+(fun (shell/paint inst x y w h)
   (mem nodes (* 128 u64))
   (set (u64 nodes 0) 0)
   (fs/list shell/insert-node nodes)
-  (gfx/rect 0 0 (gfx/width) (gfx/height) (gfx/color 255 255 255))
-  (shell/paint-string fonts/sans-l 4 4 "Welcome to Zollern")
+  (gfx/rect x y w h (gfx/color 255 255 255))
+  (shell/paint-string fonts/sans-l (+ x 4) (+ y 4) "Welcome to Zollern")
   (var i 0)
   (while (u64 nodes i)
-    (shell/paint-node inst i (u64 nodes i))
+    (shell/paint-node inst x y i (u64 nodes i))
     (set i (+ i 1)))
   (set (shell/max inst) i)
-  (var y (+ 32 (* 16 i)))
+  (set y (+ y 32 (* 16 i)))
   (if ((shell/create-ed inst)
-       (ed/resize (shell/create-ed inst) 24 y 224 (+ y 20))
-       (ed/redisplay (shell/create-ed inst)))
+       (ed/paint (shell/create-ed inst) (+ x 24) y 200 20))
       (else
-       (shell/paint-string fonts/mono 24 y "________________")
+       (shell/paint-string fonts/mono (+ x 24) y "________________")
        (if ((== (shell/cur inst) (shell/max inst))
             (str/cpy (shell/cur-name inst) "")
-            (gfx/invert-rect 20 y 200 16)))))
-  (shell/paint-string fonts/mono 24 (+ y 56) (shell/output inst))
-  (gfx/show))
+            (gfx/invert-rect (+ x 20) y 200 16)))))
+  (shell/paint-string fonts/mono (+ x 24) (+ y 56) (shell/output inst)))
 
 (fun (shell/capture-output str inst)
   (str/cpy (shell/output-ptr inst) str)
@@ -81,26 +79,6 @@
            (else
             (shell/capture-output "no main function\n" inst)))
        (sys/book-unref book))))
-
-(fun (shell/layout-for-create ed inst)
-  (var x 24)
-  (var y (+ 32 (* 16 (shell/max inst))))
-  (shell/paint inst)
-  (gfx/rect 20 y 200 16 (gfx/color 255 255 255))
-  (ed/resize ed 24 y (+ x 200) (+ y 20)))
-
-(fun (shell/create inst)
-  (mem name ed/textbuf)
-  (ed/textbuf-init name)
-  (ed/ed 0 name 1 shell/layout-for-create inst)
-  (var str (ed/textbuf-maybe-as-string name))
-  (if ((and str (u8 str))
-       (mem wbuf fs/wbuf)
-       (fs/create wbuf)
-       (fs/commit wbuf str)
-       (set (shell/cur inst) -1)
-       (str/cpy (shell/cur-name inst) str)))
-  (ed/textbuf-fini name))
 
 (fun (shell/start-create inst)
   (var name (sys/page-get))
@@ -126,9 +104,6 @@
   (sys/page-put name)
   (set (shell/create-textbuf inst) 0))
 
-(fun (shell/layout-fullscreen ed inst)
-  (ed/resize ed 4 4 (- (gfx/width) 4) (- (gfx/height) 4)))
-
 (fun (shell/ed inst)
   (label again)
   (mem edbuf ed/textbuf)
@@ -138,7 +113,7 @@
   (if ((fs/open rbuf (shell/cur-name inst))
        (ed/textbuf-read-file edbuf rbuf)
        (fs/close rbuf)
-       (var exit-mode (ed/ed (shell/cur-name inst) edbuf 0 shell/layout-fullscreen inst))
+       (var exit-mode (ed/ed (shell/cur-name inst) edbuf 0))
        (fs/create wbuf)
        (ed/textbuf-write-file edbuf wbuf)
        (fs/commit wbuf (shell/cur-name inst))
@@ -163,10 +138,7 @@
   (set (shell/output-ptr inst) (shell/output inst))
   (shell/capture-output "RET - edit\n  r - run\n  X - delete\n  q - reset\n  Q - halt" inst))
 
-(fun (shell/efun-resize inst x y w h)
-  (shell/paint inst))
-
-(fun (shell/efun-input inst state input)
+(fun (shell/input inst state input)
   (var ed (shell/create-ed inst))
   (if ((== input -11)
        (if (ed
@@ -176,7 +148,7 @@
            (else
             (shell/start-create inst))))
       (ed
-       (ed/efun-input ed state input))
+       (ed/input ed state input))
       ((== input ch/q)
        (gfx/loop-quit))
       ((== input -16)
@@ -192,12 +164,11 @@
       ((== input ch/Q)
        (sys/call 60 0))
       ((== input ch/h)
-       (shell/help inst)))
-  (shell/paint inst))
+       (shell/help inst))))
 
 (data shell/efuns
-  (4 shell/efun-resize
-     shell/efun-input))
+  (4 shell/paint
+     shell/input))
 
 (fun (shell/main)
   (var inst (sys/page-get))
@@ -207,7 +178,6 @@
   (set (u8 (shell/cur-name inst)) 0)
   (set (shell/output inst) (+ inst shell/instance 512))
   (set (u8 (shell/output inst)) 0)
-  (shell/paint inst)
   (set (shell/create-textbuf inst) 0)
   (set (shell/create-ed inst) 0)
   (gfx/loop inst shell/efuns)

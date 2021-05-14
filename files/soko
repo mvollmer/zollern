@@ -74,8 +74,7 @@
                 (== y (soko/dozer-y inst)))
            (soko/paint-dozer px py (soko/dozer-dir inst))))
       (set x (+ x 1)))
-    (set y (+ y 1)))
-  (gfx/show))
+    (set y (+ y 1))))
 
 (fun (soko/init-level inst)
   (var level (u64 (soko/levels inst) (soko/cur-level inst)))
@@ -132,10 +131,10 @@
             (set (soko/dozer-x inst) x)
             (set (soko/dozer-y inst) y))))))
 
-(fun (soko/efun-resize inst x y w h)
+(fun (soko/paint inst x y w h)
   (soko/paint-level inst))
 
-(fun (soko/efun-input inst state input)
+(fun (soko/input inst state input)
   (if ((== input ch/q)
        (gfx/loop-quit))
       ((== input ch/r)
@@ -155,19 +154,17 @@
       ((== input -20) ; page down
        (if ((u64 (soko/levels inst) (+ (soko/cur-level inst) 1))
             (set (soko/cur-level inst) (+ (soko/cur-level inst) 1))
-            (soko/init-level inst)))))
-  (soko/paint-level inst))
+            (soko/init-level inst))))))
 
 (data soko/efuns
-  (4 soko/efun-resize
-     soko/efun-input))
+  (4 soko/paint
+     soko/input))
 
 (fun (soko/run levels)
   (mem inst soko/data)
   (set (soko/levels inst) levels)
   (set (soko/cur-level inst) 0)
   (soko/init-level inst)
-  (soko/paint-level inst)
   (gfx/loop inst soko/efuns))
 
 (data soko/level_0
