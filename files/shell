@@ -4,7 +4,9 @@
   cur-name
   max
   output
-  output-ptr)
+  output-ptr
+  create-textbuf
+  create-ed)
 
 (fun (shell/paint-string font x y str)
   (var ox x)
@@ -55,11 +57,15 @@
     (set i (+ i 1)))
   (set (shell/max inst) i)
   (var y (+ 32 (* 16 i)))
-  (shell/paint-string fonts/mono 24 y "________________")
-  (if ((== (shell/cur inst) (shell/max inst))
-       (str/cpy (shell/cur-name inst) "")
-       (gfx/invert-rect 20 y 200 16)))
-  (shell/paint-string fonts/mono 24 (+ y 40) (shell/output inst))
+  (if ((shell/create-ed inst)
+       (ed/resize (shell/create-ed inst) 24 y 224 (+ y 20))
+       (ed/redisplay (shell/create-ed inst)))
+      (else
+       (shell/paint-string fonts/mono 24 y "________________")
+       (if ((== (shell/cur inst) (shell/max inst))
+            (str/cpy (shell/cur-name inst) "")
+            (gfx/invert-rect 20 y 200 16)))))
+  (shell/paint-string fonts/mono 24 (+ y 56) (shell/output inst))
   (gfx/show))
 
 (fun (shell/capture-output str inst)
@@ -95,6 +101,30 @@
        (set (shell/cur inst) -1)
        (str/cpy (shell/cur-name inst) str)))
   (ed/textbuf-fini name))
+
+(fun (shell/start-create inst)
+  (var name (sys/page-get))
+  (ed/textbuf-init name)
+  (var ed (ed/new 0 name 1))
+  (set (shell/create-textbuf inst) name)
+  (set (shell/create-ed inst) ed))
+
+(fun (shell/end-create inst)
+  (var name (shell/create-textbuf inst))
+  (var ed (shell/create-ed inst))
+  (set (ed/textbuf-len name) (ed/len ed)) ; XXX
+  (ed/free ed)
+  (set (shell/create-ed inst) 0)
+  (var str (ed/textbuf-maybe-as-string name))
+  (if ((and str (u8 str))
+       (mem wbuf fs/wbuf)
+       (fs/create wbuf)
+       (fs/commit wbuf str)
+       (set (shell/cur inst) -1)
+       (str/cpy (shell/cur-name inst) str)))
+  (ed/textbuf-fini name)
+  (sys/page-put name)
+  (set (shell/create-textbuf inst) 0))
 
 (fun (shell/layout-fullscreen ed inst)
   (ed/resize ed 4 4 (- (gfx/width) 4) (- (gfx/height) 4)))
@@ -137,7 +167,17 @@
   (shell/paint inst))
 
 (fun (shell/efun-input inst state input)
-  (if ((== input ch/q)
+  (var ed (shell/create-ed inst))
+  (if ((== input -11)
+       (if (ed
+            (shell/end-create inst))
+           ((u8 (shell/cur-name inst))
+            (shell/ed inst))
+           (else
+            (shell/start-create inst))))
+      (ed
+       (ed/efun-input ed state input))
+      ((== input ch/q)
        (gfx/loop-quit))
       ((== input -16)
        (if ((> (shell/cur inst) 0)
@@ -145,11 +185,6 @@
       ((== input -18)
        (if ((< (shell/cur inst) (shell/max inst))
             (set (shell/cur inst) (+ (shell/cur inst) 1)))))
-      ((== input -11)
-       (if ((u8 (shell/cur-name inst))
-            (shell/ed inst))
-           (else
-            (shell/create inst))))
       ((== input ch/r)
        (shell/run inst))
       ((== input ch/X)
@@ -173,5 +208,7 @@
   (set (shell/output inst) (+ inst shell/instance 512))
   (set (u8 (shell/output inst)) 0)
   (shell/paint inst)
+  (set (shell/create-textbuf inst) 0)
+  (set (shell/create-ed inst) 0)
   (gfx/loop inst shell/efuns)
   (sys/page-put inst))

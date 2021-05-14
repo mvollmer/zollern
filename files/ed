@@ -654,7 +654,7 @@
   (set (ed/last-state ed) state)
   (ed/highlight ed)
   (ed/redisplay ed))
-  
+
 (data ed/efuns
   (4 ed/efun-resize
      ed/efun-input))
@@ -671,8 +671,8 @@
        (set (ed/rows ed) (- (ed/rows ed) 1))))
   (set (ed/cols ed) (/ (- rgt lft) (ed/col-width ed))))
 
-(fun (ed/ed title buf mode layout-cb layout-data)
-  (mem ed ed/data)
+(fun (ed/new title buf mode layout-cb layout-data)
+  (var ed (sys/page-get))
   (set (ed/buf ed) buf)
   (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/title ed) title)
@@ -685,10 +685,19 @@
   (set (ed/exit-code ed) 0)
   (set (ed/layout-cb ed) layout-cb)
   (set (ed/layout-data ed) layout-data)
+  ed)
+
+(fun (ed/free ed)
+  (sys/page-put ed))
+
+(fun (ed/ed title buf mode layout-cb layout-data)
+  (var ed (ed/new title buf mode layout-cb layout-data))
   (layout-cb ed layout-data)
   (ed/highlight ed)
   (ed/redisplay ed)
   (gfx/loop ed ed/efuns)
   (ed/clear ed)
   (set (ed/textbuf-len buf) (ed/len ed))
-  (ed/exit-code ed))
+  (var exit-code (ed/exit-code ed))
+  (ed/free ed)
+  exit-code)
