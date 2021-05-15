@@ -90,7 +90,6 @@
 (fun (shell/end-create inst)
   (var name (shell/create-textbuf inst))
   (var ed (shell/create-ed inst))
-  (set (ed/textbuf-len name) (ed/len ed)) ; XXX
   (ed/free ed)
   (set (shell/create-ed inst) 0)
   (var str (ed/textbuf-maybe-as-string name))

@@ -85,8 +85,6 @@
   (cols u32)
   ;; Buffer
   (buf u64)
-  (len u64)
-  (max u64)
   ;; Mode
   (title u64)
   ;; Search state
@@ -114,6 +112,12 @@
 
 (defset (ed/char ?ed ?pos) char
   (ed/textbuf-set-char (ed/buf ?ed) ?pos ?char))
+
+(def (ed/len ?ed)
+  (ed/textbuf-len (ed/buf ?ed)))
+
+(defset (ed/len ?ed) len
+  (set (ed/textbuf-len (ed/buf ?ed)) ?len))
 
 ;; Scanning
 
@@ -659,7 +663,6 @@
 (fun (ed/new title buf)
   (var ed (sys/page-get))
   (set (ed/buf ed) buf)
-  (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/title ed) title)
   (set (ed/search-len ed) -1)
   (set (ed/search-buf ed 0) 0)
@@ -684,7 +687,6 @@
   (ed/highlight ed)
   (gfx/loop ed ed/efuns)
   (ed/clear ed)
-  (set (ed/textbuf-len buf) (ed/len ed))
   (var exit-code (ed/exit-code ed))
   (ed/free ed)
   exit-code)
