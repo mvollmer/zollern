@@ -83,7 +83,7 @@
 (fun (shell/start-create inst)
   (var name (sys/page-get))
   (ed/textbuf-init name)
-  (var ed (ed/new 0 name 1))
+  (var ed (ed/new 0 name))
   (set (shell/create-textbuf inst) name)
   (set (shell/create-ed inst) ed))
 
@@ -122,7 +122,7 @@
   (if ((fs/open rbuf (shell/cur-name inst))
        (ed/textbuf-read-file edbuf rbuf)
        (fs/close rbuf)
-       (var exit-mode (ed/ed (shell/cur-name inst) edbuf 0))
+       (var exit-mode (ed/ed (shell/cur-name inst) edbuf))
        (fs/create wbuf)
        (ed/textbuf-write-file edbuf wbuf)
        (fs/commit wbuf (shell/cur-name inst))

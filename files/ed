@@ -88,7 +88,6 @@
   (len u64)
   (max u64)
   ;; Mode
-  (mode u32)
   (title u64)
   ;; Search state
   (search-len s32)
@@ -227,7 +226,7 @@
   (set (ed/row-height ed) (- (gfx/font-ascent fonts/mono) (gfx/font-descent fonts/mono)))
   (set (ed/col-width ed) (gfx/glyph fonts/mono 0 0 ch/spc))
   (set (ed/rows ed) (/ h (ed/row-height ed)))
-  (if ((== (ed/mode ed) 0)
+  (if ((ed/title ed)
        (set (ed/rows ed) (- (ed/rows ed) 1))))
   (set (ed/cols ed) (/ w (ed/col-width ed))))
 
@@ -236,7 +235,7 @@
   (ed/frame ed)
   (ed/clear ed)
   (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed))
-  (if ((== (ed/mode ed) 0)
+  (if ((ed/title ed)
        (ed/paint-status-line ed))))
 
 ;; Cursor movement
@@ -580,10 +579,7 @@
   ;; (dbg/int "state" state)
   (if ((== state 0)
        (if ((== key -11) ;; return
-            (if ((== (ed/mode ed) 1)
-                 (ed/quit ed 1))
-                (else
-                 (ed/insert ed 10))))
+            (ed/insert ed 10))
            ((== key -15) ;; left
             (ed/left ed))
            ((== key -17) ;; right
@@ -660,12 +656,11 @@
   (set (ed/last-state ed) state)
   (ed/highlight ed))
 
-(fun (ed/new title buf mode)
+(fun (ed/new title buf)
   (var ed (sys/page-get))
   (set (ed/buf ed) buf)
   (set (ed/len ed) (ed/textbuf-len buf))
   (set (ed/title ed) title)
-  (set (ed/mode ed) mode)
   (set (ed/search-len ed) -1)
   (set (ed/search-buf ed 0) 0)
   (set (ed/mark ed) -1)
@@ -684,8 +679,8 @@
   (4 ed/paint-with-border
      ed/input))
 
-(fun (ed/ed title buf mode)
-  (var ed (ed/new title buf mode))
+(fun (ed/ed title buf)
+  (var ed (ed/new title buf))
   (ed/highlight ed)
   (gfx/loop ed ed/efuns)
   (ed/clear ed)
