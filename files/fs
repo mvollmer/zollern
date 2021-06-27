@@ -91,7 +91,7 @@
                     fs/block-count
                     "disk block count")
   (dbg/assert-less-or-equal fs/state mem/page-size "fs/state size")
-  (var state (sys/page-get))
+  (var state (mem/alloc fs/state))
   (set (ctxt/fs context) state)
   (var i 0)
   (while (< i fs/block-count)

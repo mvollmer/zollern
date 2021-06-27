@@ -102,6 +102,8 @@
 (defprim lang/prim-minus 9 1)
 (defprim lang/*          9 2)
 (defprim lang//          9 3)
+(defprim lang/bit-and    9 4)
+(defprim lang/bit-or     9 5)
 
 (defprim lang/prim-u64  13 3)
 

@@ -1,5 +1,6 @@
 (fun (boot/start)
   (mem/init)
+  (mem/init-alloc)
   (fs/init)
   (gfx/init)
   (while 1

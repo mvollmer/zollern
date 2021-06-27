@@ -1,8 +1,136 @@
 (struct mem/context
-  mem-next
-  mem-end)
+  mem-avail)
 
 (defconst mem/page-size (* 16 1024))
+
+(fun (mem/cpy dst src size)
+  (while (> size 0)
+    (set (u8 dst) (u8 src))
+    (set dst (+ dst 1))
+    (set src (+ src 1))
+    (set size (- size 1))))
+
+;; Dynamic memory allocation
+;;
+;; We keep a list of available memory regions, sorted by address.  The list is circular,
+;; and there is one link that points back to lower addresses, all the other links point
+;; to higher addresses.  There is one entry in the list that will never be allocated and
+;; never be merged with its neighbors.  This way, the list is never empty, which lets us
+;; avoid a couple of annoying boundary conditions.
+;;
+;; We get more memory via sys/page-get and never return any.
+;;
+;; This is straight from Knuth and "Programming in C".
+
+(struct mem/avail-region
+  ar-size
+  ar-link)
+
+(fun (mem/dbg-avail)
+  (dbg/out "AVAIL\n")
+  (var p (mem/mem-avail (ctxt/mem context)))
+  (var q p)
+  (while (begin
+           (dbg/int "  block" q)
+           (dbg/int "    size" (mem/ar-size q))
+           (set q (mem/ar-link q))
+           (not (== p q)))))
+
+(fun (mem/alloc size)
+  (dbg/int "ALLOC" size)
+  (if ((== size 0)
+       (set size 1)))
+  (set size (bit-and (+ size 7 8) (bit-not 7)))
+  (dbg/int "  adjusted" size)
+  (var avail (mem/mem-avail (ctxt/mem context)))
+  (var p avail)
+  (var q (mem/ar-link p))
+  (var r 0)
+  (while 1
+    (dbg/int "  on" q)
+    (var k (- (mem/ar-size q) size))
+    (dbg/int "    left" k)
+    (if ((> k 0)
+         (if ((< k mem/avail-region)
+              (set r q)
+              (set (mem/ar-link p) (mem/ar-link q)))
+             (else
+              (set r (+ q k))
+              (set (mem/ar-size q) k)))
+         (set (u64 r) size)
+         (set r (+ r 8))
+         (goto done)))
+    (set p q)
+    (set q (mem/ar-link p))
+    (if ((== p avail)
+         ;; XXX - get more mem
+         (dbg/out "OUT OF MEMORY\n")
+         (sys/call 60 44))))
+  (label done)
+  (dbg/int "  result" r)
+  (mem/dbg-avail)
+  r)
+
+(fun (mem/free block)
+  (dbg/int "FREE" block)
+  (var r (- block 8))
+  (var size (u64 r))
+  (dbg/int "  size" size)
+  (var avail (mem/mem-avail (ctxt/mem context)))
+  (var p avail)
+  (var q (mem/ar-link p))
+  (while 1
+    (dbg/int "  on" p)
+    (if ((or (and (> r p) (< r q))  ;; between p and q
+             (and (> r p) (< q p))  ;; after p, and p is last
+             (and (< r q) (< q p))) ;; before q, and q is first
+         (dbg/out "    fits\n")
+         (if ((and (== (+ p (mem/ar-size p)) r)
+                   (== (+ r size) q))
+              (dbg/out "    merge both\n")
+              (set (mem/ar-size p) (+ (mem/ar-size p) size (mem/ar-size q)))
+              (set (mem/ar-link p) (mem/ar-link q)))
+             ((== (+ p (mem/ar-size p)) r)
+              (dbg/out "    merge left\n")
+              (set (mem/ar-size p) (+ (mem/ar-size p) size)))
+             ((== (+ r size) q)
+              (dbg/out "    merge right\n")
+              (set (mem/ar-size r) (+ size (mem/ar-size q)))
+              (set (mem/ar-link r) (mem/ar-link q))
+              (set (mem/ar-link p) r))
+             (else
+              (dbg/out "    new region\n")
+              (set (mem/ar-size r) size)
+              (set (mem/ar-link r) q)
+              (set (mem/ar-link p) r)))
+         (goto done)))
+    (set p q)
+    (set q (mem/ar-link p))
+    (if ((== p avail)
+         ;; XXX - unpossible
+         (dbg/out "NO PLACE FOUND FOR FREED REGION\n")
+         (goto done))))
+  (label done)
+  (mem/dbg-avail))
+
+(fun (mem/test)
+  (var p1 (mem/alloc 256))
+  (var p2 (mem/alloc 128))
+  (var p3 (mem/alloc 3))
+  (mem/free p1)
+  (mem/free p3)
+  (mem/free p2)
+  (mem/dbg-avail))
+
+(fun (mem/init-alloc)
+  (var page (sys/page-get))
+  (var first (+ page 8))
+  (var second (+ first mem/avail-region))
+  (set (mem/ar-size first) 0)
+  (set (mem/ar-link first) second)
+  (set (mem/ar-size second) (- mem/page-size 8 mem/avail-region))
+  (set (mem/ar-link second) first)
+  (set (mem/mem-avail (ctxt/mem context)) second))
 
 (fun (mem/init)
   (var boot-disk (ctxt/disk context))
@@ -12,24 +140,5 @@
   (set (ctxt/disk context) boot-disk)
   (set (ctxt/books context) boot-books)
   (var mem-context (+ page ctxt/contexts))
-  (set (mem/mem-next mem-context) (+ mem-context mem/context))
-  (set (mem/mem-end mem-context) (+ page mem/page-size))
-  (set (ctxt/mem context) mem-context))
-
-(fun (mem/alloc size)
-  (var ctxt (ctxt/mem context))
-  (var ptr (mem/mem-next ctxt))
-  (var end (+ ptr size))
-  (if ((> end (mem/mem-end ctxt))
-       (set ptr (sys/page-get))
-       (set end (+ ptr size))
-       (set (mem/mem-end ctxt) (+ ptr mem/page-size))))
-  (set (mem/mem-next ctxt) end)
-  ptr)
-
-(fun (mem/cpy dst src size)
-  (while (> size 0)
-    (set (u8 dst) (u8 src))
-    (set dst (+ dst 1))
-    (set src (+ src 1))
-    (set size (- size 1))))
+  (set (ctxt/mem context) mem-context)
+  (mem/init-alloc))

@@ -13,6 +13,15 @@
     (sys/page-put (ed/textbuf-pages tb i))
     (set i (+ i 1))))
 
+(fun (ed/textbuf-new)
+  (var tb (mem/alloc ed/textbuf))
+  (ed/textbuf-init tb)
+  tb)
+
+(fun (ed/textbuf-free tb)
+  (ed/textbuf-fini tb)
+  (mem/free tb))
+
 (fun (ed/textbuf-grow tb max)
   (var new-page-count (/ (+ max mem/page-size -1) mem/page-size))
   (if ((<= new-page-count 32)
@@ -661,7 +670,7 @@
   (ed/highlight ed))
 
 (fun (ed/new title buf)
-  (var ed (sys/page-get))
+  (var ed (mem/alloc ed/data))
   (set (ed/buf ed) buf)
   (set (ed/title ed) title)
   (set (ed/search-len ed) -1)
@@ -673,7 +682,7 @@
   ed)
 
 (fun (ed/free ed)
-  (sys/page-put ed))
+  (mem/free ed))
 
 (fun (ed/paint-with-border ed x y w h)
   (ed/paint ed (+ x 4) (+ y 4) (- w 8) (- h 8)))

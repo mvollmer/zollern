@@ -2238,6 +2238,8 @@
   (8 comp-polop-sub)  ; 1
   (8 comp-polop-mul)  ; 2
   (8 comp-polop-div)  ; 3
+  (8 comp-polop-and)  ; 4
+  (8 comp-polop-or)   ; 5
   comp-polop-table-end)
 
 (def comp-polop-table-size (>> (- comp-polop-table-end comp-polop-table) 3))
@@ -2279,6 +2281,14 @@
 (code comp-polop-div
   (code-emit l0 (sign-extend))
   (code-emit l0 (sdiv l1))
+  (ret))
+
+(code comp-polop-and
+  (code-emit l0 (and l0 l1))
+  (ret))
+
+(code comp-polop-or
+  (code-emit l0 (or l0 l1))
   (ret))
 
 (code locals-define
