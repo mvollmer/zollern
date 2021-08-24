@@ -150,7 +150,7 @@
             (shell/start-create inst))))
       (ed
        (ed/input ed state input))
-      ((== input ch/q)
+      ((== input ch/Q)
        (gfx/loop-quit))
       ((== input -16)
        (if ((> (shell/cur inst) 0)
@@ -162,8 +162,6 @@
        (shell/run inst))
       ((== input ch/X)
        (shell/remove inst))
-      ((== input ch/Q)
-       (sys/call 60 0))
       ((== input ch/h)
        (shell/help inst))))
 

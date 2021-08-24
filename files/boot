@@ -1,14 +1,5 @@
 (fun (boot/start)
   (mem/init)
-  (mem/init-alloc)
   (fs/init)
   (gfx/init)
-  (while 1
-    (if ((var shell (sys/book-get "shell" 0 0))
-         (if ((var main (sys/book-search-fun shell "main"))
-              (main))
-             (else
-              (sys/call 60 13)))
-         (sys/book-unref shell))
-        (else
-         (sys/call 60 14)))))
+  (shell/main))
