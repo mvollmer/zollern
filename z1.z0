@@ -2404,7 +2404,7 @@
   (parse-eol l0)
   (set l0 l1)
   (call comp-expand)
-  (assert-type l0 exp-type-symbol syntax)
+  (assert-type l0 exp-type-symbol .not-symbol)
   (cmp (exp-sym-type l0) def-type-var)
   (jne error-not-local-exp)
   (set l1 (exp-sym-val l0))
@@ -2414,7 +2414,18 @@
   (pop l1)
   (code-emit l0 (let l0 (u64 x1 0xFFFF)) l1)
   (call code-end)
-  (ret))
+  (ret)
+.not-symbol
+  (parse-num l0 l1 100)
+  (cmp l1 13)
+  (jne syntax)
+  (parse-num l0 l1 100)
+  (parse-exp l0 l1)
+  (parse-eol l0)
+  (set l0 l1)
+  (jmp comp-expr)
+.newline
+  (1 "\n" 0))
 
 (code comp-ctxt
   (parse-eol l0)
