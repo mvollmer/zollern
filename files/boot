@@ -2,4 +2,6 @@
   (mem/init)
   (fs/init)
   (gfx/init)
-  (shell/main))
+  (shell/main)
+  (gfx/loop)
+  (dbg/out "HALT\n"))

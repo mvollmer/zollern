@@ -107,12 +107,7 @@
   (highlight-2 u64)
   (point u64)
   (last-input s32)
-  (last-state s32)
-  (exit-code u32))
-
-(fun (ed/quit ed code)
-  (set (ed/exit-code ed) code)
-  (gfx/loop-quit))
+  (last-state s32))
 
 ;; Abstracting the buffer
 
@@ -648,11 +643,7 @@
       ((== state 32) ;; meta
        (if ((== key ch/w) ;; M-w
             (ed/copy-region ed 0)
-            (set (ed/mark ed) -1))
-           ((== key ch/x) ;; M-x
-            (ed/quit ed 1))
-           ((== key ch/r) ;; M-r
-            (ed/quit ed 2))))))
+            (set (ed/mark ed) -1))))))
 
 (fun (ed/input ed state input)
   (if ((and (> input 0) (== state 0))
@@ -678,7 +669,6 @@
   (set (ed/mark ed) -1)
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
-  (set (ed/exit-code ed) 0)
   ed)
 
 (fun (ed/free ed)
@@ -686,16 +676,3 @@
 
 (fun (ed/paint-with-border ed x y w h)
   (ed/paint ed (+ x 4) (+ y 4) (- w 8) (- h 8)))
-
-(data ed/efuns
-  (4 ed/paint-with-border
-     ed/input))
-
-(fun (ed/ed title buf)
-  (var ed (ed/new title buf))
-  (ed/highlight ed)
-  (gfx/loop ed ed/efuns)
-  (ed/clear ed)
-  (var exit-code (ed/exit-code ed))
-  (ed/free ed)
-  exit-code)

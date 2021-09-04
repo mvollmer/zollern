@@ -1,5 +1,4 @@
 (struct shell/instance
-  quit
   cur
   cur-name
   max
@@ -101,34 +100,73 @@
   (ed/textbuf-free name)
   (set (shell/create-textbuf inst) 0))
 
-(fun (shell/wait-for-ret)
-  (shell/paint-string fonts/mono (- (gfx/width) 50) (- (gfx/height) 20) "RET")
-  (gfx/show)
-  (mem event gfx/event)
-  (while (begin
-           (gfx/read-event event)
-           (not (and (== (gfx/ev-type event) 2)
-                     (== (gfx/ev-input event) -11))))))
+(struct shell/ed-data
+  ed-name
+  ed-text
+  ed-ed
+  ed-output)
 
-(fun (shell/ed inst)
-  (label again)
-  (mem edbuf ed/textbuf)
-  (mem rbuf fs/rbuf)
+(fun (shell/ed-write inst)
   (mem wbuf fs/wbuf)
-  (ed/textbuf-init edbuf)
+  (fs/create wbuf)
+  (ed/textbuf-write-file (shell/ed-text inst) wbuf)
+  (fs/commit wbuf (shell/ed-name inst)))
+
+(fun (shell/ed-capture str ptrloc)
+  (dbg/str "CAP" str)
+  (str/cpy (u64 ptrloc) str)
+  (set (u64 ptrloc) (+ (u64 ptrloc) (str/len str))))
+  
+(fun (shell/ed-run inst)
+  (var ptr (shell/ed-output inst))
+  (set (u8 ptr) 0)
+  (if ((var book (sys/book-get (shell/ed-name inst) shell/ed-capture (loc ptr)))
+       (if ((var main (sys/book-search-fun book "main"))
+            (main))
+           (else
+            (str/cpy ptr "no main")))
+       (sys/book-unref book)))
+  (if ((u8 (shell/ed-output inst))
+       (set (ed/title (shell/ed-ed inst)) (shell/ed-output inst)))))
+
+(fun (shell/ed-quit inst)
+  (gfx/quit inst)
+  (ed/free (shell/ed-ed inst))
+  (ed/textbuf-free (shell/ed-text inst))
+  (mem/free (shell/ed-name inst))
+  (mem/free (shell/ed-output inst))
+  (mem/free inst))
+
+(fun (shell/ed-paint inst x y w h)
+  (ed/paint-with-border (shell/ed-ed inst) x y w h))
+
+(fun (shell/ed-input inst state input)
+  (set (ed/title (shell/ed-ed inst)) (shell/ed-name inst))
+  (if ((and (== state 32) (== input ch/x))
+       (shell/ed-write inst)
+       (shell/ed-quit inst))
+      ((and (== state 32) (== input ch/r))
+       (shell/ed-write inst)
+       (shell/ed-run inst))
+      (else
+       (ed/input (shell/ed-ed inst) state input))))
+
+(data shell/ed-efuns
+  (4 shell/ed-paint
+     shell/ed-input))
+
+(fun (shell/ed-launch inst)
+  (mem rbuf fs/rbuf)
   (if ((fs/open rbuf (shell/cur-name inst))
-       (ed/textbuf-read-file edbuf rbuf)
+       (var ed-inst (mem/alloc shell/ed-data))
+       (set (shell/ed-name ed-inst) (str/dup (shell/cur-name inst)))
+       (set (shell/ed-text ed-inst) (ed/textbuf-new))
+       (set (shell/ed-ed ed-inst) (ed/new (shell/ed-name ed-inst) (shell/ed-text ed-inst)))
+       (set (shell/ed-output ed-inst) (mem/alloc 500))
+       (ed/textbuf-read-file (shell/ed-text ed-inst) rbuf)
+       (ed/highlight (shell/ed-ed ed-inst))
        (fs/close rbuf)
-       (var exit-mode (ed/ed (shell/cur-name inst) edbuf))
-       (fs/create wbuf)
-       (ed/textbuf-write-file edbuf wbuf)
-       (fs/commit wbuf (shell/cur-name inst))
-       (ed/textbuf-fini edbuf)
-       (set (shell/cur inst) -1)
-       (if ((== exit-mode 2)
-            (shell/run inst)
-            (shell/wait-for-ret)
-            (goto again))))))
+       (gfx/launch ed-inst shell/ed-efuns))))
 
 (fun (shell/remove inst)
   (if ((u8 (shell/cur-name inst))
@@ -139,19 +177,25 @@
   (set (shell/output-ptr inst) (shell/output inst))
   (shell/capture-output "RET - edit\n  r - run\n  X - delete\n  q - reset\n  Q - halt" inst))
 
+(fun (shell/quit inst)
+  (gfx/quit inst)
+  (mem/free (shell/output inst))
+  (mem/free (shell/cur-name inst))
+  (mem/free inst))
+
 (fun (shell/input inst state input)
   (var ed (shell/create-ed inst))
   (if ((== input -11)
        (if (ed
             (shell/end-create inst))
            ((u8 (shell/cur-name inst))
-            (shell/ed inst))
+            (shell/ed-launch inst))
            (else
             (shell/start-create inst))))
       (ed
        (ed/input ed state input))
       ((== input ch/Q)
-       (gfx/loop-quit))
+       (shell/quit inst))
       ((== input -16)
        (if ((> (shell/cur inst) 0)
             (set (shell/cur inst) (- (shell/cur inst) 1)))))
@@ -172,14 +216,10 @@
 (fun (shell/main)
   (var inst (mem/alloc shell/instance))
   (set (shell/cur inst) 0)
-  (set (shell/quit inst) 0)
   (set (shell/cur-name inst) (mem/alloc 512))
   (set (u8 (shell/cur-name inst)) 0)
   (set (shell/output inst) (mem/alloc 2048))
   (set (u8 (shell/output inst)) 0)
   (set (shell/create-textbuf inst) 0)
   (set (shell/create-ed inst) 0)
-  (gfx/loop inst shell/efuns)
-  (mem/free (shell/output inst))
-  (mem/free (shell/cur-name inst))
-  (mem/free inst))
+  (gfx/launch inst shell/efuns))

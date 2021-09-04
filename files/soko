@@ -136,7 +136,8 @@
 
 (fun (soko/input inst state input)
   (if ((== input ch/q)
-       (gfx/loop-quit))
+       (gfx/quit inst)
+       (mem/free inst))
       ((== input ch/r)
        (soko/init-level inst))
       ((== input -15) ; left
@@ -160,12 +161,12 @@
   (4 soko/paint
      soko/input))
 
-(fun (soko/run levels)
-  (mem inst soko/data)
+(fun (soko/launch levels)
+  (var inst (mem/alloc soko/data))
   (set (soko/levels inst) levels)
   (set (soko/cur-level inst) 0)
   (soko/init-level inst)
-  (gfx/loop inst soko/efuns))
+  (gfx/launch inst soko/efuns))
 
 (data soko/level_0
   (0
@@ -1133,4 +1134,4 @@
     (4 0)))
 
 (fun (soko/main)
-  (soko/run soko/all-levels))
+  (soko/launch soko/all-levels))

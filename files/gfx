@@ -2,7 +2,7 @@
   gfx-screen-width
   gfx-screen-height
   gfx-pixels
-  gfx-loop-quit)
+  gfx-apps)
 
 (struct gfx/event
   (ev-type u16)
@@ -59,6 +59,7 @@
 (fun (gfx/init)
   (set (ctxt/gfx context) (mem/alloc gfx/context))
   (set (gfx/gfx-pixels (ctxt/gfx context)) 0)
+  (set (gfx/gfx-apps (ctxt/gfx context)) 0)
   (mem event gfx/event)
   (while (begin
            (gfx/read-event event)
@@ -191,29 +192,46 @@
   efun-paint
   efun-input)
 
-(fun (gfx/loop-quit)
-  (var gfx (ctxt/gfx context))
-  (set (gfx/gfx-loop-quit gfx) 1))
-
 (fun (gfx/paint instance functions)
   ((gfx/efun-paint functions) instance 0 0 (gfx/width) (gfx/height))
   (gfx/show))
 
-(fun (gfx/loop instance functions)
+(struct gfx/app
+  app-link
+  app-instance
+  app-functions)
+
+(fun (gfx/launch instance functions)
+  (var app (mem/alloc gfx/app))
+  (set (gfx/app-instance app) instance)
+  (set (gfx/app-functions app) functions)
+  (set (gfx/app-link app) (gfx/gfx-apps (ctxt/gfx context)))
+  (set (gfx/gfx-apps (ctxt/gfx context)) app))
+
+(fun (gfx/quit instance)
   (var gfx (ctxt/gfx context))
-  (set (gfx/gfx-loop-quit gfx) 0)
-  (gfx/paint instance functions)
-  (while (not (gfx/gfx-loop-quit gfx))
+  (var ptr (loc (gfx/gfx-apps gfx)))
+  (while (u64 ptr)
+    (var app (u64 ptr))
+    (if ((== (gfx/app-instance app) instance)
+         (set (u64 ptr) (gfx/app-link app))
+         (mem/free app))
+        (else
+         (set ptr (loc (gfx/app-link app)))))))
+
+(fun (gfx/loop)
+  (var gfx (ctxt/gfx context))
+  (while (gfx/gfx-apps gfx)
+    (var app (gfx/gfx-apps gfx))
+    (gfx/paint (gfx/app-instance app) (gfx/app-functions app))
     (mem event gfx/event)
     (gfx/read-event event)
     (if ((== (gfx/ev-type event) 1)
          (sys/call 60 0))
         ((== (gfx/ev-type event) 3)
-         (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
-         (gfx/paint instance functions))
+         (gfx/resize (gfx/ev-x event) (gfx/ev-y event)))
         ((== (gfx/ev-type event) 2)
-         ((gfx/efun-input functions) instance
-                          (gfx/ev-state event) (gfx/ev-input event)
-                          (gfx/ev-x event) (gfx/ev-y event))
-         (gfx/paint instance functions))))
-  (set (gfx/gfx-loop-quit gfx) 0))
+         ((gfx/efun-input (gfx/app-functions app))
+          (gfx/app-instance app)
+          (gfx/ev-state event) (gfx/ev-input event)
+          (gfx/ev-x event) (gfx/ev-y event))))))
