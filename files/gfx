@@ -186,6 +186,10 @@
   (var gfx (ctxt/gfx context))
   (set (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)) c))
 
+(fun (gfx/get-pixel x y)
+  (var gfx (ctxt/gfx context))
+  (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)))
+
 ;; Event loop
 
 (struct gfx/event-functions
