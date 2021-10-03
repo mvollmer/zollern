@@ -121,7 +121,8 @@
 
 (fun (mandel/paint inst x y w h)
   (if ((mandel/need-render inst)
-       (mandel/render inst))))
+       (mandel/render inst)))
+  (set (mandel/need-render inst) 1))
 
 (fun (mandel/input inst state input event-x event-y)
   (set (mandel/need-render inst) 0)
