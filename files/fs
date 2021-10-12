@@ -82,6 +82,16 @@
       (else
        0)))
 
+(fun (fs/protect prot)
+  (var disk (ctxt/disk context))
+  (sys/call 10 (fs/disk-start disk) (- (fs/disk-end disk) (fs/disk-start disk)) prot))
+
+(fun (fs/read-only)
+  (fs/protect 1))
+
+(fun (fs/read-write)
+  (fs/protect 3))
+
 (fun (fs/init)
   (var disk (ctxt/disk context))
   (dbg/assert-equal (fs/head-magic (fs/disk-start disk))
@@ -90,6 +100,7 @@
   (dbg/assert-equal (/ (- (fs/disk-end disk) (fs/disk-start disk)) fs/block-size)
                     fs/block-count
                     "disk block count")
+  (fs/read-only)
   (dbg/assert-less-or-equal fs/state mem/page-size "fs/state size")
   (var state (mem/alloc fs/state))
   (set (ctxt/fs context) state)
@@ -188,7 +199,9 @@
   (mem rbuf fs/rbuf)
   (if ((fs/open rbuf name)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node rbuf) fs/node-size)))
+       (fs/read-write)
        (set (fs/node-name node 0) 0)
+       (fs/read-only)
        (fs/unref-node (fs/rbuf-node rbuf))
        (fs/close rbuf))))
 
@@ -210,7 +223,9 @@
   (set (fs/wbuf-node wbuf) n)
   (if (n
        (var node (+ (fs/disk-start (ctxt/disk context)) (* n fs/node-size)))
+       (fs/read-write)
        (set (fs/node-size node) 0)
+       (fs/read-only)
        (set (fs/wbuf-ptr wbuf) 0)
        (set (fs/wbuf-start wbuf) 0)
        (set (fs/wbuf-size wbuf) 0))))
@@ -218,6 +233,7 @@
 (fun (fs/write wbuf buf len)
   (if ((fs/wbuf-node wbuf)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/wbuf-node wbuf) fs/node-size)))
+       (fs/read-write)
        (while (> len 0)
          (if ((> (fs/wbuf-size wbuf) 0)
               (var n (if ((< (fs/wbuf-size wbuf) len) (fs/wbuf-size wbuf)) (else len)))
@@ -235,7 +251,8 @@
                    (set (fs/wbuf-size wbuf) fs/block-size)
                    (set (fs/wbuf-ptr wbuf) (+ (fs/wbuf-ptr wbuf) 1)))
                   (else
-                   (dbg/assert 0 "disk full")))))))))
+                   (dbg/assert 0 "disk full"))))))
+       (fs/read-only))))
 
 (fun (fs/get-time-stamp)
   (var state (ctxt/fs context))
@@ -247,8 +264,10 @@
   (if ((fs/wbuf-node wbuf)
        (fs/remove name)
        (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/wbuf-node wbuf) fs/node-size)))
+       (fs/read-write)
        (mem/cpy node name fs/name-size)
        (set (fs/node-time node) (fs/get-time-stamp))
+       (fs/read-only)
        1)
       (else
        0)))
