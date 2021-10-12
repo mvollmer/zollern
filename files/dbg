@@ -2,7 +2,7 @@
   (var ptr str)
   (while (u8 ptr)
     (set ptr (+ ptr 1)))
-  (sys/call 1 2 str (- ptr str)))
+  (sys/write 2 str (- ptr str)))
 
 (fun (dbg/int l n)
   (dbg/out l)
@@ -33,7 +33,7 @@
   (if ((not cond)
        (dbg/out msg)
        (dbg/out "\n")
-       (sys/call 60 1))))
+       (sys/exit 1))))
 
 (fun (dbg/assert-equal actual expected thing)
   (if ((!= actual expected)
@@ -42,7 +42,7 @@
        (dbg/out "\n")
        (dbg/int "   actual" actual)
        (dbg/int " expected" expected)
-       (sys/call 60 1))))
+       (sys/exit 1))))
 
 (fun (dbg/assert-less-or-equal value max thing)
   (if ((> value max)
@@ -50,4 +50,4 @@
        (dbg/out " too large\n")
        (dbg/int "   value" value)
        (dbg/int " maximum" max)
-       (sys/call 60 1))))
+       (sys/exit 1))))

@@ -1,8 +1,6 @@
 (struct mem/context
   mem-avail)
 
-(defconst mem/page-size (* 16 1024))
-
 (fun (mem/cpy dst src size)
   (while (> size 0)
     (set (u8 dst) (u8 src))
@@ -65,7 +63,7 @@
     (if ((== p avail)
          ;; XXX - get more mem
          (dbg/out "OUT OF MEMORY\n")
-         (sys/call 60 44))))
+         (sys/exit 44))))
   (label done)
   (dbg/int "  result" r)
   (mem/dbg-avail)
@@ -128,7 +126,7 @@
   (var second (+ first mem/avail-region))
   (set (mem/ar-size first) 0)
   (set (mem/ar-link first) second)
-  (set (mem/ar-size second) (- mem/page-size 8 mem/avail-region))
+  (set (mem/ar-size second) (- sys/page-size 8 mem/avail-region))
   (set (mem/ar-link second) first)
   (set (mem/mem-avail (ctxt/mem context)) second))
 

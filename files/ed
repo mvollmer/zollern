@@ -23,7 +23,7 @@
   (mem/free tb))
 
 (fun (ed/textbuf-grow tb max)
-  (var new-page-count (/ (+ max mem/page-size -1) mem/page-size))
+  (var new-page-count (/ (+ max sys/page-size -1) sys/page-size))
   (if ((<= new-page-count 32)
        (var i (ed/textbuf-page-count tb))
        (while (< i new-page-count)
@@ -35,12 +35,12 @@
        0)))
 
 (fun (ed/textbuf-get-char tb pos)
-  (var page (/ pos mem/page-size))
-  (u8 (ed/textbuf-pages tb page) (- pos (* page mem/page-size))))
+  (var page (/ pos sys/page-size))
+  (u8 (ed/textbuf-pages tb page) (- pos (* page sys/page-size))))
 
 (fun (ed/textbuf-set-char tb pos char)
-  (var page (/ pos mem/page-size))
-  (set (u8 (ed/textbuf-pages tb page) (- pos (* page mem/page-size))) char))
+  (var page (/ pos sys/page-size))
+  (set (u8 (ed/textbuf-pages tb page) (- pos (* page sys/page-size))) char))
 
 (fun (ed/textbuf-read-file tb fb)
   (while (and (fs/read fb)
@@ -56,10 +56,10 @@
       (set (ed/textbuf-len tb) pos))))
 
 (fun (ed/textbuf-write-region tb fb pos len)
-  (var page (/ pos mem/page-size))
-  (set pos (- pos (* page mem/page-size)))
+  (var page (/ pos sys/page-size))
+  (set pos (- pos (* page sys/page-size)))
   (while (> len 0)
-    (var n (- mem/page-size pos))
+    (var n (- sys/page-size pos))
     (if ((< len n)
          (set n len)))
     (fs/write fb (+ (ed/textbuf-pages tb page) pos) n)
@@ -72,7 +72,7 @@
 
 (fun (ed/textbuf-maybe-as-string tb)
   (var len (ed/textbuf-len tb))
-  (if ((< len mem/page-size)
+  (if ((< len sys/page-size)
        (ed/textbuf-grow tb (+ len 1)) ;; this only matters for len == 0
        (var str (ed/textbuf-pages tb 0))
        (set (u8 str len) 0)

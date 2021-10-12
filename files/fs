@@ -84,13 +84,13 @@
 
 (fun (fs/protect prot)
   (var disk (ctxt/disk context))
-  (sys/call 10 (fs/disk-start disk) (- (fs/disk-end disk) (fs/disk-start disk)) prot))
+  (sys/mprotect (fs/disk-start disk) (- (fs/disk-end disk) (fs/disk-start disk)) prot))
 
 (fun (fs/read-only)
-  (fs/protect 1))
+  (fs/protect sys/prot-read))
 
 (fun (fs/read-write)
-  (fs/protect 3))
+  (fs/protect (+ sys/prot-read sys/prot-write)))
 
 (fun (fs/init)
   (var disk (ctxt/disk context))
@@ -101,7 +101,7 @@
                     fs/block-count
                     "disk block count")
   (fs/read-only)
-  (dbg/assert-less-or-equal fs/state mem/page-size "fs/state size")
+  (dbg/assert-less-or-equal fs/state sys/page-size "fs/state size")
   (var state (mem/alloc fs/state))
   (set (ctxt/fs context) state)
   (var i 0)

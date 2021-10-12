@@ -3161,7 +3161,7 @@ run
 .exp-name
   (1 "exp" 0)
 .sys-name
-  (1 "sys" 0)
+  (1 ".sys" 0)
 .boot-name
   (1 "boot" 0)
 .start-name

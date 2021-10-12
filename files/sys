@@ -1,0 +1,42 @@
+(defconst sys/page-size (* 16 1024))
+
+(fun (sys/page-get)
+  (.sys/page-get))
+
+(fun (sys/page-put page)
+  (.sys/page-put page))
+
+(fun (sys/book-get name print-hook print-hook-data)
+  (.sys/book-get name print-hook print-hook-data))
+
+(fun (sys/book-search-fun book name)
+  (.sys/book-search-fun book name))
+
+(fun (sys/book-unref book)
+  (.sys/book-unref book))
+
+(fun (sys/read fd buf size)
+  (.sys/call 0 fd buf size))
+
+(fun (sys/write fd buf size)
+  (.sys/call 1 fd buf size))
+
+(fun (sys/exit code)
+  (.sys/call 60 code))
+
+(def sys/prot-read  1)
+(def sys/prot-write 2)
+
+(def sys/map-shared 1)
+
+(fun (sys/mmap start size prot flags fd offset)
+  (.sys/call 9 start size prot flags fd offset))
+
+(fun (sys/mprotect start size prot)
+  (.sys/call 10 start size prot))
+
+(fun (sys/munmap start size)
+  (.sys/call 11 start size))
+
+(fun (sys/ftruncate fd size)
+  (.sys/call 77 fd size))
