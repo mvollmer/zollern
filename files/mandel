@@ -8,12 +8,10 @@
 (defconst mandel/im-min -1000000)
 (defconst mandel/im-max  1000000)
 
-(defconst mandel/x-size 800)
-(defconst mandel/y-size 400)
-
 (struct mandel/data
   cur-re-min cur-re-max
   cur-im-min cur-im-max
+  x-size y-size
   need-render)
 
 (fun (mandel/iter re im)
@@ -36,8 +34,8 @@
   (var re-max (mandel/cur-re-max inst))
   (var im-min (mandel/cur-im-min inst))
   (var im-max (mandel/cur-im-max inst))
-  (var re (+ re-min (* x (/ (- re-max re-min) mandel/x-size))))
-  (var im (+ im-min (* y (/ (- im-max im-min) mandel/y-size))))
+  (var re (+ re-min (* x (/ (- re-max re-min) (mandel/x-size inst)))))
+  (var im (+ im-min (* y (/ (- im-max im-min) (mandel/y-size inst)))))
   (var c (- 255 (mandel/iter re im)))
   (gfx/put-pixel x y (gfx/color (* c 15) (* c 1) (* c 32))))
   
@@ -109,18 +107,20 @@
   (mandel/fill-rect inst x1 x2 y1 y2))
 
 (fun (mandel/render inst)
-  (mandel/render-rect inst 0 (- mandel/x-size 1) 0 (- mandel/y-size 1))
+  (mandel/render-rect inst 0 (- (mandel/x-size inst) 1) 0 (- (mandel/y-size inst) 1))
   (gfx/show))
 
 (fun (mandel/render2 inst)
   (var y 0)
-  (while (< y mandel/y-size)
-    (mandel/render-h-line inst 0 mandel/x-size y)
+  (while (< y (mandel/y-size inst))
+    (mandel/render-h-line inst 0 (mandel/x-size inst) y)
     (set y (+ y 1)))
   (gfx/show))
 
 (fun (mandel/paint inst x y w h)
   (if ((mandel/need-render inst)
+       (set (mandel/x-size inst) w)
+       (set (mandel/y-size inst) h)
        (mandel/render inst)))
   (set (mandel/need-render inst) 1))
 
@@ -140,8 +140,8 @@
       ((== input -1)
        (var re-len (- (mandel/cur-re-max inst) (mandel/cur-re-min inst)))
        (var im-len (- (mandel/cur-im-max inst) (mandel/cur-im-min inst)))
-       (var x (+ (mandel/cur-re-min inst) (/ (* event-x re-len) mandel/x-size)))
-       (var y (+ (mandel/cur-im-min inst) (/ (* event-y im-len) mandel/y-size)))
+       (var x (+ (mandel/cur-re-min inst) (/ (* event-x re-len) (mandel/x-size inst))))
+       (var y (+ (mandel/cur-im-min inst) (/ (* event-y im-len) (mandel/y-size inst))))
        (var dx2 (/ re-len 4))
        (var dy2 (/ im-len 4))
        (set (mandel/cur-re-min inst) (- x dx2))
