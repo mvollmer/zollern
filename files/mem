@@ -24,30 +24,41 @@
   ar-size
   ar-link)
 
+(def mem/dbg 0)
+
+(fun (mem/dbg-out str)
+  (if (mem/dbg
+       (dbg/out str))))
+
+(fun (mem/dbg-int lab num)
+  (if (mem/dbg
+       (dbg/int lab num))))
+
 (fun (mem/dbg-avail)
-  (dbg/out "AVAIL\n")
-  (var p (mem/mem-avail (ctxt/mem context)))
-  (var q p)
-  (while (begin
-           (dbg/int "  block" q)
-           (dbg/int "    size" (mem/ar-size q))
-           (set q (mem/ar-link q))
-           (not (== p q)))))
+  (if (mem/dbg
+       (dbg/out "AVAIL\n")
+       (var p (mem/mem-avail (ctxt/mem context)))
+       (var q p)
+       (while (begin
+                (dbg/int "  block" q)
+                (dbg/int "    size" (mem/ar-size q))
+                (set q (mem/ar-link q))
+                (not (== p q)))))))
 
 (fun (mem/alloc size)
-  (dbg/int "ALLOC" size)
+  (mem/dbg-int "ALLOC" size)
   (if ((== size 0)
        (set size 1)))
   (set size (bit-and (+ size 7 8) (bit-not 7)))
-  (dbg/int "  adjusted" size)
+  (mem/dbg-int "  adjusted" size)
   (var avail (mem/mem-avail (ctxt/mem context)))
   (var p avail)
   (var q (mem/ar-link p))
   (var r 0)
   (while 1
-    (dbg/int "  on" q)
+    (mem/dbg-int "  on" q)
     (var k (- (mem/ar-size q) size))
-    (dbg/int "    left" k)
+    (mem/dbg-int "    left" k)
     (if ((> k 0)
          (if ((< k mem/avail-region)
               (set r q)
@@ -65,39 +76,39 @@
          (dbg/out "OUT OF MEMORY\n")
          (sys/exit 44))))
   (label done)
-  (dbg/int "  result" r)
+  (mem/dbg-int "  result" r)
   (mem/dbg-avail)
   r)
 
 (fun (mem/free block)
-  (dbg/int "FREE" block)
+  (mem/dbg-int "FREE" block)
   (var r (- block 8))
   (var size (u64 r))
-  (dbg/int "  size" size)
+  (mem/dbg-int "  size" size)
   (var avail (mem/mem-avail (ctxt/mem context)))
   (var p avail)
   (var q (mem/ar-link p))
   (while 1
-    (dbg/int "  on" p)
+    (mem/dbg-int "  on" p)
     (if ((or (and (> r p) (< r q))  ;; between p and q
              (and (> r p) (< q p))  ;; after p, and p is last
              (and (< r q) (< q p))) ;; before q, and q is first
-         (dbg/out "    fits\n")
+         (mem/dbg-out "    fits\n")
          (if ((and (== (+ p (mem/ar-size p)) r)
                    (== (+ r size) q))
-              (dbg/out "    merge both\n")
+              (mem/dbg-out "    merge both\n")
               (set (mem/ar-size p) (+ (mem/ar-size p) size (mem/ar-size q)))
               (set (mem/ar-link p) (mem/ar-link q)))
              ((== (+ p (mem/ar-size p)) r)
-              (dbg/out "    merge left\n")
+              (mem/dbg-out "    merge left\n")
               (set (mem/ar-size p) (+ (mem/ar-size p) size)))
              ((== (+ r size) q)
-              (dbg/out "    merge right\n")
+              (mem/dbg-out "    merge right\n")
               (set (mem/ar-size r) (+ size (mem/ar-size q)))
               (set (mem/ar-link r) (mem/ar-link q))
               (set (mem/ar-link p) r))
              (else
-              (dbg/out "    new region\n")
+              (mem/dbg-out "    new region\n")
               (set (mem/ar-size r) size)
               (set (mem/ar-link r) q)
               (set (mem/ar-link p) r)))
