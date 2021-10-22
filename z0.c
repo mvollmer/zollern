@@ -1322,6 +1322,8 @@ subst (exp *body, exp *vars)
     return body;
 }
 
+bool expand_no_undefined_locals = 0;
+
 exp *
 expand1 (exp *e)
 {
@@ -1362,6 +1364,9 @@ expand1 (exp *e)
             return expand (subst (body, vars));
         }
     }
+
+  if (expand_no_undefined_locals && is_sym (e) && sym_name (e)[0] == '.')
+    error (e, "undefined");
 
   return e;
 }
@@ -1543,6 +1548,8 @@ compile_toplevel (exp *e)
 void
 compile_delayeds ()
 {
+  expand_no_undefined_locals = 1;
+
   delayed_emitter **dd = &delayed;
   while (*dd)
     {
@@ -1556,6 +1563,8 @@ compile_delayeds ()
       else
         dd = &(d->link);
     }
+
+  expand_no_undefined_locals = 0;
 }
 
 void

@@ -2743,7 +2743,7 @@
   (set l0 (exp-num-val l0))
   (ret)
 .not-number
-  (assert-type l0 exp-type-symbol .not-symbol)
+  (assert-type l0 exp-type-symbol syntax)
   (call lookup)
   (cmp l0 def-type-func)
   (jne syntax)
