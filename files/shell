@@ -151,9 +151,9 @@
       (else
        (ed/input (shell/ed-ed inst) state input))))
 
-(data shell/ed-efuns
-  (4 shell/ed-paint
-     shell/ed-input))
+(sys/funtab shell/ed-efuns
+  shell/ed-paint
+  shell/ed-input)
 
 (fun (shell/ed-launch inst)
   (mem rbuf fs/rbuf)
@@ -209,9 +209,9 @@
       ((== input ch/h)
        (shell/help inst))))
 
-(data shell/efuns
-  (4 shell/paint
-     shell/input))
+(sys/funtab shell/efuns
+  shell/paint
+  shell/input)
 
 (fun (shell/main)
   (var inst (mem/alloc shell/instance))

@@ -192,7 +192,8 @@
 
 ;; Event loop
 
-(struct gfx/event-functions
+(struct gfx/event-funtab
+  efun-book
   efun-paint
   efun-input)
 
@@ -209,6 +210,7 @@
   (var app (mem/alloc gfx/app))
   (set (gfx/app-instance app) instance)
   (set (gfx/app-functions app) functions)
+  (sys/funtab-ref functions)
   (set (gfx/app-link app) (gfx/gfx-apps (ctxt/gfx context)))
   (set (gfx/gfx-apps (ctxt/gfx context)) app))
 
@@ -219,6 +221,7 @@
     (var app (u64 ptr))
     (if ((== (gfx/app-instance app) instance)
          (set (u64 ptr) (gfx/app-link app))
+         (sys/funtab-unref (gfx/app-functions app))
          (mem/free app))
         (else
          (set ptr (loc (gfx/app-link app)))))))

@@ -150,9 +150,9 @@
        (set (mandel/cur-im-max inst) (+ y dy2))
        (set (mandel/need-render inst) 1))))
 
-(data mandel/efuns
-  (4 mandel/paint
-     mandel/input))
+(sys/funtab mandel/efuns
+  mandel/paint
+  mandel/input)
 
 (fun (mandel/main)
   (var inst (mem/alloc mandel/data))

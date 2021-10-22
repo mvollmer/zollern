@@ -1001,6 +1001,11 @@
   (set l0 (cc-code-pages l0))
   (jmp page-put-many))
 
+(defstruct global
+  (u64 glb-link)
+  (u64 glb-val)
+  (u8  glb-type))
+
 (code book-init
   ;; l0 - name
   (push x0)
@@ -1022,8 +1027,14 @@
   (call strcpy)
   (set l1 (ctxt-comp cp))
   (set (cc-book l1) x0)
+  (let l0 (u8 .dot-book-name))
+  (call globals-define)
+  (set (glb-type l0) def-type-func)
+  (set (glb-val l0) x0)
   (pop x0)
-  (ret))
+  (ret)
+.dot-book-name
+  (1 ".book" 0))
 
 (code book-register
   ;; l0 - book
@@ -1231,11 +1242,6 @@
   (ret))
 
 ;; Globals
-
-(defstruct global
-  (u64 glb-link)
-  (u64 glb-val)
-  (u8  glb-type))
 
 (code skip-book-prefix
   ;; l0 - full name
@@ -1879,6 +1885,10 @@
   (set l1 (u64 sp 16))
   (jmp book-search-fun))
 
+(code sys-book-ref
+  (set l0 (u64 sp 8))
+  (jmp book-ref))
+
 (code sys-book-unref
   (set l0 (u64 sp 8))
   (jmp book-unref))
@@ -1889,6 +1899,7 @@
   (8 sys-page-put .sys-page-put-name)
   (8 sys-book-get .sys-book-get-name)
   (8 sys-book-search-fun .sys-book-search-fun-name)
+  (8 sys-book-ref .sys-book-ref-name)
   (8 sys-book-unref .sys-book-unref-name)
   (8 0 0)
 .sys-call-name
@@ -1901,6 +1912,8 @@
   (1 "book-get" 0)
 .sys-book-search-fun-name
   (1 "book-search-fun" 0)
+.sys-book-ref-name
+  (1 "book-ref" 0)
 .sys-book-unref-name
   (1 "book-unref" 0))
 
