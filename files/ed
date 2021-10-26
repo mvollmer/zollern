@@ -562,13 +562,13 @@
 
 (fun (ed/search-command ed key state)
   (if ((== state 0)
-       (if ((== key -9) ;; backspace
+       (if ((== key gfx/ev-key-backspace)
             (if ((> (ed/search-len ed) 0)
                  (set (ed/search-len ed) (- (ed/search-len ed) 1))
                  (set (u8 (ed/search-buf ed) (ed/search-len ed)) 0))))
-           ((== key -11) ;; return
+           ((== key gfx/ev-key-return)
             (set (ed/search-len ed) -1))))
-      ((== state 16) ;; control
+      ((== state gfx/ev-state-control)
        (if ((== key ch/s) ;; C-s
             (set (ed/search-len ed) (str/len (ed/search-buf ed)))
             (if ((< (ed/point ed) (- (ed/len ed) 1))
@@ -586,34 +586,34 @@
   ;; (dbg/int "command" key)
   ;; (dbg/int "state" state)
   (if ((== state 0)
-       (if ((== key -11) ;; return
+       (if ((== key gfx/ev-key-return)
             (ed/insert ed 10))
-           ((== key -15) ;; left
+           ((== key gfx/ev-key-left)
             (ed/left ed))
-           ((== key -17) ;; right
+           ((== key gfx/ev-key-right)
             (ed/right ed))
-           ((== key -16) ;; up
+           ((== key gfx/ev-key-up)
             (ed/up ed 1))
-           ((== key -18) ;; down
+           ((== key gfx/ev-key-down)
             (ed/down ed 1))
-           ((== key -19) ;; page up
+           ((== key gfx/ev-key-page-up)
             (ed/up ed (ed/rows ed)))
-           ((== key -20) ;; page down
+           ((== key gfx/ev-key-page-down)
             (ed/down ed (ed/rows ed)))
-           ((== key -21) ;; end
+           ((== key gfx/ev-key-end)
             (ed/end-of-line ed))
-           ((== key -22) ;; home
+           ((== key gfx/ev-key-begin)
             (ed/beginning-of-line ed))
-           ((== key -9) ;; backspace
+           ((== key gfx/ev-key-backspace)
             (ed/backspace ed))
-           ((== key -13) ;; delete
+           ((== key gfx/ev-key-delete)
             (ed/delete ed))
-           ((== key -10) ;; tab
+           ((== key gfx/ev-key-tab)
             (if ((>= (ed/mark ed) 0)
                  (ed/indent-region ed))
                 (else
                  (ed/indent ed))))))
-      ((== state 16) ;; control
+      ((== state gfx/ev-state-control)
        (if ((== key ch/spc) ;; C-SPC
             (set (ed/mark ed) (ed/point ed)))
            ((== key ch/g) ;; C-g
@@ -634,13 +634,13 @@
             (set (ed/search-match-len ed) 0))
            ((== key ch/k) ;; C-k
             (ed/kill-line ed (ed/last-input-was ed key state)))
-           ((== key -15) ;; left
+           ((== key gfx/ev-key-left)
             (ed/left-word ed))
-           ((== key -17) ;; right
+           ((== key gfx/ev-key-right)
             (ed/right-word ed))
-           ((== key -9) ;; backspace
+           ((== key gfx/ev-key-backspace)
             (ed/backspace-word ed))))
-      ((== state 32) ;; meta
+      ((== state gfx/ev-state-meta)
        (if ((== key ch/w) ;; M-w
             (ed/copy-region ed 0)
             (set (ed/mark ed) -1))))))

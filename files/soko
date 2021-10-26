@@ -140,19 +140,19 @@
        (mem/free inst))
       ((== input ch/r)
        (soko/init-level inst))
-      ((== input -15) ; left
+      ((== input gfx/ev-key-left)
        (soko/move-dozer inst 1 -1 0))
-      ((== input -16) ; up
+      ((== input gfx/ev-key-up)
        (soko/move-dozer inst 0 0 -1))
-      ((== input -17) ; right
+      ((== input gfx/ev-key-right)
        (soko/move-dozer inst 3 1 0))
-      ((== input -18) ; down
+      ((== input gfx/ev-key-down)
        (soko/move-dozer inst 2 0 1))
-      ((== input -19) ; page up
+      ((== input gfx/ev-key-page-up)
        (if ((> (soko/cur-level inst) 0)
             (set (soko/cur-level inst) (- (soko/cur-level inst) 1))
             (soko/init-level inst))))
-      ((== input -20) ; page down
+      ((== input gfx/ev-key-page-down)
        (if ((u64 (soko/levels inst) (+ (soko/cur-level inst) 1))
             (set (soko/cur-level inst) (+ (soko/cur-level inst) 1))
             (soko/init-level inst))))))

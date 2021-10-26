@@ -142,10 +142,10 @@
 
 (fun (shell/ed-input inst state input)
   (set (ed/title (shell/ed-ed inst)) (shell/ed-name inst))
-  (if ((and (== state 32) (== input ch/x))
+  (if ((and (== state gfx/ev-state-meta) (== input ch/x))
        (shell/ed-write inst)
        (shell/ed-quit inst))
-      ((and (== state 32) (== input ch/r))
+      ((and (== state gfx/ev-state-meta) (== input ch/r))
        (shell/ed-write inst)
        (shell/ed-run inst))
       (else
@@ -185,7 +185,7 @@
 
 (fun (shell/input inst state input)
   (var ed (shell/create-ed inst))
-  (if ((== input -11)
+  (if ((== input gfx/ev-key-return)
        (if (ed
             (shell/end-create inst))
            ((u8 (shell/cur-name inst))
@@ -196,10 +196,10 @@
        (ed/input ed state input))
       ((== input ch/Q)
        (shell/quit inst))
-      ((== input -16)
+      ((== input gfx/ev-key-up)
        (if ((> (shell/cur inst) 0)
             (set (shell/cur inst) (- (shell/cur inst) 1)))))
-      ((== input -18)
+      ((== input gfx/ev-key-down)
        (if ((< (shell/cur inst) (shell/max inst))
             (set (shell/cur inst) (+ (shell/cur inst) 1)))))
       ((== input ch/r)
