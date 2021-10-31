@@ -161,4 +161,4 @@
   (set (mandel/cur-im-min inst) mandel/im-min)
   (set (mandel/cur-im-max inst) mandel/im-max)
   (set (mandel/need-render inst) 1)
-  (gfx/launch inst mandel/efuns))
+  (gfx/launch inst "mandel" mandel/efuns))

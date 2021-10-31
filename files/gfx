@@ -232,12 +232,14 @@
 
 (struct gfx/app
   app-link
+  app-name
   app-instance
   app-functions)
 
-(fun (gfx/launch instance functions)
+(fun (gfx/launch instance name functions)
   (var app (mem/alloc gfx/app))
   (set (gfx/app-instance app) instance)
+  (set (gfx/app-name app) (str/dup name))
   (set (gfx/app-functions app) functions)
   (sys/funtab-ref functions)
   (set (gfx/app-link app) (gfx/gfx-apps (ctxt/gfx context)))
@@ -251,6 +253,7 @@
     (if ((== (gfx/app-instance app) instance)
          (set (u64 ptr) (gfx/app-link app))
          (sys/funtab-unref (gfx/app-functions app))
+         (mem/free (gfx/app-name app))
          (mem/free app))
         (else
          (set ptr (loc (gfx/app-link app)))))))
@@ -276,6 +279,23 @@
        (set (gfx/app-link prev) (gfx/gfx-apps gfx))
        (set (gfx/gfx-apps gfx) prev))))
 
+(fun (gfx/switch name)
+  (var gfx (ctxt/gfx context))
+  (var ptr (loc (gfx/gfx-apps gfx)))
+  (var found 0)
+  (while (u64 ptr)
+    (var app (u64 ptr))
+    (if ((== (str/cmp (gfx/app-name app) name) 0)
+         (set (u64 ptr) (gfx/app-link app))
+         (set (gfx/app-link app) (gfx/gfx-apps gfx))
+         (set (gfx/gfx-apps gfx) app)
+         (set found 1)
+         (goto done))
+        (else
+         (set ptr (loc (gfx/app-link app))))))
+  (label done)
+  found)
+  
 (fun (gfx/loop)
   (var gfx (ctxt/gfx context))
   (var extra-state 0)
