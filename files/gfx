@@ -14,6 +14,7 @@
 (def gfx/ev-state-shift    8)
 (def gfx/ev-state-control 16)
 (def gfx/ev-state-meta    32)
+(def gfx/ev-state-c-x     64)
 
 (def gfx/ev-button-1-press   -1)
 (def gfx/ev-button-1-release -2)
@@ -277,6 +278,7 @@
 
 (fun (gfx/loop)
   (var gfx (ctxt/gfx context))
+  (var extra-state 0)
   (while (gfx/gfx-apps gfx)
     (var app (gfx/gfx-apps gfx))
     (gfx/paint (gfx/app-instance app) (gfx/app-functions app))
@@ -287,14 +289,18 @@
         ((== (gfx/ev-type event) 3)
          (gfx/resize (gfx/ev-x event) (gfx/ev-y event)))
         ((== (gfx/ev-type event) 2)
-         (var state (gfx/ev-state event))
+         (var state (bit-or (gfx/ev-state event) extra-state))
          (var input (gfx/ev-input event))
-         (if ((and (== state 32) (== input -20))
-              (gfx/next))
-             ((and (== state 32) (== input -19))
-              (gfx/prev))
+         (if ((and (== state gfx/ev-state-control) (== input ch/x))
+              (set extra-state gfx/ev-state-c-x))
              (else
-              ((gfx/efun-input (gfx/app-functions app))
-               (gfx/app-instance app)
-               state input
-               (gfx/ev-x event) (gfx/ev-y event))))))))
+              (if ((and (== state gfx/ev-state-meta) (== input gfx/ev-key-page-down))
+                   (gfx/next))
+                  ((and (== state gfx/ev-state-meta) (== input gfx/ev-key-page-up))
+                   (gfx/prev))
+                  (else
+                   ((gfx/efun-input (gfx/app-functions app))
+                    (gfx/app-instance app)
+                    state input
+                    (gfx/ev-x event) (gfx/ev-y event))))
+              (set extra-state 0)))))))

@@ -126,7 +126,7 @@
 
 (fun (mandel/input inst state input event-x event-y)
   (set (mandel/need-render inst) 0)
-  (if ((== input gfx/ev-key-return)
+  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
        (gfx/quit inst)
        (mem/free inst))
       ((== input gfx/ev-key-backspace)

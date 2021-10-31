@@ -142,10 +142,12 @@
 
 (fun (shell/ed-input inst state input)
   (set (ed/title (shell/ed-ed inst)) (shell/ed-name inst))
-  (if ((and (== state gfx/ev-state-meta) (== input ch/x))
+  (if ((and (== state gfx/ev-state-c-x) (== input ch/s))
+       (shell/ed-write inst))
+      ((and (== state gfx/ev-state-c-x) (== input ch/q))
        (shell/ed-write inst)
        (shell/ed-quit inst))
-      ((and (== state gfx/ev-state-meta) (== input ch/r))
+      ((and (== state gfx/ev-state-c-x) (== input ch/r))
        (shell/ed-write inst)
        (shell/ed-run inst))
       (else
@@ -175,7 +177,7 @@
 
 (fun (shell/help inst)
   (set (shell/output-ptr inst) (shell/output inst))
-  (shell/capture-output "RET - edit\n  r - run\n  X - delete\n  q - reset\n  Q - halt" inst))
+  (shell/capture-output "  RET - edit\n    r - run\n    X - delete\n\nC-x q - quit" inst))
 
 (fun (shell/quit inst)
   (gfx/quit inst)
@@ -185,29 +187,30 @@
 
 (fun (shell/input inst state input)
   (var ed (shell/create-ed inst))
-  (if ((== input gfx/ev-key-return)
-       (if (ed
-            (shell/end-create inst))
-           ((u8 (shell/cur-name inst))
-            (shell/ed-launch inst))
-           (else
-            (shell/start-create inst))))
-      (ed
-       (ed/input ed state input))
-      ((== input ch/Q)
-       (shell/quit inst))
-      ((== input gfx/ev-key-up)
-       (if ((> (shell/cur inst) 0)
-            (set (shell/cur inst) (- (shell/cur inst) 1)))))
-      ((== input gfx/ev-key-down)
-       (if ((< (shell/cur inst) (shell/max inst))
-            (set (shell/cur inst) (+ (shell/cur inst) 1)))))
-      ((== input ch/r)
-       (shell/run inst))
-      ((== input ch/X)
-       (shell/remove inst))
-      ((== input ch/h)
-       (shell/help inst))))
+  (if ((== state 0)
+       (if ((== input gfx/ev-key-return)
+            (if (ed
+                 (shell/end-create inst))
+                ((u8 (shell/cur-name inst))
+                 (shell/ed-launch inst))
+                (else
+                 (shell/start-create inst))))
+           (ed
+            (ed/input ed state input))
+           ((== input gfx/ev-key-up)
+            (if ((> (shell/cur inst) 0)
+                 (set (shell/cur inst) (- (shell/cur inst) 1)))))
+           ((== input gfx/ev-key-down)
+            (if ((< (shell/cur inst) (shell/max inst))
+                 (set (shell/cur inst) (+ (shell/cur inst) 1)))))
+           ((== input ch/r)
+            (shell/run inst))
+           ((== input ch/X)
+            (shell/remove inst))
+           ((== input ch/h)
+            (shell/help inst))))
+      ((and (== state gfx/ev-state-c-x) (== input ch/q))
+       (shell/quit inst))))
 
 (sys/funtab shell/efuns
   shell/paint
