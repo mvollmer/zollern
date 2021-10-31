@@ -110,7 +110,8 @@
   (mem wbuf fs/wbuf)
   (fs/create wbuf)
   (ed/textbuf-write-file (shell/ed-text inst) wbuf)
-  (fs/commit wbuf (shell/ed-name inst)))
+  (fs/commit wbuf (shell/ed-name inst))
+  (set (ed/dirty (shell/ed-ed inst)) 0))
 
 (fun (shell/ed-capture str ptrloc)
   (dbg/str "CAP" str)

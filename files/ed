@@ -101,6 +101,7 @@
   (search-match-len s32)
   (search-buf u8 ed/search-len-max)
   ;; Editing state
+  (dirty u32)
   (window-top u64)
   (mark u64)
   (highlight-1 u64)
@@ -115,7 +116,9 @@
   (ed/textbuf-get-char (ed/buf ?ed) ?pos))
 
 (defset (ed/char ?ed ?pos) char
-  (ed/textbuf-set-char (ed/buf ?ed) ?pos ?char))
+  (begin
+    (ed/textbuf-set-char (ed/buf ?ed) ?pos ?char)
+    (set (ed/dirty ed) 1)))
 
 (def (ed/len ?ed)
   (ed/textbuf-len (ed/buf ?ed)))
@@ -222,7 +225,9 @@
        (var txt (ed/title ed))
        (while (u8 txt)
          (set x (+ x (gfx/glyph fonts/mono x y (u8 txt))))
-         (set txt (+ txt 1)))))
+         (set txt (+ txt 1)))
+       (if ((ed/dirty ed)
+            (gfx/glyph fonts/mono x y ch/*)))))
   (gfx/tint-rect (ed/lft ed) y (- (ed/rgt ed) (ed/lft ed)) (ed/row-height ed)
                  200 200 200))
 
@@ -669,6 +674,7 @@
   (set (ed/mark ed) -1)
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
+  (set (ed/dirty ed) 0)
   ed)
 
 (fun (ed/free ed)
