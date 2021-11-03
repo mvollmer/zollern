@@ -199,7 +199,7 @@
             (if (ed
                  (shell/end-create inst))
                 ((u8 (shell/cur-name inst))
-                 (shell/ed-launch inst))
+                 (shell/run inst))
                 (else
                  (shell/start-create inst))))
            (ed
@@ -210,8 +210,8 @@
            ((== input gfx/ev-key-down)
             (if ((< (shell/cur inst) (shell/max inst))
                  (set (shell/cur inst) (+ (shell/cur inst) 1)))))
-           ((== input ch/r)
-            (shell/run inst))
+           ((== input ch/e)
+            (shell/ed-launch inst))
            ((== input ch/X)
             (shell/remove inst))
            ((== input ch/h)

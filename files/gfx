@@ -314,9 +314,11 @@
          (if ((and (== state gfx/ev-state-control) (== input ch/x))
               (set extra-state gfx/ev-state-c-x))
              (else
-              (if ((and (== state gfx/ev-state-meta) (== input gfx/ev-key-page-down))
+              (if ((and (== state gfx/ev-state-c-x) (== input ch/b))
+                   (gfx/switch "shell"))
+                  ((and (== state gfx/ev-state-meta) (== input ch/<))
                    (gfx/next))
-                  ((and (== state gfx/ev-state-meta) (== input gfx/ev-key-page-up))
+                  ((and (== state gfx/ev-state-meta) (== input ch/>))
                    (gfx/prev))
                   (else
                    ((gfx/efun-input (gfx/app-functions app))
