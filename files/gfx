@@ -233,13 +233,15 @@
 (struct gfx/app
   app-link
   app-name
+  app-mode
   app-instance
   app-functions)
 
-(fun (gfx/launch instance name functions)
+(fun (gfx/launch instance name mode functions)
   (var app (mem/alloc gfx/app))
   (set (gfx/app-instance app) instance)
   (set (gfx/app-name app) (str/dup name))
+  (set (gfx/app-mode app) (str/dup mode))
   (set (gfx/app-functions app) functions)
   (sys/funtab-ref functions)
   (set (gfx/app-link app) (gfx/gfx-apps (ctxt/gfx context)))
@@ -254,6 +256,7 @@
          (set (u64 ptr) (gfx/app-link app))
          (sys/funtab-unref (gfx/app-functions app))
          (mem/free (gfx/app-name app))
+         (mem/free (gfx/app-mode app))
          (mem/free app))
         (else
          (set ptr (loc (gfx/app-link app)))))))
@@ -279,13 +282,14 @@
        (set (gfx/app-link prev) (gfx/gfx-apps gfx))
        (set (gfx/gfx-apps gfx) prev))))
 
-(fun (gfx/switch name)
+(fun (gfx/switch name mode)
   (var gfx (ctxt/gfx context))
   (var ptr (loc (gfx/gfx-apps gfx)))
   (var found 0)
   (while (u64 ptr)
     (var app (u64 ptr))
-    (if ((== (str/cmp (gfx/app-name app) name) 0)
+    (if ((and (== (str/cmp (gfx/app-name app) name) 0)
+              (== (str/cmp (gfx/app-mode app) mode) 0))
          (set (u64 ptr) (gfx/app-link app))
          (set (gfx/app-link app) (gfx/gfx-apps gfx))
          (set (gfx/gfx-apps gfx) app)
@@ -339,7 +343,7 @@
             (gfx/capture-output "no main function\n" output)))
        (sys/book-unref book)))
   (if (fail
-       (gfx/launch output "out" gfx/text-efuns))
+       (gfx/launch output name "out" gfx/text-efuns))
       (else
        (sys/page-put output))))
 
@@ -362,7 +366,7 @@
               (set extra-state gfx/ev-state-c-x))
              (else
               (if ((and (== state gfx/ev-state-c-x) (== input ch/b))
-                   (gfx/switch "shell"))
+                   (gfx/switch "shell" "main"))
                   ((and (== state gfx/ev-state-meta) (== input ch/<))
                    (gfx/next))
                   ((and (== state gfx/ev-state-meta) (== input ch/>))

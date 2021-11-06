@@ -170,7 +170,7 @@
   (set (soko/levels inst) levels)
   (set (soko/cur-level inst) 0)
   (soko/init-level inst)
-  (gfx/launch inst "soko" soko/efuns))
+  (gfx/launch inst "soko" "main" soko/efuns))
 
 (data soko/level_0
   (0

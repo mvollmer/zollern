@@ -1,7 +1,7 @@
 ;; Mandelbrot
 
 (defconst mandel/NORM 1000000)
-(defconst mandel/MAX    255)
+(defconst mandel/MAX      255)
 
 (defconst mandel/re-min -2500000)
 (defconst mandel/re-max  1000000)
@@ -161,4 +161,4 @@
   (set (mandel/cur-im-min inst) mandel/im-min)
   (set (mandel/cur-im-max inst) mandel/im-max)
   (set (mandel/need-render inst) 1)
-  (gfx/launch inst "mandel" mandel/efuns))
+  (gfx/launch inst "mandel" "main" mandel/efuns))

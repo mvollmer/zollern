@@ -71,7 +71,7 @@
 
 (fun (shell/run inst)
   (if ((and (u8 (shell/cur-name inst))
-            (not (gfx/switch (shell/cur-name inst))))
+            (not (gfx/switch (shell/cur-name inst) "main")))
        (gfx/launch-book (shell/cur-name inst)))))
 
 (fun (shell/start-create inst)
@@ -139,10 +139,7 @@
 
 (fun (shell/ed-launch inst)
   (mem rbuf fs/rbuf)
-  (var name (mem/alloc (+ (str/len (shell/cur-name inst)) 4)))
-  (str/cpy name "ed:")
-  (str/cpy (+ name 3) (shell/cur-name inst))
-  (if ((gfx/switch name)
+  (if ((gfx/switch (shell/cur-name inst) "ed")
        (begin))
       ((fs/open rbuf (shell/cur-name inst))
        (var ed-inst (mem/alloc shell/ed-data))
@@ -151,8 +148,7 @@
        (set (shell/ed-ed ed-inst) (ed/new (shell/ed-name ed-inst) (shell/ed-text ed-inst)))
        (ed/textbuf-read-file (shell/ed-text ed-inst) rbuf)
        (ed/highlight (shell/ed-ed ed-inst))
-       (gfx/launch ed-inst name shell/ed-efuns)))
-  (mem/free name))
+       (gfx/launch ed-inst (shell/cur-name inst) "ed" shell/ed-efuns))))
 
 (fun (shell/remove inst)
   (if ((u8 (shell/cur-name inst))
@@ -209,4 +205,4 @@
   (set (u8 (shell/output inst)) 0)
   (set (shell/create-textbuf inst) 0)
   (set (shell/create-ed inst) 0)
-  (gfx/launch inst "shell" shell/efuns))
+  (gfx/launch inst "shell" "main" shell/efuns))
