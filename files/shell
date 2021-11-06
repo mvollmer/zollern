@@ -70,15 +70,9 @@
   (set (shell/output-ptr inst) (+ (shell/output-ptr inst) (str/len str))))
 
 (fun (shell/run inst)
-  (if ((not (gfx/switch (shell/cur-name inst)))
-       (set (shell/output-ptr inst) (shell/output inst))
-       (if ((and (u8 (shell/cur-name inst))
-                 (var book (sys/book-get (shell/cur-name inst) shell/capture-output inst)))
-            (if ((var main (sys/book-search-fun book "main"))
-                 (main))
-                (else
-                 (shell/capture-output "no main function\n" inst)))
-            (sys/book-unref book))))))
+  (if ((and (u8 (shell/cur-name inst))
+            (not (gfx/switch (shell/cur-name inst))))
+       (gfx/launch-book (shell/cur-name inst)))))
 
 (fun (shell/start-create inst)
   (var name (ed/textbuf-new))
@@ -104,8 +98,7 @@
 (struct shell/ed-data
   ed-name
   ed-text
-  ed-ed
-  ed-output)
+  ed-ed)
 
 (fun (shell/ed-write inst)
   (mem wbuf fs/wbuf)
@@ -114,29 +107,14 @@
   (fs/commit wbuf (shell/ed-name inst))
   (set (ed/dirty (shell/ed-ed inst)) 0))
 
-(fun (shell/ed-capture str ptrloc)
-  (dbg/str "CAP" str)
-  (str/cpy (u64 ptrloc) str)
-  (set (u64 ptrloc) (+ (u64 ptrloc) (str/len str))))
-  
 (fun (shell/ed-run inst)
-  (var ptr (shell/ed-output inst))
-  (set (u8 ptr) 0)
-  (if ((var book (sys/book-get (shell/ed-name inst) shell/ed-capture (loc ptr)))
-       (if ((var main (sys/book-search-fun book "main"))
-            (main))
-           (else
-            (str/cpy ptr "no main")))
-       (sys/book-unref book)))
-  (if ((u8 (shell/ed-output inst))
-       (set (ed/title (shell/ed-ed inst)) (shell/ed-output inst)))))
+  (gfx/launch-book (shell/ed-name inst)))
 
 (fun (shell/ed-quit inst)
   (gfx/quit inst)
   (ed/free (shell/ed-ed inst))
   (ed/textbuf-free (shell/ed-text inst))
   (mem/free (shell/ed-name inst))
-  (mem/free (shell/ed-output inst))
   (mem/free inst))
 
 (fun (shell/ed-paint inst x y w h)
@@ -171,7 +149,6 @@
        (set (shell/ed-name ed-inst) (str/dup (shell/cur-name inst)))
        (set (shell/ed-text ed-inst) (ed/textbuf-new))
        (set (shell/ed-ed ed-inst) (ed/new (shell/ed-name ed-inst) (shell/ed-text ed-inst)))
-       (set (shell/ed-output ed-inst) (mem/alloc 500))
        (ed/textbuf-read-file (shell/ed-text ed-inst) rbuf)
        (ed/highlight (shell/ed-ed ed-inst))
        (gfx/launch ed-inst name shell/ed-efuns)))

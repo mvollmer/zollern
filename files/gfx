@@ -295,7 +295,54 @@
          (set ptr (loc (gfx/app-link app))))))
   (label done)
   found)
-  
+
+(fun (gfx/text-paint inst ox oy w h)
+  (var x (+ ox 4))
+  (var y (+ oy 4))
+  (var str inst)
+  (gfx/rect ox oy w h (gfx/color 255 255 255))
+  (while (and (u8 str)
+              (< x (- w 14))
+              (< y (- h 16)))
+    (if ((== (u8 str) ch/nl)
+         (set x (+ ox 4))
+         (set y (+ y 16)))
+        (else
+         (set x (+ x (gfx/glyph fonts/mono x y (u8 str))))))
+    (set str (+ str 1)))
+  (gfx/show))
+
+(fun (gfx/text-input inst state input)
+  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
+       (gfx/quit inst)
+       (sys/page-put inst))))
+
+(sys/funtab gfx/text-efuns
+  gfx/text-paint
+  gfx/text-input)
+
+(fun (gfx/capture-output str buf)
+  (str/cpy (+ buf (str/len buf)) str))
+
+(fun (gfx/launch-book name)
+  (var output (sys/page-get))
+  (set (u8 output) 0)
+  (gfx/capture-output "Launching " output)
+  (gfx/capture-output name output)
+  (gfx/capture-output ":\n" output)
+  (var fail 1)
+  (if ((var book (sys/book-get name gfx/capture-output output))
+       (if ((var main (sys/book-search-fun book "main"))
+            (set fail 0)
+            (main))
+           (else
+            (gfx/capture-output "no main function\n" output)))
+       (sys/book-unref book)))
+  (if (fail
+       (gfx/launch output "out" gfx/text-efuns))
+      (else
+       (sys/page-put output))))
+
 (fun (gfx/loop)
   (var gfx (ctxt/gfx context))
   (var extra-state 0)
