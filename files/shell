@@ -74,6 +74,11 @@
             (not (gfx/switch (shell/cur-name inst) "main")))
        (gfx/launch-book (shell/cur-name inst)))))
 
+(fun (shell/rerun inst)
+  (if ((u8 (shell/cur-name inst))
+       (gfx/send-quit (shell/cur-name inst) "main")
+       (shell/run inst))))
+
 (fun (shell/start-create inst)
   (var name (ed/textbuf-new))
   (var ed (ed/new 0 name))
@@ -108,6 +113,7 @@
   (set (ed/dirty (shell/ed-ed inst)) 0))
 
 (fun (shell/ed-run inst)
+  (gfx/send-quit (shell/ed-name inst) "main")
   (gfx/launch-book (shell/ed-name inst)))
 
 (fun (shell/ed-quit inst)
@@ -185,6 +191,8 @@
                  (set (shell/cur inst) (+ (shell/cur inst) 1)))))
            ((== input ch/e)
             (shell/ed-launch inst))
+           ((== input ch/r)
+            (shell/rerun inst))
            ((== input ch/X)
             (shell/remove inst))
            ((== input ch/h)

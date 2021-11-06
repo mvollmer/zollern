@@ -300,6 +300,16 @@
   (label done)
   found)
 
+(fun (gfx/send-quit name mode)
+  (var gfx (ctxt/gfx context))
+  (var app (gfx/gfx-apps gfx))
+  (while app
+    (if ((and (== (str/cmp (gfx/app-name app) name) 0)
+              (== (str/cmp (gfx/app-mode app) mode) 0))
+         ((gfx/efun-input (gfx/app-functions app))
+          (gfx/app-instance app) gfx/ev-state-c-x ch/q 0 0)))
+    (set app (gfx/app-link app))))
+
 (fun (gfx/text-paint inst ox oy w h)
   (var x (+ ox 4))
   (var y (+ oy 4))
@@ -367,6 +377,12 @@
              (else
               (if ((and (== state gfx/ev-state-c-x) (== input ch/b))
                    (gfx/switch "shell" "main"))
+                  ((and (== state gfx/ev-state-c-x) (== input ch/r)
+                        (== (str/cmp (gfx/app-mode app) "main") 0))
+                   (var name (str/dup (gfx/app-name app)))
+                   (gfx/send-quit name "main")
+                   (gfx/launch-book name)
+                   (mem/free name))
                   ((and (== state gfx/ev-state-meta) (== input ch/<))
                    (gfx/next))
                   ((and (== state gfx/ev-state-meta) (== input ch/>))
