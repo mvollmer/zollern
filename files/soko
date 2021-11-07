@@ -161,7 +161,7 @@
        (gfx/quit inst)
        (mem/free inst))))
 
-(sys/funtab soko/efuns
+(book/funtab soko/efuns
   soko/paint
   soko/input)
 

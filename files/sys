@@ -6,18 +6,6 @@
 (fun (sys/page-put page)
   (.sys/page-put page))
 
-(fun (sys/book-get name print-hook print-hook-data)
-  (.sys/book-get name print-hook print-hook-data))
-
-(fun (sys/book-search-fun book name)
-  (.sys/book-search-fun book name))
-
-(fun (sys/book-ref book)
-  (.sys/book-ref book))
-
-(fun (sys/book-unref book)
-  (.sys/book-unref book))
-
 (fun (sys/read fd buf size)
   (.sys/call 0 fd buf size))
 
@@ -43,18 +31,3 @@
 
 (fun (sys/ftruncate fd size)
   (.sys/call 77 fd size))
-
-;; Function tables
-
-(def (sys/funtab ?name . ?funcs)
-  (data ?name
-    (4 ?(exp/global (exp/intern ".book")) . ?funcs)))
-
-(fun (sys/funtab-book ft)
-  (u64 ft 0))
-
-(fun (sys/funtab-ref ft)
-  (sys/book-ref (sys/funtab-book ft)))
-
-(fun (sys/funtab-unref ft)
-  (sys/book-unref (sys/funtab-book ft)))

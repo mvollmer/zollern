@@ -139,22 +139,22 @@
       (else
        (ed/input (shell/ed-ed inst) state input))))
 
-(sys/funtab shell/ed-efuns
+(book/funtab shell/ed-efuns
   shell/ed-paint
   shell/ed-input)
 
-(fun (shell/ed-launch inst)
+(fun (shell/launch-ed name)
   (mem rbuf fs/rbuf)
-  (if ((gfx/switch (shell/cur-name inst) "ed")
+  (if ((gfx/switch name "ed")
        (begin))
-      ((fs/open rbuf (shell/cur-name inst))
+      ((fs/open rbuf name)
        (var ed-inst (mem/alloc shell/ed-data))
-       (set (shell/ed-name ed-inst) (str/dup (shell/cur-name inst)))
+       (set (shell/ed-name ed-inst) (str/dup name))
        (set (shell/ed-text ed-inst) (ed/textbuf-new))
        (set (shell/ed-ed ed-inst) (ed/new (shell/ed-name ed-inst) (shell/ed-text ed-inst)))
        (ed/textbuf-read-file (shell/ed-text ed-inst) rbuf)
        (ed/highlight (shell/ed-ed ed-inst))
-       (gfx/launch ed-inst (shell/cur-name inst) "ed" shell/ed-efuns))))
+       (gfx/launch ed-inst name "ed" shell/ed-efuns))))
 
 (fun (shell/remove inst)
   (if ((u8 (shell/cur-name inst))
@@ -190,7 +190,8 @@
             (if ((< (shell/cur inst) (shell/max inst))
                  (set (shell/cur inst) (+ (shell/cur inst) 1)))))
            ((== input ch/e)
-            (shell/ed-launch inst))
+            (if ((shell/cur-name inst)
+                 (shell/launch-ed (shell/cur-name  inst)))))
            ((== input ch/r)
             (shell/rerun inst))
            ((== input ch/X)
@@ -200,7 +201,7 @@
       ((and (== state gfx/ev-state-c-x) (== input ch/q))
        (shell/quit inst))))
 
-(sys/funtab shell/efuns
+(book/funtab shell/efuns
   shell/paint
   shell/input)
 

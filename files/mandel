@@ -38,7 +38,7 @@
   (var im (+ im-min (* y (/ (- im-max im-min) (mandel/y-size inst)))))
   (var c (- 255 (mandel/iter re im)))
   (gfx/put-pixel x y (gfx/color (* c 15) (* c 1) (* c 32))))
-  
+
 (fun (mandel/render-h-line inst x1 x2 y)
   (var x x1)
   (while (<= x x2)
@@ -61,7 +61,7 @@
   (while (<= y y2)
     (mandel/render-point inst x y)
     (set y (+ y 1))))
-  
+
 (fun (mandel/get-v-line-color x y1 y2)
   (var c (gfx/get-pixel x y1))
   (var y (+ y1 1))
@@ -150,7 +150,7 @@
        (set (mandel/cur-im-max inst) (+ y dy2))
        (set (mandel/need-render inst) 1))))
 
-(sys/funtab mandel/efuns
+(book/funtab mandel/efuns
   mandel/paint
   mandel/input)
 

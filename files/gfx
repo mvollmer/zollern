@@ -243,7 +243,7 @@
   (set (gfx/app-name app) (str/dup name))
   (set (gfx/app-mode app) (str/dup mode))
   (set (gfx/app-functions app) functions)
-  (sys/funtab-ref functions)
+  (book/funtab-ref functions)
   (set (gfx/app-link app) (gfx/gfx-apps (ctxt/gfx context)))
   (set (gfx/gfx-apps (ctxt/gfx context)) app))
 
@@ -254,7 +254,7 @@
     (var app (u64 ptr))
     (if ((== (gfx/app-instance app) instance)
          (set (u64 ptr) (gfx/app-link app))
-         (sys/funtab-unref (gfx/app-functions app))
+         (book/funtab-unref (gfx/app-functions app))
          (mem/free (gfx/app-name app))
          (mem/free (gfx/app-mode app))
          (mem/free app))
@@ -331,7 +331,7 @@
        (gfx/quit inst)
        (sys/page-put inst))))
 
-(sys/funtab gfx/text-efuns
+(book/funtab gfx/text-efuns
   gfx/text-paint
   gfx/text-input)
 
@@ -345,17 +345,23 @@
   (gfx/capture-output name output)
   (gfx/capture-output ":\n" output)
   (var fail 1)
-  (if ((var book (sys/book-get name gfx/capture-output output))
-       (if ((var main (sys/book-search-fun book "main"))
+  (if ((var book (book/get name gfx/capture-output output))
+       (if ((var main (book/search-fun book "main"))
             (set fail 0)
             (main))
            (else
             (gfx/capture-output "no main function\n" output)))
-       (sys/book-unref book)))
+       (book/unref book)))
   (if (fail
        (gfx/launch output name "out" gfx/text-efuns))
       (else
        (sys/page-put output))))
+
+(fun (gfx/launch-ed name)
+  (if ((var book (book/find "shell"))
+       (if ((var func (book/search-fun book "launch-ed"))
+            (func name)))
+       (book/unref book))))
 
 (fun (gfx/loop)
   (var gfx (ctxt/gfx context))
@@ -383,6 +389,9 @@
                    (gfx/send-quit name "main")
                    (gfx/launch-book name)
                    (mem/free name))
+                  ((and (== state gfx/ev-state-c-x) (== input ch/e)
+                        (== (str/cmp (gfx/app-mode app) "main") 0))
+                   (gfx/launch-ed (gfx/app-name app)))
                   ((and (== state gfx/ev-state-meta) (== input ch/<))
                    (gfx/next))
                   ((and (== state gfx/ev-state-meta) (== input ch/>))

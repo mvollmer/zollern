@@ -1,0 +1,45 @@
+(fun (book/ref book)
+  (.sys/book-ref book))
+
+(fun (book/unref book)
+  (.sys/book-unref book))
+
+(struct book/book
+  (refs u32)
+  name
+  (time u32)
+  next
+  pages
+  globals
+  deps)
+
+(fun (book/find name)
+  (var b (ctxt/books context))
+  (while b
+    (if ((== (str/cmp (book/name b) name) 0)
+         (book/ref b)
+         (goto found)))
+    (set b (book/next b)))
+  (label found)
+  b)
+
+(fun (book/get name print-hook print-hook-data)
+  (.sys/book-get name print-hook print-hook-data))
+
+(fun (book/search-fun book name)
+  (.sys/book-search-fun book name))
+
+;; Function tables
+
+(def (book/funtab ?name . ?funcs)
+  (data ?name
+    (4 ?(exp/global (exp/intern ".book")) . ?funcs)))
+
+(fun (book/funtab-book ft)
+  (u64 ft 0))
+
+(fun (book/funtab-ref ft)
+  (book/ref (book/funtab-book ft)))
+
+(fun (book/funtab-unref ft)
+  (book/unref (book/funtab-book ft)))
