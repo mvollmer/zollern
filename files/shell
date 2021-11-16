@@ -76,8 +76,7 @@
 
 (fun (shell/rerun inst)
   (if ((u8 (shell/cur-name inst))
-       (gfx/send-quit (shell/cur-name inst) "main")
-       (shell/run inst))))
+       (gfx/launch-book (shell/cur-name inst)))))
 
 (fun (shell/start-create inst)
   (var name (ed/textbuf-new))
@@ -113,7 +112,6 @@
   (set (ed/dirty (shell/ed-ed inst)) 0))
 
 (fun (shell/ed-run inst)
-  (gfx/send-quit (shell/ed-name inst) "main")
   (gfx/launch-book (shell/ed-name inst)))
 
 (fun (shell/ed-quit inst)

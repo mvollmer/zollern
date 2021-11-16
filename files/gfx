@@ -348,6 +348,7 @@
   (if ((var book (book/get name gfx/capture-output output))
        (if ((var main (book/search-fun book "main"))
             (set fail 0)
+            (gfx/send-quit name "main")
             (main))
            (else
             (gfx/capture-output "no main function\n" output)))
@@ -386,7 +387,6 @@
                   ((and (== state gfx/ev-state-c-x) (== input ch/r)
                         (== (str/cmp (gfx/app-mode app) "main") 0))
                    (var name (str/dup (gfx/app-name app)))
-                   (gfx/send-quit name "main")
                    (gfx/launch-book name)
                    (mem/free name))
                   ((and (== state gfx/ev-state-c-x) (== input ch/e)
