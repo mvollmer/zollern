@@ -11,7 +11,12 @@
   next
   pages
   globals
-  deps)
+  deps
+  ood-flag)
+
+(struct book/link
+  bl-link
+  bl-book)
 
 (fun (book/find name)
   (var b (ctxt/books context))
@@ -28,6 +33,46 @@
 
 (fun (book/search-fun book name)
   (.sys/book-search-fun book name))
+
+(fun (book/find-in-list list cond)
+  (var res 0)
+  (while list
+    (if ((cond (book/bl-book list))
+         (set res (book/bl-book list))
+         (goto done)))
+    (set list (book/bl-link list)))
+  (label done)
+  res)
+
+(fun (book/is-older-than-file book)
+  (mem rbuf fs/rbuf)
+  (if ((fs/open rbuf (book/name book))
+       (var ftime (fs/node-time (fs/rbuf-node-ptr rbuf)))
+       (fs/close rbuf)
+       (> ftime (book/time book)))
+      (else
+       0)))
+
+(fun (book/is-out-of-date book)
+  (if ((book/ood-flag book)
+       (- (book/ood-flag book) 1))
+      (else
+       (var ood (or (book/is-older-than-file book)
+                    (book/find-in-list (book/deps book) book/is-out-of-date)))
+       (set (book/ood-flag book) (+ ood 1))
+       ood)))
+
+(fun (book/reset-ood-flag book)
+  (if ((!= (book/ood-flag book) 0)
+       (set (book/ood-flag book) 0)
+       (book/find-in-list (book/deps book) book/reset-ood-flag)))
+  0)
+       
+(fun (book/reset-out-of-date)
+  (var b (ctxt/books context))
+  (while b
+    (book/reset-ood-flag b)
+    (set b (book/next b))))
 
 ;; Function tables
 

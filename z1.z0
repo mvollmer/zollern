@@ -473,7 +473,11 @@
   (u64 bk-next)
   (u64 bk-pages)
   (u64 bk-globals)
-  (u64 bk-deps))
+  (u64 bk-deps)
+  (u64 bk-extra-1)
+  (u64 bk-extra-2)
+  (u64 bk-extra-3)
+  (u64 bk-extra-4))
 
 (defstruct book-link
   (u64 bl-link)
@@ -1016,6 +1020,10 @@
   (set (bk-globals l0) 0)
   (set (bk-deps l0) 0)
   (set (bk-time l0) 0)
+  (set (bk-extra-1 l0) 0)
+  (set (bk-extra-2 l0) 0)
+  (set (bk-extra-3 l0) 0)
+  (set (bk-extra-4 l0) 0)
   (set x0 l0)
   (pop l0)
   (push l0)

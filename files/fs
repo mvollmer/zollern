@@ -159,6 +159,9 @@
   (rbuf-start u64)
   (rbuf-size u64))
 
+(fun (fs/rbuf-node-ptr buf)
+  (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node buf) fs/node-size)))
+
 (fun (fs/open buf name)
   (var ptr (fs/disk-start (ctxt/disk context)))
   (var i 1)
@@ -175,7 +178,7 @@
   (label done))
 
 (fun (fs/read buf)
-  (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node buf) fs/node-size)))
+  (var node (fs/rbuf-node-ptr buf))
   (var ptr (fs/rbuf-ptr buf))
   (var rest-size (- (fs/node-size node) (* ptr fs/block-size)))
   (if ((> rest-size 0)
@@ -198,7 +201,7 @@
 (fun (fs/remove name)
   (mem rbuf fs/rbuf)
   (if ((fs/open rbuf name)
-       (var node (+ (fs/disk-start (ctxt/disk context)) (* (fs/rbuf-node rbuf) fs/node-size)))
+       (var node (fs/rbuf-node-ptr rbuf))
        (fs/read-write)
        (set (fs/node-name node 0) 0)
        (fs/read-only)

@@ -300,15 +300,22 @@
   (label done)
   found)
 
-(fun (gfx/send-quit name mode)
+(fun (gfx/find name mode)
   (var gfx (ctxt/gfx context))
   (var app (gfx/gfx-apps gfx))
   (while app
     (if ((and (== (str/cmp (gfx/app-name app) name) 0)
               (== (str/cmp (gfx/app-mode app) mode) 0))
-         ((gfx/efun-input (gfx/app-functions app))
-          (gfx/app-instance app) gfx/ev-state-c-x ch/q 0 0)))
-    (set app (gfx/app-link app))))
+         (goto done)))
+    (set app (gfx/app-link app)))
+  (label done)
+  app)
+
+(fun (gfx/send-quit name mode)
+  (var app (gfx/find name mode))
+  (if (app
+       ((gfx/efun-input (gfx/app-functions app))
+        (gfx/app-instance app) gfx/ev-state-c-x ch/q 0 0))))
 
 (fun (gfx/text-paint inst ox oy w h)
   (var x (+ ox 4))
