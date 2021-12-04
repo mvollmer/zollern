@@ -361,7 +361,8 @@
             (gfx/capture-output "no main function\n" output)))
        (book/unref book)))
   (if (fail
-       (gfx/launch output name "out" gfx/text-efuns))
+       (gfx/send-quit "compile" "log")
+       (gfx/launch output "compile" "log" gfx/text-efuns))
       (else
        (sys/page-put output))))
 
