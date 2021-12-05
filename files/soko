@@ -3,11 +3,28 @@
 (defconst soko/width 20)
 (defconst soko/height 20)
 
+(enum
+  dir-none
+  dir-up
+  dir-left
+  dir-down
+  dir-right)
+
+(enum
+  tile-empty
+  tile-wall
+  tile-target
+  tile-box
+  tile-box-on-target)
+
 (struct soko/data
   dozer-dir
   dozer-x
   dozer-y
   (tiles u8 (* soko/width soko/height))
+  (boxes u8 (* soko/width soko/height))
+  move-count
+  move-history
   levels
   cur-level)
 
@@ -16,23 +33,32 @@
   (level-height u8)
   (level-tiles u8 0))
 
+(fun (soko/wall inst x y)
+  (== (soko/tiles inst (+ x (* y soko/width))) soko/tile-wall))
+
+(fun (soko/box inst x y)
+  (soko/boxes inst (+ x (* y soko/width))))
+
+(fun (soko/set-box inst x y b)
+  (set (soko/boxes inst (+ x (* y soko/width))) b))
+  
 (fun (soko/paint-dozer x y dir)
-  (if ((== dir 0) ; up
+  (if ((== dir soko/dir-up)
        (gfx/rect (+ x 10) (+ y 7) 10 20 (gfx/color 185 155 20))
        (gfx/rect (+ x 2) (+ y 8) 5 18 (gfx/color 128 128 128))
        (gfx/rect (+ x 23) (+ y 8) 5 18 (gfx/color 128 128 128))
        (gfx/rect (+ x 2) y 26 4 (gfx/color 0 0 0)))
-      ((== dir 1) ; left
+      ((== dir soko/dir-left)
        (gfx/rect (+ x 7) (+ y 10) 20 10 (gfx/color 185 155 20))
        (gfx/rect (+ x 8) (+ y 2) 18 5 (gfx/color 128 128 128))
        (gfx/rect (+ x 8) (+ y 23) 18 5 (gfx/color 128 128 128))
        (gfx/rect x (+ y 2) 4 26 (gfx/color 0 0 0)))
-      ((== dir 2) ; down
+      ((== dir soko/dir-down)
        (gfx/rect (+ x 10) (+ y 3) 10 20 (gfx/color 185 155 20))
        (gfx/rect (+ x 2) (+ y 4) 5 18 (gfx/color 128 128 128))
        (gfx/rect (+ x 23) (+ y 4) 5 18 (gfx/color 128 128 128))
        (gfx/rect (+ x 2) (+ y 26) 26 4 (gfx/color 0 0 0)))
-      ((== dir 3) ; right
+      ((== dir soko/dir-right)
        (gfx/rect (+ x 3) (+ y 10) 20 10 (gfx/color 185 155 20))
        (gfx/rect (+ x 4) (+ y 2) 18 5 (gfx/color 128 128 128))
        (gfx/rect (+ x 4) (+ y 23) 18 5 (gfx/color 128 128 128))
@@ -61,14 +87,11 @@
       (var t (soko/tiles inst (+ x (* y soko/width))))
       (var px (+ 10 (* x 30)))
       (var py (+ 10 (* y 30)))
-      (if ((== t 1)
+      (if ((== t soko/tile-wall)
            (soko/paint-wall px py))
-          ((== t 2)
-           (soko/paint-target px py))
-          ((== t 3)
-           (soko/paint-box px py))
-          ((== t 4)
-           (soko/paint-target px py)
+          ((== t soko/tile-target)
+           (soko/paint-target px py)))
+      (if ((soko/box inst x y)
            (soko/paint-box px py)))
       (if ((and (== x (soko/dozer-x inst))
                 (== y (soko/dozer-y inst)))
@@ -83,34 +106,38 @@
     (var x 0)
     (while (< x soko/width)
       (var t 0)
+      (var b 0)
       (if ((and (< x (soko/level-width level))
                 (< y (soko/level-height level)))
-           (set t (soko/level-tiles level (+ x (* y (soko/level-width level)))))))
+           (var tt (soko/level-tiles level (+ x (* y (soko/level-width level)))))
+           (if ((== tt soko/tile-wall)
+                (set t soko/tile-wall))
+               ((== tt soko/tile-target)
+                (set t soko/tile-target))
+               ((== tt soko/tile-box)
+                (set b 1))
+               ((== tt soko/tile-box-on-target)
+                (set t soko/tile-target)
+                (set b 1))
+               ((== tt 9)
+                (set (soko/dozer-x inst) x)
+                (set (soko/dozer-y inst) y)
+                (set (soko/dozer-dir inst) soko/dir-up)))))
       (var idx (+ x (* y soko/width)))
-      (if ((== t 9)
-           (set (soko/dozer-x inst) x)
-           (set (soko/dozer-y inst) y)
-           (set (soko/dozer-dir inst) 0)
-           (set t 0)))
       (set (soko/tiles inst idx) t)
+      (set (soko/boxes inst idx) b)
       (set x (+ x 1)))
-    (set y (+ y 1))))
+    (set y (+ y 1)))
+  (set (soko/move-count inst) 0))
 
 (fun (soko/move-box inst x y dx dy)
   (var nx (+ x dx))
   (var ny (+ y dy))
   (if ((and (>= nx 0) (>= ny 0)
             (< nx soko/width) (< ny soko/height))
-       (var t (soko/tiles inst (+ nx (* soko/width ny))))
-       (if ((or (== t 0) (== t 2))
-            (if ((== t 0)
-                 (set (soko/tiles inst (+ nx (* soko/width ny))) 3))
-                (else
-                 (set (soko/tiles inst (+ nx (* soko/width ny))) 4)))
-            (if ((== (soko/tiles inst (+ x (* soko/width y))) 3)
-                 (set (soko/tiles inst (+ x (* soko/width y))) 0))
-                (else
-                 (set (soko/tiles inst (+ x (* soko/width y))) 2)))
+       (if ((and (not (soko/wall inst nx ny)) (not (soko/box inst nx ny)))
+            (soko/set-box inst nx ny 1)
+            (soko/set-box inst x y 0)
             1)
            (else
             0)))
@@ -121,16 +148,44 @@
   (set (soko/dozer-dir inst) dir)
   (var x (+ (soko/dozer-x inst) dx))
   (var y (+ (soko/dozer-y inst) dy))
+  (var box-needs-moving (soko/box inst x y))
   (if ((and (>= x 0) (>= y 0)
             (< x soko/width) (< y soko/height))
        (var t (soko/tiles inst (+ x (* soko/width y))))
-       (if ((or (== t 0)
-                (== t 2)
-                (and (or (== t 3) (== t 4))
-                     (soko/move-box inst x y dx dy)))
+       (if ((and (!= t soko/tile-wall)
+                 (or (not box-needs-moving) (soko/move-box inst x y dx dy)))
             (set (soko/dozer-x inst) x)
-            (set (soko/dozer-y inst) y))))))
+            (set (soko/dozer-y inst) y)
+            (set (s8 (soko/move-history inst) (soko/move-count inst)) (if (box-needs-moving (- dir)) (else dir)))
+            (set (soko/move-count inst) (+ (soko/move-count inst) 1)))))))
 
+(fun (soko/move-dozer-back inst dx dy box-was-moved)
+  (var x (soko/dozer-x inst))
+  (var y (soko/dozer-y inst))
+  (set (soko/dozer-x inst) (+ x dx))
+  (set (soko/dozer-y inst) (+ y dy))
+  (if (box-was-moved
+       (soko/set-box inst x y 1)
+       (soko/set-box inst (- x dx) (- y dy) 0))))
+
+(fun (soko/undo-dozer inst)
+  (if ((> (soko/move-count inst) 0)
+       (var m (- (soko/move-count inst) 1))
+       (var d (s8 (soko/move-history inst) m))
+       (set (soko/move-count inst) m)
+       (var box-was-moved (< d 0))
+       (if (box-was-moved
+            (set d (- d))))
+       (if ((== d soko/dir-left)
+            (soko/move-dozer-back inst 1 0 box-was-moved))
+           ((== d soko/dir-up)
+            (soko/move-dozer-back inst 0 1 box-was-moved))
+           ((== d soko/dir-right)
+            (soko/move-dozer-back inst -1 0 box-was-moved))
+           ((== d soko/dir-down)
+            (soko/move-dozer-back inst 0 -1 box-was-moved)))
+       (set (soko/dozer-dir inst) d))))
+       
 (fun (soko/paint inst x y w h)
   (soko/paint-level inst))
 
@@ -142,13 +197,15 @@
            ((== input ch/r)
             (soko/init-level inst))
            ((== input gfx/ev-key-left)
-            (soko/move-dozer inst 1 -1 0))
+            (soko/move-dozer inst soko/dir-left -1 0))
            ((== input gfx/ev-key-up)
-            (soko/move-dozer inst 0 0 -1))
+            (soko/move-dozer inst soko/dir-up 0 -1))
            ((== input gfx/ev-key-right)
-            (soko/move-dozer inst 3 1 0))
+            (soko/move-dozer inst soko/dir-right 1 0))
            ((== input gfx/ev-key-down)
-            (soko/move-dozer inst 2 0 1))
+            (soko/move-dozer inst soko/dir-down 0 1))
+           ((== input gfx/ev-key-backspace)
+            (soko/undo-dozer inst))
            ((== input gfx/ev-key-page-up)
             (if ((> (soko/cur-level inst) 0)
                  (set (soko/cur-level inst) (- (soko/cur-level inst) 1))
@@ -167,6 +224,7 @@
 
 (fun (soko/launch levels)
   (var inst (mem/alloc soko/data))
+  (set (soko/move-history inst) (sys/page-get))
   (set (soko/levels inst) levels)
   (set (soko/cur-level inst) 0)
   (soko/init-level inst)
