@@ -89,6 +89,8 @@
 
 (defprim lang/prim-neg   7 0)
 (defprim lang/bit-not    7 1)
+(defprim lang/i->f       7 2)
+(defprim lang/f->i       7 3)
 
 (defprim lang/==         8 0)
 (defprim lang/!=         8 1)
@@ -97,6 +99,10 @@
 (defprim lang/>          8 4)
 (defprim lang/>=         8 5)
 (defprim lang/%          8 6)
+(defprim lang/f<         8 7)
+(defprim lang/f<=        8 8)
+(defprim lang/f>         8 9)
+(defprim lang/f>=        8 10)
 
 (defprim lang/+          9 0)
 (defprim lang/prim-minus 9 1)
@@ -104,6 +110,10 @@
 (defprim lang//          9 3)
 (defprim lang/bit-and    9 4)
 (defprim lang/bit-or     9 5)
+(defprim lang/f+         9 6)
+(defprim lang/f-         9 7)
+(defprim lang/f*         9 8)
+(defprim lang/f/         9 9)
 
 (defprim lang/prim-u64  13 3)
 

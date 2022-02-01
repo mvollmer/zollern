@@ -2154,8 +2154,10 @@
   (ret))
 
 (code comp-unop-table
-  (8 comp-unop-neg)  ; 0
-  (8 comp-unop-not)  ; 1
+  (8 comp-unop-neg)   ; 0
+  (8 comp-unop-not)   ; 1
+  (8 comp-unop-float) ; 2
+  (8 comp-unop-fix)   ; 3
   comp-unop-table-end)
 
 (def comp-unop-table-size (>> (- comp-unop-table-end comp-unop-table) 3))
@@ -2184,14 +2186,29 @@
   (code-emit l0 (not l0))
   (ret))
 
+(code comp-unop-float
+  (code-emit l0 (1 0x66 0x0F 0xEF 0xC0))      ; pxor %xmm0,%xmm0
+  (code-emit l0 (1 0xF2 0x48 0x0F 0x2A 0xC0)) ; cvtsi2sd %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-unop-fix
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0xF2 0x48 0x0F 0x2C 0xC0)) ; cvttsd2si %xmm0,%rax
+  (ret))
+
 (code comp-binop-table
-  (8 comp-binop-eq)  ; 0
-  (8 comp-binop-neq) ; 1
-  (8 comp-binop-lt)  ; 2
-  (8 comp-binop-lte) ; 3
-  (8 comp-binop-gt)  ; 4
-  (8 comp-binop-gte) ; 5
-  (8 comp-binop-mod) ; 6
+  (8 comp-binop-eq)   ; 0
+  (8 comp-binop-neq)  ; 1
+  (8 comp-binop-lt)   ; 2
+  (8 comp-binop-lte)  ; 3
+  (8 comp-binop-gt)   ; 4
+  (8 comp-binop-gte)  ; 5
+  (8 comp-binop-mod)  ; 6
+  (8 comp-binop-flt)  ; 7
+  (8 comp-binop-flte) ; 8
+  (8 comp-binop-fgt)  ; 9
+  (8 comp-binop-fgte) ; 10
   comp-binop-table-end)
 
 (def comp-binop-table-size (>> (- comp-binop-table-end comp-binop-table) 3))
@@ -2254,6 +2271,38 @@
   (code-emit l0 (set l0 l2))
   (ret))
 
+(code comp-binop-flt
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC8))      ; comisd %xmm0,%xmm1
+  (code-emit l0 (1 0x0F 0x97 0xC0))           ; seta %al
+  (ret))
+
+(code comp-binop-flte
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC8))      ; comisd %xmm0,%xmm1
+  (code-emit l0 (1 0x0F 0x93 0xC0))           ; setae %al
+  (ret))
+
+(code comp-binop-fgt
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC1))      ; comisd %xmm1,%xmm0
+  (code-emit l0 (1 0x0F 0x97 0xC0))           ; seta %al
+  (ret))
+
+(code comp-binop-fgte
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC1))      ; comisd %xmm1,%xmm0
+  (code-emit l0 (1 0x0F 0x93 0xC0))           ; setae %al
+  (ret))
+
 (code comp-polop-table
   (8 comp-polop-add)  ; 0
   (8 comp-polop-sub)  ; 1
@@ -2261,6 +2310,10 @@
   (8 comp-polop-div)  ; 3
   (8 comp-polop-and)  ; 4
   (8 comp-polop-or)   ; 5
+  (8 comp-polop-fadd) ; 6
+  (8 comp-polop-fsub) ; 6
+  (8 comp-polop-fmul) ; 6
+  (8 comp-polop-fdiv) ; 6
   comp-polop-table-end)
 
 (def comp-polop-table-size (>> (- comp-polop-table-end comp-polop-table) 3))
@@ -2310,6 +2363,34 @@
 
 (code comp-polop-or
   (code-emit l0 (or l0 l1))
+  (ret))
+
+(code comp-polop-fadd
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x58 0xC1))      ; addsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-polop-fsub
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x5C 0xC1))      ; subsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-polop-fmul
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x59 0xC1))      ; mulsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-polop-fdiv
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x5E 0xC1))      ; divsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
   (ret))
 
 (code locals-define
