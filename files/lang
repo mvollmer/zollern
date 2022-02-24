@@ -431,12 +431,10 @@
   ?(prim-if form
             (begin
               (syntax-parse form ((?cond . ?then) . ?rest))
-              (syntax-expand (prim-if ?cond (begin . ?then) (lang/if* . ?rest))))
+              (syntax-expand (prim-if ?cond (begin . ?then) (lang/if . ?rest))))
             (syntax-expand (begin))))
 
 (def lang/else 1)
-
-(def (lang/if* . ?rest) (if . ?rest))
 
 ;; (var NAME)
 ;; =>
