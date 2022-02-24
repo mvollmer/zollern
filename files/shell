@@ -110,7 +110,7 @@
 
 (fun (shell/help inst)
   (set (shell/output-ptr inst) (shell/output inst))
-  (shell/capture-output "  RET - edit\n    r - run\n    X - delete\n\nC-x q - quit" inst))
+  (shell/capture-output "Shell keys:\n  RET - switch to app\n    e - edit source\n    r - restart\n    X - delete\n\nGlobal keys:\nC-x b - switch to shell\nC-x r - restart\nC-x e - edit source\nC-x q - quit\n\n  M-< - previous app\n  M-> - next app" inst))
 
 (fun (shell/quit inst)
   (gfx/quit inst)
