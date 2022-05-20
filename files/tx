@@ -1,0 +1,1004 @@
+;;; TX - simple type setting
+
+;; Data structures, this is deliberately a stress test for malloc/free
+
+(enum
+  nt-hbox
+  nt-vbox
+  nt-tbox
+  nt-pbox
+  nt-glue)
+
+(struct tx/context
+  ;; constructing
+  c-box-context
+  c-outer-y
+  ;; inking
+  c-ink
+  c-ink-cur-page
+  c-ink-ptr
+  c-ink-end
+  c-ink-x
+  c-ink-y
+  c-ink-font
+  ;; parsing
+  c-rbuf
+  c-at-bol
+  c-in-section-header
+  c-cur-token
+  c-execute-command
+  ;; markup state
+  c-verbatim
+  c-font
+  c-line-width
+  c-line-skip
+  c-par-skip)
+
+(struct tx/box-context
+  bc-prev
+  bc-box
+  bc-tailp)
+
+(struct tx/node
+  n-type
+  n-next)
+
+(struct tx/box
+  (:base tx/node)
+  b-width b-height b-depth
+  b-children)
+
+(fun (tx/is-box node)
+  (< (tx/n-type node) tx/nt-glue))
+
+(struct tx/tbox
+  (:base tx/box)
+  tb-font
+  tb-str)
+
+(defconst tx/NATURAL-SIZE 40000)
+
+(struct tx/hbox
+  (:base tx/box)
+  hb-width)
+
+(struct tx/vbox
+  (:base tx/box)
+  vb-height)
+
+(struct tx/pbox
+  (:base tx/box)
+  pb-width
+  pb-line-skip
+  pb-left-off pb-left-plus
+  pb-right-off pb-right-plus)
+
+(fun (tx/is-pbox node)
+  (== (tx/n-type node) tx/nt-pbox))
+
+(defconst tx/FILL-ORDER-SHIFT 40000)
+
+(struct tx/glue
+  (:base tx/node)
+  g-size
+  g-off
+  g-plus
+  g-minus)
+
+(fun (tx/is-glue node)
+  (== (tx/n-type node) tx/nt-glue))
+
+(fun (tx/free-node node)
+  (var t (tx/n-type node))
+  (if ((== t tx/nt-tbox)
+       (mem/free (tx/tb-str node)))
+      ((tx/is-box node)
+       (var a (tx/b-children node))
+       (while a
+         (var b (tx/n-next a))
+         (tx/free-node a)
+         (set a b))))
+  (mem/free node))
+
+(fun (tx/dbg-nodes l dbg)
+  (while l
+    (dbg l)
+    (set l (tx/n-next l))))
+
+(fun (tx/dbg-node n)
+  (var t (tx/n-type n))
+  (if ((== t tx/nt-glue)
+       (dbg/out "glue\n")
+       (dbg/int " off" (tx/g-off n))
+       (dbg/int " plus" (tx/g-plus n))
+       (dbg/int " minus" (tx/g-minus n)))
+      ((== t tx/nt-tbox)
+       (dbg/str "text" (tx/tb-str n)))
+      ((== t tx/nt-hbox)
+       (dbg/out "hbox\n")
+       (dbg/int " width" (tx/hb-width n))
+       (tx/dbg-nodes (tx/b-children n) tx/dbg-node)
+       (dbg/out "end\n"))
+      ((== t tx/nt-vbox)
+       (dbg/out "vbox\n")
+       (dbg/int " height" (tx/vb-height n))
+       (tx/dbg-nodes (tx/b-children n) tx/dbg-node)
+       (dbg/out "end\n"))))
+
+(fun (tx/dbg-cur)
+  (var bc (tx/c-box-context (ctxt/tx context)))
+  (set (u64 (tx/bc-tailp bc)) 0)
+  (tx/dbg-node (tx/bc-box bc)))
+
+;; Box setting
+
+(fun (tx/set-tbox tb)
+  (var f (tx/tb-font tb))
+  (set (tx/b-height tb) (gfx/font-ascent f))
+  (set (tx/b-depth tb) (- (gfx/font-descent f)))
+  (var w 0)
+  (var str (tx/tb-str tb))
+  (while (u8 str)
+    (var glyph 0)
+    (if ((< (u8 str) 128)
+         (set glyph (u64 (gfx/font-glyphs f) (u8 str)))))
+    (if ((not glyph)
+         (set glyph (u64 (gfx/font-glyphs f) 32))))
+    (set w (+ w (gfx/glyph-advance glyph)))
+    (set str (+ str 1)))
+  (set (tx/b-width tb) w))
+
+(fun (tx/set-hbox hb)
+  (var natural-width 0)
+  (var max-stretch-order 0)
+  (var max-shrink-order 0)
+  (var max-height 0)
+  (var max-depth 0)
+  (var c (tx/b-children hb))
+  (while c
+    (if ((tx/is-glue c)
+         (set natural-width (+ natural-width (tx/g-off c)))
+         (if ((> (tx/g-minus c) max-shrink-order)
+              (set max-shrink-order (tx/g-minus c))))
+         (if ((> (tx/g-plus c) max-stretch-order)
+              (set max-stretch-order (tx/g-plus c)))))
+        ((tx/is-box c)
+         (set natural-width (+ natural-width (tx/b-width c)))
+         (if ((> (tx/b-height c) max-height)
+              (set max-height (tx/b-height c))))
+         (if ((> (tx/b-depth c) max-depth)
+              (set max-depth (tx/b-depth c))))))
+    (set c (tx/n-next c)))
+  (set (tx/b-height hb) max-height)
+  (set (tx/b-depth hb) max-depth)
+  (set max-shrink-order (* (/ max-shrink-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
+  (set max-stretch-order (* (/ max-stretch-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
+  ;(dbg/int "natural-width" natural-width)
+  ;(dbg/int "max-shrink-order" max-shrink-order)
+  ;(dbg/int "max-stretch-order" max-stretch-order)
+  ;; set the glue
+  (if ((or (== (tx/hb-width hb) tx/NATURAL-SIZE)
+           (== (tx/hb-width hb) natural-width))
+       (set c (tx/b-children hb))
+       (while c
+         (if ((tx/is-glue c)
+              (set (tx/g-size c) (tx/g-off c))))
+         (set c (tx/n-next c)))
+       (set (tx/b-width hb) natural-width))
+      ((> (tx/hb-width hb) natural-width)
+       (var extra-width (- (tx/hb-width hb) natural-width))
+       (var total-stretch 0)
+       (set c (tx/b-children hb))
+       (while c
+         (if ((and (tx/is-glue c)
+                   (>= (tx/g-plus c) max-stretch-order))
+              (set total-stretch (+ total-stretch (- (tx/g-plus c) max-stretch-order)))))
+         (set c (tx/n-next c)))
+       ;(dbg/int "total-stretch" total-stretch)
+       (set c (tx/b-children hb))
+       (while c
+         (if ((tx/is-glue c)
+              (if ((and (>= (tx/g-plus c) max-stretch-order)
+                        (> total-stretch 0))
+                   (var w (/ (+ (* extra-width (- (tx/g-plus c) max-stretch-order)) (/ total-stretch 2)) total-stretch))
+                   (set (tx/g-size c) (+ (tx/g-off c) w))
+                   (set extra-width (- extra-width w))
+                   (set total-stretch (- total-stretch (- (tx/g-plus c) max-stretch-order))))
+                  (else
+                   (set (tx/g-size c) (tx/g-off c))))))
+         (set c (tx/n-next c)))
+       (set (tx/b-width hb) (tx/hb-width hb)))
+      ((< (tx/hb-width hb) natural-width)
+       (var over-width (- natural-width (tx/hb-width hb)))
+       (var total-shrink 0)
+       (set c (tx/b-children hb))
+       (while c
+         (if ((and (tx/is-glue c)
+                   (>= (tx/g-minus c) max-shrink-order))
+              (set total-shrink (+ total-shrink (- (tx/g-minus c) max-shrink-order)))))
+         (set c (tx/n-next c)))
+       ;(dbg/int "total-shrink" total-shrink)
+       (set c (tx/b-children hb))
+       (while c
+         (if ((tx/is-glue c)
+              (if ((and (>= (tx/g-minus c) max-shrink-order)
+                        (> total-shrink 0))
+                   (set w (/ (+ (* over-width (- (tx/g-minus c) max-shrink-order)) (/ total-shrink 2)) total-shrink))
+                   (if ((> w (tx/g-off c))
+                        (set (tx/g-size c) 0))
+                       (else
+                        (set (tx/g-size c) (- (tx/g-off c) w))))
+                   (set over-width (- over-width w))
+                   (set total-shrink (- total-shrink (- (tx/g-minus c) max-shrink-order))))
+                  (else
+                   (set (tx/g-size c) (tx/g-off c))))))
+         (set c (tx/n-next c))
+         (set (tx/b-width hb) (tx/hb-width hb))))))
+
+(fun (tx/set-vbox vb)
+  (var natural-height 0)
+  (var max-stretch-order 0)
+  (var max-shrink-order 0)
+  (var max-width 0)
+  (var c (tx/b-children vb))
+  (while c
+    (if ((tx/is-glue c)
+         (set natural-height (+ natural-height (tx/g-off c)))
+         (if ((> (tx/g-minus c) max-shrink-order)
+              (set max-shrink-order (tx/g-minus c))))
+         (if ((> (tx/g-plus c) max-stretch-order)
+              (set max-stretch-order (tx/g-plus c)))))
+        ((tx/is-box c)
+         (set natural-height (+ natural-height (tx/b-height c)))
+         (if ((> (tx/b-width c) max-width)
+              (set max-width (tx/b-width c))))))
+    (set c (tx/n-next c)))
+  (set (tx/b-width vb) max-width)
+  (set max-shrink-order (* (/ max-shrink-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
+  (set max-stretch-order (* (/ max-stretch-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
+  ;(dbg/int "natural-height" natural-height)
+  ;(dbg/int "max-shrink-order" max-shrink-order)
+  ;(dbg/int "max-stretch-order" max-stretch-order)
+  ;; set the glue
+  (if ((or (== (tx/vb-height vb) tx/NATURAL-SIZE)
+           (== (tx/vb-height vb) natural-height))
+       (set c (tx/b-children vb))
+       (while c
+         (if ((tx/is-glue c)
+              (set (tx/g-size c) (tx/g-off c))))
+         (set c (tx/n-next c)))
+       (set (tx/b-height vb) natural-height)
+       (set (tx/b-depth vb) 0))
+      ((> (tx/vb-height vb) natural-height)
+       (var extra-height (- (tx/vb-height vb) natural-height))
+       (var total-stretch 0)
+       (set c (tx/b-children vb))
+       (while c
+         (if ((and (tx/is-glue c)
+                   (>= (tx/g-plus c) max-stretch-order))
+              (set total-stretch (+ total-stretch (- (tx/g-plus c) max-stretch-order)))))
+         (set c (tx/n-next c)))
+       ;(dbg/int "total-stretch" total-stretch)
+       (set c (tx/b-children vb))
+       (while c
+         (if ((tx/is-glue c)
+              (if ((and (>= (tx/g-plus c) max-stretch-order)
+                        (> total-stretch 0))
+                   (var h (/ (+ (* extra-height (- (tx/g-plus c) max-stretch-order)) (/ total-stretch 2)) total-stretch))
+                   (set (tx/g-size c) (+ (tx/g-off c) h))
+                   (set extra-height (- extra-height h))
+                   (set total-stretch (- total-stretch (- (tx/g-plus c) max-stretch-order))))
+                  (else
+                   (set (tx/g-size c) (tx/g-off c))))))
+         (set c (tx/n-next c)))
+       (set (tx/b-height vb) (tx/vb-height vb))
+       (set (tx/b-depth vb) 0))
+      ((< (tx/vb-height vb) natural-height)
+       (var over-height (- natural-height (tx/vb-height vb)))
+       (var total-shrink 0)
+       (set c (tx/b-children vb))
+       (while c
+         (if ((and (tx/is-glue c)
+                   (>= (tx/g-minus c) max-shrink-order))
+              (set total-shrink (+ total-shrink (- (tx/g-minus c) max-shrink-order)))))
+         (set c (tx/n-next c)))
+       ;(dbg/int "total-shrink" total-shrink)
+       (set c (tx/b-children vb))
+       (while c
+         (if ((tx/is-glue c)
+              (if ((and (>= (tx/g-minus c) max-shrink-order)
+                        (> total-shrink 0))
+                   (set h (/ (+ (* over-height (- (tx/g-minus c) max-shrink-order)) (/ total-shrink 2)) total-shrink))
+                   (if ((> h (tx/g-off c))
+                        (set (tx/g-size c) 0))
+                       (else
+                        (set (tx/g-size c) (- (tx/g-off c) h))))
+                   (set over-height (- over-height h))
+                   (set total-shrink (- total-shrink (- (tx/g-minus c) max-shrink-order))))
+                  (else
+                   (set (tx/g-size c) (tx/g-off c))))))
+         (set c (tx/n-next c)))
+       (set (tx/b-height vb) (tx/vb-height vb))
+       (set (tx/b-depth vb) 0))))
+
+(fun (tx/set-node node)
+  (var t (tx/n-type node))
+  (if ((== t tx/nt-tbox)
+       (tx/set-tbox node))
+      ((== t tx/nt-hbox)
+       (tx/set-hbox node))
+      ((== t tx/nt-vbox)
+       (tx/set-vbox node))))
+
+;; Line breaking
+
+(fun (tx/set-pbox node begin-line set-line-width add-node skip end-line)
+  (var c (tx/b-children node))
+  (set (tx/b-children node) 0)
+  (var w 0)
+  (var line-width (- (tx/pb-width node) (tx/pb-left-off node) (tx/pb-right-off node)))
+  (var line-start c)
+  (var break-point 0)
+  (var need-line-skip 0)
+  (var next)
+  (while c
+    (if ((tx/is-glue c)
+         (set w (+ w (tx/g-off c))))
+        ((tx/is-box c)
+         (set w (+ w (tx/b-width c)))))
+    (if ((> w line-width)
+         (if (break-point
+              (if (need-line-skip
+                   (skip (tx/pb-line-skip node) 0 0)))
+              (begin-line)
+              (set-line-width (tx/pb-width node))
+              (skip (tx/pb-left-off node) (tx/pb-left-plus node) 0)
+              (while (!= line-start (tx/n-next break-point))
+                (set next (tx/n-next line-start))
+                (add-node line-start)
+                (set line-start next))
+              (skip (tx/pb-right-off node) (tx/pb-right-plus node) 0)
+              (end-line)))
+         (while (and line-start (not (tx/is-box line-start)))
+           (set next (tx/n-next line-start))
+           (tx/free-node line-start)
+           (set line-start next))
+         (set next line-start)
+         (set break-point 0)
+         (set w 0))
+        (else
+         (if ((tx/is-box c)
+              (set break-point c)))
+         (set next (tx/n-next c))))
+    (set need-line-skip 1)
+    (set c next))
+  (if (line-start
+       (if (need-line-skip
+            (skip (tx/pb-line-skip node) 0 0)))
+       (begin-line)
+       (set-line-width (tx/pb-width node))
+       (skip (tx/pb-left-off node) (tx/pb-left-plus node) 0)
+       (while line-start
+         (set next (tx/n-next line-start))
+         (add-node line-start)
+         (set line-start next))
+       (skip (tx/pb-right-off node) (tx/pb-right-plus node) 0)
+       (end-line))))
+
+;; Inking
+
+(enum
+  ink-x
+  ink-dx
+  ink-y
+  ink-dy
+  ink-setfont-sans
+  ink-setfont-sans-b
+  ink-setfont-sans-l
+  ink-setfont-mono
+  ink-glyphs
+  ink-end)
+
+(fun (tx/more-ink ctxt)
+  (var ink (sys/page-get))
+  (set (u64 ink) 0)
+  (set (tx/c-ink-ptr ctxt) (+ ink 8))
+  (set (tx/c-ink-end ctxt) (+ ink sys/page-size))
+  (if ((tx/c-ink-cur-page ctxt)
+       (set (u64 (tx/c-ink-cur-page ctxt)) ink))
+      (else
+       (set (tx/c-ink ctxt) ink)))
+  (set (tx/c-ink-cur-page ctxt) ink))
+
+(fun (tx/free-ink ink)
+  (while ink
+    (var next (u64 ink))
+    (sys/page-put ink)
+    (set ink next)))
+
+(fun (tx/emit-byte ctxt b)
+  ;; (dbg/int "E" b)
+  ;; (dbg/int "-" (- (tx/c-ink-ptr ctxt) (tx/c-ink ctxt)))
+  (if ((>= (tx/c-ink-ptr ctxt) (tx/c-ink-end ctxt))
+       (tx/more-ink ctxt)))
+  (set (u8 (tx/c-ink-ptr ctxt)) b)
+  (set (tx/c-ink-ptr ctxt) (+ (tx/c-ink-ptr ctxt) 1)))
+
+(fun (tx/emit-set ctxt new old set-op delta-op)
+  (var delta (- new old))
+  (if ((== delta 0)
+       (begin))
+      ((and (< delta 128) (>= delta -128))
+       (tx/emit-byte ctxt delta-op)
+       (tx/emit-byte ctxt delta))
+      (else
+       (tx/emit-byte ctxt set-op)
+       (tx/emit-byte ctxt (/ new (* 256 256 256)))
+       (tx/emit-byte ctxt (/ new (* 256 256)))
+       (tx/emit-byte ctxt (/ new 256))
+       (tx/emit-byte ctxt new))))
+
+(fun (tx/ink-text x y node)
+  ;; (dbg/str "INK" (tx/tb-str node))
+  ;; (dbg/int "x" x)
+  ;; (dbg/int "y" y)
+  (var ctxt (ctxt/tx context))
+  (tx/emit-set ctxt x (tx/c-ink-x ctxt) tx/ink-x tx/ink-dx)
+  (set (tx/c-ink-x ctxt) x)
+  (tx/emit-set ctxt y (tx/c-ink-y ctxt) tx/ink-y tx/ink-dy)
+  (set (tx/c-ink-y ctxt) y)
+  (var font (tx/tb-font node))
+  (if ((!= font (tx/c-ink-font ctxt))
+       (if ((== font fonts/sans)
+            (tx/emit-byte ctxt tx/ink-setfont-sans))
+           ((== font fonts/sans-l)
+            (tx/emit-byte ctxt tx/ink-setfont-sans-l))
+           ((== font fonts/sans-b)
+            (tx/emit-byte ctxt tx/ink-setfont-sans-b))
+           ((== font fonts/mono)
+            (tx/emit-byte ctxt tx/ink-setfont-mono)))
+       (set (tx/c-ink-font ctxt) font)))
+  (tx/emit-byte ctxt tx/ink-glyphs)
+  (var text (tx/tb-str node))
+  (while (u8 text)
+    (tx/emit-byte ctxt (u8 text))
+    (set text (+ text 1)))
+  (tx/emit-byte ctxt 0))
+
+(fun (tx/ink-node node x y)
+  (var t (tx/n-type node))
+  (var c)
+  (if ((== t tx/nt-tbox)
+       (tx/ink-text x y node))
+      ((== t tx/nt-hbox)
+       (set c (tx/b-children node))
+       (while c
+         (if ((== (tx/n-type c) tx/nt-glue)
+              (set x (+ x (tx/g-size c))))
+             (else
+              (tx/ink-node c x (+ y (- (tx/b-height node) (tx/b-height c))))
+              (set x (+ x (tx/b-width c)))))
+         (set c (tx/n-next c))))
+      ((== t tx/nt-vbox)
+       (set c (tx/b-children node))
+       (while c
+         (if ((== (tx/n-type c) tx/nt-glue)
+              (set y (+ y (tx/g-size c))))
+             (else
+              (tx/ink-node c x y)
+              (set y (+ y (tx/b-height c) (tx/b-depth c)))))
+         (set c (tx/n-next c))))))
+
+;; Drawing
+
+(struct tx/draw-ink-data
+  di-page
+  di-ptr
+  di-end)
+
+(fun (tx/set-page d page)
+  (set (tx/di-page d) page)
+  (set (tx/di-ptr d) (+ page 8))
+  (set (tx/di-end d) (+ page sys/page-size)))
+
+(fun (tx/get-u8 d)
+  (if ((>= (tx/di-ptr d) (tx/di-end d))
+       (tx/set-page d (u64 (tx/di-page d)))))
+  (var val (u8 (tx/di-ptr d)))
+  (set (tx/di-ptr d) (+ (tx/di-ptr d) 1))
+  val)
+
+(fun (tx/get-s8 d)
+  (if ((>= (tx/di-ptr d) (tx/di-end d))
+       (tx/set-page d (u64 (tx/di-page d)))))
+  (var val (s8 (tx/di-ptr d)))
+  (set (tx/di-ptr d) (+ (tx/di-ptr d) 1))
+  val)
+
+(fun (tx/draw-ink ink x-start y-start x-end y-end)
+  (mem d tx/draw-ink-data)
+  (tx/set-page d ink)
+  (var ptr ink)
+  (var x 0)
+  (var y 0)
+  (var font 0)
+  (var op)
+  (while (!= (set op (tx/get-u8 d)) tx/ink-end)
+    (if ((== op tx/ink-x)
+         (set x (* (tx/get-u8 d) 256 256 256))
+         (set x (* (tx/get-u8 d) 256 256))
+         (set x (* (tx/get-u8 d) 256))
+         (set x (+ x (tx/get-u8 d))))
+        ((== op tx/ink-dx)
+         (set x (+ x (tx/get-s8 d))))
+        ((== op tx/ink-y)
+         (set y (* (tx/get-u8 d) 256 256 256))
+         (set y (* (tx/get-u8 d) 256 256))
+         (set y (* (tx/get-u8 d) 256))
+         (set y (+ y (tx/get-u8 d))))
+        ((== op tx/ink-dy)
+         (set y (+ y (tx/get-s8 d))))
+        ((== op tx/ink-setfont-sans)
+         (set font fonts/sans))
+        ((== op tx/ink-setfont-sans-l)
+         (set font fonts/sans-l))
+        ((== op tx/ink-setfont-sans-b)
+         (set font fonts/sans-b))
+        ((== op tx/ink-setfont-mono)
+         (set font fonts/mono))
+        ((== op tx/ink-glyphs)
+         ;(dbg/str "T" ptr)
+         ;(dbg/int "x" x)
+         ;(dbg/int "y" y)
+         (var c)
+         (var xx (+ x-start x))
+         (var yy (+ y-start y))
+         (while (set c (tx/get-u8 d))
+           ;; XXX - maintain x also for skipped glyphs
+           (if ((and (>= xx 0) (< xx (- x-end 15))
+                     (>= yy 0) (< yy (- y-end 15)))
+                (set xx (+ xx (gfx/glyph font xx yy c))))))))))
+
+;; Constructing
+
+(fun (tx/start)
+  (var c (mem/alloc tx/context))
+  (set (tx/c-box-context c) 0)
+  (set (tx/c-outer-y c) 0)
+  (set (tx/c-ink c) 0)
+  (set (tx/c-ink-cur-page c) 0)
+  (tx/more-ink c)
+  (set (tx/c-ink-x c) 0)
+  (set (tx/c-ink-y c) 0)
+  (set (tx/c-ink-font c) 0)
+  (set (tx/c-font c) fonts/sans)
+  (set (tx/c-line-width c) 500)
+  (set (tx/c-line-skip c) 3)
+  (set (tx/c-par-skip c) 10)
+  (set (tx/c-verbatim c) 0)
+  (set (ctxt/tx context) c))
+
+(fun (tx/stop)
+  (var c (ctxt/tx context))
+  ;; XXX - Pop all the ongoing box contexts
+  (tx/emit-byte c tx/ink-end)
+  (var ink (tx/c-ink c))
+  (mem/free c)
+  ink)
+
+(fun (tx/push-context box)
+  (var c (ctxt/tx context))
+  (var bc (mem/alloc tx/box-context))
+  (set (tx/bc-box bc) box)
+  (set (tx/bc-tailp bc) (loc (tx/b-children box)))
+  (set (tx/bc-prev bc) (tx/c-box-context c))
+  (set (tx/c-box-context c) bc))
+
+(fun (tx/get-context)
+  (var bc (tx/c-box-context (ctxt/tx context)))
+  (and bc (tx/bc-box bc)))
+
+(fun (tx/pop-context)
+  (var c (ctxt/tx context))
+  (var bc (tx/c-box-context c))
+  (set (tx/c-box-context c) (tx/bc-prev bc))
+  (set (u64 (tx/bc-tailp bc)) 0)
+  (var b (tx/bc-box bc))
+  (mem/free bc)
+  b)
+
+(fun (tx/add-context node)
+  (var c (ctxt/tx context))
+  (var bc (tx/c-box-context c))
+  (tx/set-node node)
+  (if (bc
+       (set (u64 (tx/bc-tailp bc)) node)
+       (set (tx/bc-tailp bc) (loc (tx/n-next node))))
+      (else
+       (tx/ink-node node 0 (tx/c-outer-y c))
+       (var dy)
+       (if ((== (tx/n-type node) tx/nt-glue)
+            (set dy (tx/g-off node)))
+           (else
+            (set dy (+ (tx/b-height node) (tx/b-depth node)))))
+       (set (tx/c-outer-y c) (+ (tx/c-outer-y c) dy))
+       (tx/free-node node))))
+
+(fun (tx/text font str)
+  (var n (mem/alloc tx/tbox))
+  (set (tx/n-type n) tx/nt-tbox)
+  (set (tx/b-children n) 0) ;; ???
+  (set (tx/tb-font n) font)
+  (set (tx/tb-str n) (str/dup str))
+  (tx/add-context n))
+
+(fun (tx/fill order value)
+  (+ (* tx/FILL-ORDER-SHIFT order) value))
+
+(fun (tx/skip off plus minus)
+  (var n (mem/alloc tx/glue))
+  (set (tx/n-type n) tx/nt-glue)
+  (set (tx/g-off n) off)
+  (set (tx/g-plus n) plus)
+  (set (tx/g-minus n) minus)
+  (tx/add-context n))
+
+(fun (tx/begin-hbox)
+  (var n (mem/alloc tx/hbox))
+  (tx/push-context n)
+  (set (tx/n-type n) tx/nt-hbox)
+  (set (tx/hb-width n) tx/NATURAL-SIZE))
+
+(fun (tx/set-hbox-width width)
+  (var n (tx/get-context))
+  (set (tx/hb-width n) width))
+
+(fun (tx/begin-vbox)
+  (var n (mem/alloc tx/vbox))
+  (tx/push-context n)
+  (set (tx/n-type n) tx/nt-vbox)
+  (set (tx/vb-height n) tx/NATURAL-SIZE))
+
+(fun (tx/set-vbox-height height)
+  (var n (tx/get-context))
+  (set (tx/vb-height n) height))
+
+(fun (tx/begin-pbox width line-skip)
+  (var n (mem/alloc tx/pbox))
+  (tx/push-context n)
+  (set (tx/n-type n) tx/nt-pbox)
+  (set (tx/pb-width n) width)
+  (set (tx/pb-line-skip n) line-skip)
+  (set (tx/pb-left-off n) 0)
+  (set (tx/pb-left-plus n) 0)
+  (set (tx/pb-right-off n) 0)
+  (set (tx/pb-right-plus n) 0))
+
+(fun (tx/set-pbox-left-skip off plus)
+  (var n (tx/get-context))
+  (set (tx/pb-left-off n) off)
+  (set (tx/pb-left-plus n) plus))
+
+(fun (tx/set-pbox-right-skip off plus)
+  (var n (tx/get-context))
+  (set (tx/pb-right-off n) off)
+  (set (tx/pb-right-plus n) plus))
+
+(fun (tx/end)
+  (var n (tx/pop-context))
+  (if ((tx/is-pbox n)
+       (tx/set-pbox n tx/begin-hbox tx/set-hbox-width tx/add-context tx/skip tx/end)
+       (tx/free-node n))
+      (else
+       (tx/add-context n))))
+
+;; Markup parsing
+
+(fun (tx/ensure-hmode)
+  (var c (ctxt/tx context))
+  (var b (tx/get-context))
+  (if ((or (not b) (== (tx/n-type b) tx/nt-vbox))
+       (tx/skip (tx/c-par-skip c) 0 0) ;; XXX - only when needed
+       (tx/begin-pbox (tx/c-line-width c) (tx/c-line-skip c)))))
+
+(fun (tx/par)
+  (var b (tx/get-context))
+  (if ((and b (== (tx/n-type b) tx/nt-pbox))
+       (tx/skip 0 (tx/fill 1 1) 0)
+       (tx/end))))
+
+(fun (tx/get-char)
+  (var r (tx/c-rbuf (ctxt/tx context)))
+  (if ((== (fs/rbuf-size r) 0)
+       (if ((not (fs/read r))
+            (set (fs/rbuf-size r) 0)))))
+  (if ((== (fs/rbuf-size r) 0)
+       -1)
+      (else
+       (var c (u8 (fs/rbuf-start r)))
+       (set (fs/rbuf-start r) (+ (fs/rbuf-start r) 1))
+       (set (fs/rbuf-size r) (- (fs/rbuf-size r) 1))
+       c)))
+
+(fun (tx/unget-char c)
+  (if ((>= c 0)
+       (var r (tx/c-rbuf (ctxt/tx context)))
+       (set (fs/rbuf-start r) (- (fs/rbuf-start r) 1))
+       (set (fs/rbuf-size r) (+ (fs/rbuf-size r) 1)))))
+
+(fun (tx/is-white-space c)
+  (or (== c ch/spc)
+      (== c ch/nl)))
+
+(fun (tx/is-word-char c)
+  (and (not (tx/is-white-space c))
+       (not (== c ch/[))
+       (not (== c ch/]))))
+
+(fun (tx/next-word t c n)
+  (while (and (tx/is-word-char c)
+              (< n 255))
+    (set (u8 t n) c)
+    (set c (tx/get-char))
+    (set n (+ n 1)))
+  (tx/unget-char c)
+  (set (u8 t n) 0))
+  
+(fun (tx/next-token)
+  (var c (tx/get-char))
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  (if ((< c 0)
+       (set (u8 t) 0))
+      ((and (== c ch/@) (tx/c-at-bol (ctxt/tx context))) ;; section header
+       (set (u8 t) ch/ht)
+       (tx/next-word t (tx/get-char) 1)
+       (set (tx/c-at-bol (ctxt/tx context)) 0)
+       (set (tx/c-in-section-header (ctxt/tx context)) 1))
+      ((tx/c-verbatim (ctxt/tx context)) ;; each line is a token
+       (var n 0)
+       (while (and (< n 255) (!= c ch/nl))
+         (set (u8 t n) c)
+         (set c (tx/get-char))
+         (set n (+ n 1)))
+       (set (u8 t n) c)
+       (set (u8 t (+ n 1)) 0)
+       (set (tx/c-at-bol (ctxt/tx context)) 1))
+      ((tx/is-white-space c)
+       (var n-new-lines 0)
+       (while (tx/is-white-space c)
+         (if ((== c ch/nl)
+              (set (tx/c-at-bol (ctxt/tx context)) 1)
+              (set n-new-lines (+ n-new-lines 1)))
+             (else
+              (set (tx/c-at-bol (ctxt/tx context)) 0)))
+         (set c (tx/get-char)))
+       (tx/unget-char c)
+       (if ((and (> n-new-lines 0)
+                 (tx/c-in-section-header (ctxt/tx context)))
+            (set (tx/c-in-section-header (ctxt/tx context)) 0)
+            (str/cpy t "]"))
+           ((or (> n-new-lines 1) (< c 0))
+            (str/cpy t "\n"))
+           (else
+            (str/cpy t " "))))
+      ((tx/is-word-char c)
+       (tx/next-word t c 0)
+       (set (tx/c-at-bol (ctxt/tx context)) 0))
+      (else
+       (set (u8 t 0) c)
+       (set (u8 t 1) 0)
+       (set (tx/c-at-bol (ctxt/tx context)) 0)))
+  ;;(dbg/str "T" t)
+  )
+
+(fun (tx/parse-command)
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  (mem cmd 256)
+  (tx/next-token)
+  (var is-param (== (u8 t (- (str/len t) 1)) ch/:))
+  (str/cpy cmd t)
+  (tx/next-token)
+  (while (tx/is-white-space (u8 t))
+    (tx/next-token))
+  ((tx/c-execute-command (ctxt/tx context)) cmd)
+  (if ((not (== (u8 t) ch/]))
+       (dbg/out "EOF INSIDE COMMAND\n"))
+      (else
+       (tx/next-token)
+       (if (is-param
+            (while (tx/is-white-space (u8 t))
+              (tx/next-token)))))))
+
+(fun (tx/parse-text)
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  (while (and (u8 t) (not (== (u8 t) ch/])) (not (== (u8 t) ch/ht)))
+    (if ((== (u8 t) ch/spc)
+         (var b (tx/get-context))
+         (if ((and b (not (== (tx/n-type b) tx/nt-vbox)))
+              (tx/skip 5 5 0)))
+         (tx/next-token))
+        ((== (u8 t) ch/nl)
+         (tx/par)
+         (tx/next-token))
+        ((== (u8 t) ch/[)
+         (tx/parse-command))
+        (else
+         (tx/ensure-hmode)
+         ;; (dbg/str "text" t)
+         (tx/text (tx/c-font (ctxt/tx context)) t)
+         (tx/next-token)))))
+
+(fun (tx/parse-code-section)
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  ;; parse header line
+  (while (not (str/eq t "]"))
+    (dbg/str "JUNK IN CODE HEADER" t)
+    (tx/next-token))
+  ;; parse body
+  (set (tx/c-verbatim (ctxt/tx context)) 1)
+  (set (tx/c-font (ctxt/tx context)) fonts/mono)
+  (tx/next-token)
+  (tx/skip (tx/c-par-skip (ctxt/tx context)) 0 0)
+  (while (and (u8 t) (not (== (u8 t) ch/ht)))
+    ;; (dbg/str "V" t)
+    (tx/text (tx/c-font (ctxt/tx context)) t)
+    (tx/next-token)))
+
+(fun (tx/cmd-title)
+  (var c (ctxt/tx context))
+  (tx/par)
+  (tx/skip (* 3 (tx/c-par-skip c)) 0 0)
+  (var old-font (tx/c-font c))
+  (set (tx/c-font c) fonts/sans-l)
+  (tx/begin-hbox)
+  (tx/set-hbox-width (tx/c-line-width c))
+  (tx/skip 0 (tx/fill 1 1) 0)
+  (tx/parse-text)
+  (tx/skip 0 (tx/fill 1 1) 0)
+  (tx/end)
+  (tx/skip (* 2 (tx/c-par-skip c)) 0 0)
+  (set (tx/c-font c) old-font))
+
+(fun (tx/cmd-section)
+  (var c (ctxt/tx context))
+  (tx/par)
+  (tx/skip (* 2 (tx/c-par-skip c)) 0 0)
+  (var old-font (tx/c-font c))
+  (set (tx/c-font c) fonts/sans-b)
+  (tx/begin-hbox)
+  (tx/set-hbox-width (tx/c-line-width c))
+  (tx/parse-text)
+  (tx/skip 0 (tx/fill 1 1) 0)
+  (tx/end)
+  (set (tx/c-font c) old-font))
+  
+(fun (tx/parse-text-section cmd)
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  (set (tx/c-font (ctxt/tx context)) fonts/sans)
+  ;; parse header line
+  (if ((str/eq cmd "**")
+       (tx/cmd-title))
+      ((str/eq cmd "*")
+       (tx/cmd-section))
+      (else
+       (tx/parse-text)))
+  (if ((str/eq t "]")
+       (tx/next-token))
+      (else
+       (dbg/str "JUNK AFTER SECTION HEADER" t)))
+  ;; parse body
+  (tx/parse-text))
+
+(fun (tx/parse-section)
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  (while (!= (u8 t) ch/ht)
+    (dbg/str "JUKN BEFORE SECTION" t)
+    (tx/next-token))
+  (mem cmd 256)
+  (str/cpy cmd (+ t 1))
+  (tx/par)
+  (set (tx/c-verbatim (ctxt/tx context)) 0)
+  ;; (dbg/str "SH" cmd)
+  (tx/next-token)
+  (if ((== (u8 t) ch/spc)
+       (tx/next-token)))
+  (if ((str/eq cmd "=")
+       (tx/parse-code-section))
+      (else
+       (tx/parse-text-section cmd))))
+
+(fun (tx/execute-command cmd)
+  (var c (ctxt/tx context))
+  (if ((str/eq cmd "b")
+       (var old-font (tx/c-font c))
+       (set (tx/c-font c) fonts/sans-b)
+       (tx/parse-text)
+       (set (tx/c-font c) old-font))
+      ((str/eq cmd "large")
+       (set old-font (tx/c-font c))
+       (set (tx/c-font c) fonts/sans-l)
+       (tx/parse-text)
+       (set (tx/c-font c) old-font))
+      ((str/eq cmd "code")
+       (set old-font (tx/c-font c))
+       (set (tx/c-font c) fonts/mono)
+       (tx/parse-text)
+       (set (tx/c-font c) old-font))
+      ((str/eq cmd "title")
+       (tx/cmd-title))
+      ((str/eq cmd "section")
+       (tx/cmd-section))
+      (else
+       (dbg/str "UNKNOWN COMMAND" cmd)
+       (tx/parse-text))))
+
+(fun (tx/process-file name)
+  (var c (ctxt/tx context))
+  (mem r fs/rbuf)
+  (mem t 256)
+  (if ((fs/open r name)
+       (set (tx/c-rbuf c) r)
+       (set (fs/rbuf-size r) 0)
+       (set (tx/c-cur-token c) t)
+       (set (tx/c-execute-command c) tx/execute-command)
+       (set (tx/c-at-bol c) 1)
+       (set (tx/c-in-section-header c) 0)
+       (set (tx/c-verbatim c) 0)
+       (tx/next-token)
+       (tx/parse-text)
+       (while (== (u8 t) ch/ht)
+         (tx/parse-section))
+       (tx/par)
+       (if ((u8 t)
+            (dbg/out "JUNK AFTER PARSING\n")))
+       (fs/close r)
+       (set (tx/c-rbuf c) 0))
+      (else
+       (dbg/str "no such file:" name))))
+
+;; Main
+
+(struct tx/instance
+  inst-ink
+  inst-y-off
+  inst-y-max)
+
+(fun (tx/quit inst)
+  (gfx/quit inst)
+  (tx/free-ink (tx/inst-ink inst))
+  (mem/free inst))
+
+(fun (tx/paint inst x y w h)
+  (gfx/draw-init x y w h)
+  (tx/draw-ink (tx/inst-ink inst) (+ x 10) (- y (tx/inst-y-off inst)) (+ x w) (+ y h))
+  (gfx/show))
+
+(fun (tx/input inst state input x y)
+  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
+       (tx/quit inst))
+      ((== input gfx/ev-key-down)
+       (set (tx/inst-y-off inst) (+ (tx/inst-y-off inst) 20)))
+      ((== input gfx/ev-key-page-down)
+       (set (tx/inst-y-off inst) (+ (tx/inst-y-off inst) 200)))
+      ((== input gfx/ev-key-up)
+       (set (tx/inst-y-off inst) (- (tx/inst-y-off inst) 20)))
+      ((== input gfx/ev-key-page-up)
+       (set (tx/inst-y-off inst) (- (tx/inst-y-off inst) 200))))
+  (if ((< (tx/inst-y-off inst) 0)
+       (set (tx/inst-y-off inst) 0)))
+  (if ((> (tx/inst-y-off inst) (tx/inst-y-max inst))
+       (set (tx/inst-y-off inst) (tx/inst-y-max inst)))))
+
+(book/funtab tx/efuns
+  tx/paint
+  tx/input)
+
+(fun (tx/launch name)
+  (var inst (mem/alloc tx/instance))
+  (set (tx/inst-y-off inst) 0)
+  (tx/start)
+  (tx/process-file name)
+  (set (tx/inst-ink inst) (tx/stop))
+  (set (tx/inst-y-max inst) (tx/c-ink-y (ctxt/tx context)))
+  (gfx/send-quit name "tx")
+  (gfx/launch inst name "tx" tx/efuns))

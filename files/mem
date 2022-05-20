@@ -8,6 +8,12 @@
     (set src (+ src 1))
     (set size (- size 1))))
 
+(fun (mem/set dst val size)
+  (while (> size 0)
+    (set (u8 dst) val)
+    (set dst (+ dst 1))
+    (set size (- size 1))))
+
 ;; Dynamic memory allocation
 ;;
 ;; We keep a list of available memory regions, sorted by address.  The list is circular,
@@ -159,6 +165,7 @@
   (var boot-disk (ctxt/disk context))
   (var boot-books (ctxt/books context))
   (var page (sys/page-get))
+  (mem/set page 0 sys/page-size)
   (set context page)
   (set (ctxt/disk context) boot-disk)
   (set (ctxt/books context) boot-books)

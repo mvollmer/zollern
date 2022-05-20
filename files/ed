@@ -1,3 +1,31 @@
+@** The editor
+
+This is the standard text editor of Zollern. 
+Like everything else, it is rather simple and
+inefficient, but also a good example of how much
+one can get done with very little code.
+
+It can cut-and-paste, highlight matching parentheses, and 
+indent s-expressions, for example, but there is no undo.
+
+Key bindings are inspired by Emacs, as far as they go,
+and the editor is not extensible at all.
+
+The editor can be used as a full-screen application on its own 
+to edit files, or be embedded within the interface of another application,
+to edit arbitrary text input.  The shell uses a editor instance when prompting 
+for the name of a new file, for example.
+
+@* Text buffers
+
+The text that a editor instance works with is stored in a [code textbuf] structure.
+Once a suitable [code textbuf] has been created, one can create a editor instance for it.
+
+The main job of a [code textbuf] is to manage memory pages.  A file can 
+be larger than one page...
+
+@=
+
 (struct ed/textbuf
   (textbuf-pages u64 32)
   (textbuf-page-count u64)
@@ -80,6 +108,9 @@
       (else
        0)))
 
+@* The instance data structure
+@=
+
 (defconst ed/search-len-max 128)
 
 (struct ed/data
@@ -110,7 +141,23 @@
   (last-input s32)
   (last-state s32))
 
-;; Abstracting the buffer
+(fun (ed/new title buf)
+  (var ed (mem/alloc ed/data))
+  (set (ed/buf ed) buf)
+  (set (ed/title ed) title)
+  (set (ed/search-len ed) -1)
+  (set (ed/search-buf ed 0) 0)
+  (set (ed/mark ed) -1)
+  (set (ed/point ed) 0)
+  (set (ed/window-top ed) 0)
+  (set (ed/dirty ed) 0)
+  ed)
+
+(fun (ed/free ed)
+  (mem/free ed))
+
+@* Abstracting the buffer
+@=
 
 (def (ed/char ?ed ?pos)
   (ed/textbuf-get-char (ed/buf ?ed) ?pos))
@@ -126,7 +173,8 @@
 (defset (ed/len ?ed) len
   (set (ed/textbuf-len (ed/buf ?ed)) ?len))
 
-;; Scanning
+@* Scanning
+@=
 
 (fun (ed/find-bol ed pos)
   (while (and (> pos 0) (!= (ed/char ed (- pos 1)) ch/nl))
@@ -144,7 +192,8 @@
     (set pos (+ pos 1)))
   pos)
 
-;; Display
+@* Display
+@=
 
 (fun (ed/clear ed)
   (gfx/rect (ed/lft ed) (ed/top ed)
@@ -251,7 +300,11 @@
   (if ((ed/title ed)
        (ed/paint-status-line ed))))
 
-;; Cursor movement
+(fun (ed/paint-with-border ed x y w h)
+  (ed/paint ed (+ x 4) (+ y 4) (- w 8) (- h 8)))
+
+@* Cursor movement
+@=
 
 (fun (ed/left ed)
   (if ((> (ed/point ed) 0)
@@ -341,7 +394,8 @@
       (else
        0)))
 
-;; Text modifications
+@* Text modifications
+@=
 
 (fun (ed/insert ed char)
   ;; (dbg/int "insert" char)
@@ -395,7 +449,8 @@
   (ed/left-word ed)
   (ed/delete-string ed (- end (ed/point ed))))
 
-;; Bare minimum for editing s-exprs
+@* Editing s-expressions
+@=
 
 (fun (ed/find-matching-closing-paren ed pos)
   (var level 0)
@@ -513,7 +568,8 @@
     (set end (- end (- old-len (ed/len ed))))
     (ed/down ed 1)))
 
-;; Region
+@* Region
+@=
 
 (fun (ed/copy-region ed append)
   (if ((and (!= (ed/mark ed) -1)
@@ -555,7 +611,8 @@
   (ed/cut-region ed append)
   (set (ed/mark ed) -1))
 
-;; Keys
+@* Key bindings
+@=
 
 (fun (ed/search-insert ed char)
   (if ((< (ed/search-len ed) (- ed/search-len-max 1))
@@ -664,21 +721,3 @@
   (set (ed/last-input ed) input)
   (set (ed/last-state ed) state)
   (ed/highlight ed))
-
-(fun (ed/new title buf)
-  (var ed (mem/alloc ed/data))
-  (set (ed/buf ed) buf)
-  (set (ed/title ed) title)
-  (set (ed/search-len ed) -1)
-  (set (ed/search-buf ed 0) 0)
-  (set (ed/mark ed) -1)
-  (set (ed/point ed) 0)
-  (set (ed/window-top ed) 0)
-  (set (ed/dirty ed) 0)
-  ed)
-
-(fun (ed/free ed)
-  (mem/free ed))
-
-(fun (ed/paint-with-border ed x y w h)
-  (ed/paint ed (+ x 4) (+ y 4) (- w 8) (- h 8)))

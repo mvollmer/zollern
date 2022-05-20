@@ -4,4 +4,5 @@
   comp
   mem
   fs
-  gfx)
+  gfx
+  tx)

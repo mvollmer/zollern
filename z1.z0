@@ -368,18 +368,45 @@
   (push x3)
   (set x0 l0)
   (set x1 l1)
+  (set l0 (fb-ptr x0))
+  (je .bol)
 .skip-whitespace
   (getchar x0 .eof)
+.maybe-whitespace
+  (cmp l0 :nl)
+  (je .bol)
   (cmp l0 :spc)
   (jle .skip-whitespace)
   (cmp l0 :sc)
-  (jne .not-comment)
+  (jne .not-whitespace)
 .skip-comment
   (getchar x0 .eof)
   (cmp l0 :nl)
-  (je .skip-whitespace)
+  (je .bol)
   (jmp .skip-comment)
-.not-comment
+.bol
+  (getchar x0 .eof)
+  (cmp l0 :@)
+  (je .bol-at)
+  (jmp .maybe-whitespace)
+.bol-at
+  (getchar x0 .eof)
+  (cmp l0 :=)
+  (je .skip-whitespace)
+.skip-tx-block
+  (getchar x0 .eof)
+.skip-tx-block-maybe-nl
+  (cmp l0 :nl)
+  (je .skip-tx-block-bol)
+  (jmp .skip-tx-block)
+.skip-tx-block-bol
+  (getchar x0 .eof)
+  (cmp l0 :@)
+  (je .bol-at)
+  (jmp .skip-tx-block-maybe-nl)
+.bol-at-end
+  (getchar x0 .eof)
+.not-whitespace
   (cmp l0 :lp)
   (jne .not-open)
   (set l0 tk-kind-open)

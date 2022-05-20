@@ -1,3 +1,16 @@
+@** Das boot
+
+This book gets everything started.
+
+It can be changed and recompiled while Zollern is running, like any
+other book.  However, there is no other way to actually run its code
+than to restart Zollern completely.
+
+@* Entry point
+
+The bootstrap compiler will transfer control to [code boot/start].
+
+@=
 (fun (boot/start)
   (mem/init)
   (fs/init)
