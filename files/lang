@@ -635,32 +635,35 @@
               (set field-array-spec (exp/rest (exp/rest field))))
              (else
               (exp/syntax)))
-         (set field-element-size (lang/sizeof field-accessor))
-         (if (field-array-spec
-              (set field-size (* field-element-size (const-expr (exp/first field-array-spec)))))
+         (if ((== field-name (exp/intern ":base"))
+              (set offset (const-expr field-accessor)))
              (else
-              (set field-size field-element-size)))
-         (set field-name (exp/global field-name))
-         (set field-loc (exp/make-number offset))
-         (set defs
-              (exp/make-pair
-               (if (field-array-spec
-                    (syntax-expand
-                     (begin
-                       (def (?field-name ??ptr ??(idx))
-                            ??(if (idx
-                                   (syntax-expand (?field-accessor (+ ??ptr ?field-loc) ??idx)))
-                                  (else
-                                   (syntax-expand (+ ??ptr ?field-loc)))))
-                       (defset (?field-name ??ptr ??idx) val
-                               (set (?field-accessor (+ ??ptr ?field-loc) ??idx) ??val)))))
-                   (else
-                    (syntax-expand
-                     (begin
-                       (def (?field-name ??ptr) (?field-accessor (+ ??ptr ?field-loc)))
-                       (defset (?field-name ??ptr) val (set (?field-accessor (+ ??ptr ?field-loc)) ??val))))))
-               defs))
-         (set offset (+ offset field-size))
+              (set field-element-size (lang/sizeof field-accessor))
+              (if (field-array-spec
+                   (set field-size (* field-element-size (const-expr (exp/first field-array-spec)))))
+                  (else
+                   (set field-size field-element-size)))
+              (set field-name (exp/global field-name))
+              (set field-loc (exp/make-number offset))
+              (set defs
+                   (exp/make-pair
+                    (if (field-array-spec
+                         (syntax-expand
+                          (begin
+                            (def (?field-name ??ptr ??(idx))
+                                 ??(if (idx
+                                        (syntax-expand (?field-accessor (+ ??ptr ?field-loc) ??idx)))
+                                       (else
+                                        (syntax-expand (+ ??ptr ?field-loc)))))
+                            (defset (?field-name ??ptr ??idx) val
+                                    (set (?field-accessor (+ ??ptr ?field-loc) ??idx) ??val)))))
+                        (else
+                         (syntax-expand
+                          (begin
+                            (def (?field-name ??ptr) (?field-accessor (+ ??ptr ?field-loc)))
+                            (defset (?field-name ??ptr) val (set (?field-accessor (+ ??ptr ?field-loc)) ??val))))))
+                    defs))
+              (set offset (+ offset field-size))))
          (set fields (exp/rest fields)))
        (set defs (exp/make-pair
                   (syntax-expand (def ?name ?(exp/make-number offset)))
