@@ -399,13 +399,15 @@
   (var str inst)
   (gfx/rect ox oy w h (gfx/color 255 255 255))
   (while (and (u8 str)
-              (< x (- w 14))
               (< y (- h 16)))
     (if ((== (u8 str) ch/nl)
          (set x (+ ox 4))
          (set y (+ y 16)))
         (else
          (set x (+ x (gfx/glyph fonts/mono x y (u8 str))))))
+    (if ((> x (- w 14))
+         (set x (+ ox 4))
+         (set y (+ y 16))))
     (set str (+ str 1)))
   (gfx/show))
 
