@@ -170,13 +170,15 @@ void
 setup_window ()
 {
   window = SDL_CreateWindow ("Z",
-                             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 512, 512,
-                             SDL_WINDOW_MAXIMIZED | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE);
+                             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                             1024, 768,
+                             SDL_WINDOW_SHOWN);
 
   if (window == NULL)
     exitf (1, "%s\n", SDL_GetError());
 
   renderer = SDL_CreateRenderer (window, -1, 0);
+  send_event(EV_SIZE, 1024, 768, 0, 0);
 }
 
 void
@@ -318,7 +320,7 @@ handle_event (SDL_Event *e)
   else if (e->type == SDL_WINDOWEVENT
            && e->window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
     {
-      send_event (EV_SIZE, e->window.data1, e->window.data2, 0, 0);
+      // send_event (EV_SIZE, e->window.data1, e->window.data2, 0, 0);
     }
   else if (e->type == SDL_TEXTINPUT)
     {
@@ -418,6 +420,8 @@ main (int argc, char **argv)
   const char *debug_argv[20];
   const char *prog;
   char **args;
+
+  setenv ("SDL_VIDEODRIVER", "x11", 0);
 
   init_pixels ();
   init_pipes ();
