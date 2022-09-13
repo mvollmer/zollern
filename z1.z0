@@ -2740,6 +2740,7 @@
   (push l0)
   (set l0 x0)
   (call comp-data-size-body)
+  (add l0 100)
   (call code-grow)
   (pop l0)
   (set (glb-type l0) def-type-func)
