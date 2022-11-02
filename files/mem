@@ -61,8 +61,8 @@
   (while 1
     (mem/dbg-int "  on" p)
     (if ((or (and (> r p) (< r q))  ;; between p and q
-             (and (> r p) (< q p))  ;; after p, and p is last
-             (and (< r q) (< q p))) ;; before q, and q is first
+             (and (> r p) (<= q p))  ;; after p, and p is last (or only)
+             (and (< r q) (<= q p))) ;; before q, and q is first (or only)
          (mem/dbg-out "    fits\n")
          (if ((and (== (+ p (mem/ar-size p)) r)
                    (== (+ r size) q))
@@ -123,7 +123,7 @@
     (set q (mem/ar-link p))
     (if ((== p avail)
          ;; XXX - get more mem
-         (dbg/out "OUT OF MEMORY\n")
+         (dbg/out "MORE MEMORY\n")
          (var page (sys/page-get))
          (set (u64 page) size)
          (set r (+ page 8))
