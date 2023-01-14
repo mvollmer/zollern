@@ -248,7 +248,7 @@ input_from_code (SDL_Keycode sym, SDL_Keymod mod)
     case SDLK_HOME:
       return -EV_KEY_BEGIN;
     default:
-      if ((mod & ~KMOD_SHIFT) != 0 && sym < 128)
+      if ((mod & KMOD_CTRL) && sym < 128)
         return sym;
       else
         return 0;
@@ -329,17 +329,10 @@ handle_event (SDL_Event *e)
       int mod = SDL_GetModState();
       if (e->text.text[0] == '~' || e->text.text[0] == '@')
         mod &= ~KMOD_RALT;
-      if ((mod & ~KMOD_SHIFT) == 0)
-        send_input_event (e->text.text[0], mod);
+      send_input_event (e->text.text[0], mod);
     }
   else if (e->type == SDL_KEYDOWN)
     {
-      // XXX - SDL reports KMOD_RALT for AltGr, so let's hack the two
-      //       cases on my keyboard that I use AltGr for...
-      if ((e->key.keysym.mod & KMOD_RALT) &&
-          (e->key.keysym.sym == '+' || e->key.keysym.sym == 'q'))
-        return;
-
       int input = input_from_code (e->key.keysym.sym, e->key.keysym.mod);
       if (input != 0)
           send_input_event (input, e->key.keysym.mod);
