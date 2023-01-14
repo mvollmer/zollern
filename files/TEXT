@@ -1,17 +1,20 @@
 @** Example
 
-This is an example of a [b Zollern] book. It has descriptive sections
-alternating with sections of code.
+This is an example of a wonderful [b Zollern] book. It has descriptive
+sections alternating with sections of code. 
 
 @=
 (fun (TEXT/main)
   12)
 @
-
+ 
 Back to text.
 
-@ And another paragraph.  This goes on for a bit longer because why not.  Paragraphs should be more than one line, I'd say.
+@ 
+
+And another paragraph. This goes on for a bit longer because why
+not. Paragraphs should be more than one line, I'd say.
 
 @* Part Two
 
-More interesting things about code.
+More interesting things about code, maybe about [code TEXT/main].

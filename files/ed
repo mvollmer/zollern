@@ -1,28 +1,28 @@
 @** The editor
 
-This is the standard text editor of Zollern. 
-Like everything else, it is rather simple and
-inefficient, but also a good example of how much
-one can get done with very little code.
+This is the standard text editor of Zollern. Like everything else,
+it is rather simple and inefficient, but also a good example
+of how much one can get done with very little code.
 
-It can cut-and-paste, highlight matching parentheses, and 
-indent s-expressions, for example, but there is no undo.
+It can cut-and-paste, highlight matching parentheses, and indent
+s-expressions, for example, but there is no undo.
 
-Key bindings are inspired by Emacs, as far as they go,
-and the editor is not extensible at all.
+Key bindings are inspired by Emacs, as far as they go, and the
+editor is not extensible at all.
 
-The editor can be used as a full-screen application on its own 
-to edit files, or be embedded within the interface of another application,
-to edit arbitrary text input.  The shell uses a editor instance when prompting 
-for the name of a new file, for example.
+The editor can be used as a full-screen application on its own
+to edit files, or be embedded within the interface of another
+application, to edit arbitrary text input. The shell uses a editor
+instance when prompting for the name of a new file, for example.
 
 @* Text buffers
 
-The text that a editor instance works with is stored in a [code textbuf] structure.
-Once a suitable [code textbuf] has been created, one can create a editor instance for it.
+The text that a editor instance works with is stored in a [code
+textbuf] structure. Once a suitable [code textbuf] has been created,
+one can create a editor instance for it.
 
-The main job of a [code textbuf] is to manage memory pages.  A file can 
-be larger than one page...
+The main job of a [code textbuf] is to manage memory pages. A
+file can be larger than one page...
 
 @=
 
@@ -611,6 +611,59 @@ be larger than one page...
   (ed/cut-region ed append)
   (set (ed/mark ed) -1))
 
+@* Paragraphs
+@=
+
+(fun (ed/looking-at-parsep ed point)
+  (or (ed/looking-at ed point "\n")
+      (ed/looking-at ed point "@")))
+
+(fun (ed/fill-paragraph ed)
+  (var start (ed/point ed))
+  (set start (ed/find-bol ed start))
+  (if ((ed/looking-at-parsep ed start)
+       (goto return)))
+  (var end start)
+  (while (and (> start 0) (not (ed/looking-at-parsep ed start)))
+    (set start (ed/find-bol ed (- start 1))))
+  (if ((ed/looking-at-parsep ed start)
+       (set start (+ (ed/find-eol ed start) 1))))
+  (while (and (< end (ed/len ed)) (not (ed/looking-at-parsep ed end)))
+    (set end (+ (ed/find-eol ed end) 1)))
+  (if ((> end (ed/len ed))
+       (set end (ed/len ed))))
+  (if ((and (> end 0) (ed/looking-at-parsep ed end))
+       (set end (- end 1))))
+  (var p0 start)
+  (var p1 p0)
+  (var np (ed/point ed))
+  (var last-was-space 1)
+  (var w 0)
+  (while (< p1 end)
+    (if ((== (ed/point ed) p1)
+         (set np p0)))
+    (var c (ed/char ed p1))
+    (if ((or (== c ch/spc) (== c ch/nl))
+         (if (last-was-space
+              (goto continue)))
+         (if ((> w 60)
+              (set c ch/nl)
+              (set w 0))
+             (else
+              (set c ch/spc)))
+         (set last-was-space 1))
+        (else
+         (set last-was-space 0)))
+    (set (ed/char ed p0) c)
+    (set p0 (+ p0 1))
+    (set w (+ w 1))
+    (label continue)
+    (set p1 (+ p1 1)))
+  (set (ed/point ed) p0)
+  (ed/delete-string ed (- p1 p0))
+  (set (ed/point ed) np)
+  (label return))
+
 @* Key bindings
 @=
 
@@ -703,7 +756,9 @@ be larger than one page...
            ((== key gfx/ev-key-backspace)
             (ed/backspace-word ed))))
       ((== state gfx/ev-state-meta)
-       (if ((== key ch/w) ;; M-w
+       (if ((== key ch/q) ;; M-q
+            (ed/fill-paragraph ed))
+           ((== key ch/w) ;; M-w
             (ed/copy-region ed 0)
             (set (ed/mark ed) -1))))))
 
