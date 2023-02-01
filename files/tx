@@ -572,7 +572,7 @@
   (set (tx/c-ink-y c) 0)
   (set (tx/c-ink-font c) 0)
   (set (tx/c-font c) fonts/sans)
-  (set (tx/c-line-width c) 500)
+  (set (tx/c-line-width c) 700)
   (set (tx/c-line-skip c) 3)
   (set (tx/c-par-skip c) 10)
   (set (tx/c-verbatim c) 0)

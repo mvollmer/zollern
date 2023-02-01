@@ -1,4 +1,5 @@
-;; Sokoban
+@** Sokoban
+@=
 
 (defconst soko/width 20)
 (defconst soko/height 20)

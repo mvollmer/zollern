@@ -1,12 +1,12 @@
-;;; Files
+@** Files
 
-;; Files never change once they have been completely written.  Files
-;; that have not yet been completely written can not be found by name.
-;; Writing a file with the same name as an existing file will replace
-;; the old file atomically when it is completely written.
+Files never change once they have been completely written. Files
+that have not yet been completely written can not be found by
+name. Writing a file with the same name as an existing file will
+replace the old file atomically when it is completely written.
 
-;; Layout
-
+@* Layout
+@=
 (defconst fs/block-size (* 16 1024))
 (defconst fs/node-size  256)
 (defconst fs/name-size  64)
@@ -137,22 +137,23 @@
     (if ((u8 ptr)
          (func ptr env)))))
 
-;; Reading files
+@* Reading files
 
-;; - (fs/open buf name)
-;;
-;; Find the file named NAME and initialize BUF for use with fs/read.
-;; Returns zero if there is no file named NAME, non-zero otherwise.
-;;
-;; - (fs/close buf)
-;;
-;; Releases the file described by BUF.
-;;
-;; - (fs/read buf)
-;;
-;; Updates BUF to describe the next chunk of its file.  Returns zero
-;; when the file has been read completely.
+- ([b fs/open] buf name)
 
+Find the file named NAME and initialize BUF for use with fs/read.
+Returns zero if there is no file named NAME, non-zero otherwise.
+
+- ([b fs/close] buf)
+
+Releases the file described by BUF.
+
+- ([b fs/read] buf)
+
+Updates BUF to describe the next chunk of its file. Returns zero
+when the file has been read completely.
+
+@=
 (struct fs/rbuf
   (rbuf-node u16)
   (rbuf-ptr u16)
@@ -196,7 +197,8 @@
 (fun (fs/close buf)
   (fs/unref-node (fs/rbuf-node buf)))
 
-;; Removing files
+@* Removing files
+@=
 
 (fun (fs/remove name)
   (mem rbuf fs/rbuf)
@@ -208,13 +210,17 @@
        (fs/unref-node (fs/rbuf-node rbuf))
        (fs/close rbuf))))
 
-;; Writing files
+@* Writing files
 
-;; - (fs/create wbuf)
-;; - (fs/write wbuf buf len)
-;; - (fs/commit wbuf name)
-;; - (fs/abort wbuf)
+- (fs/create wbuf)
 
+- (fs/write wbuf buf len)
+
+- (fs/commit wbuf name)
+
+- (fs/abort wbuf)
+
+@=
 (struct fs/wbuf
   (wbuf-node u16)
   (wbuf-ptr u16)

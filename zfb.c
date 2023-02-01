@@ -171,14 +171,14 @@ setup_window ()
 {
   window = SDL_CreateWindow ("Z",
                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                             1024, 768,
-                             SDL_WINDOW_SHOWN);
+                             1280, 1024,
+                             SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS);
 
   if (window == NULL)
     exitf (1, "%s\n", SDL_GetError());
 
   renderer = SDL_CreateRenderer (window, -1, 0);
-  send_event(EV_SIZE, 1024, 768, 0, 0);
+  send_event(EV_SIZE, 1280, 1024, 0, 0);
 }
 
 void
