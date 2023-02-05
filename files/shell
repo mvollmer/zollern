@@ -175,6 +175,7 @@
   (book/reset-out-of-date)
   (fs/list shell/insert-node nodes)
   (gfx/draw-init x y w h)
+  (gfx/rect 1024 0 2 1024 (gfx/color 120 120 0))
   (gfx/set-font fonts/sans-l)
   (gfx/set-x (+ x 4))
   (gfx/draw-string "Welcome to Zollern\n")

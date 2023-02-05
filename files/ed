@@ -266,7 +266,7 @@ file can be larger than one page...
        (while (< i len)
          (var w (gfx/glyph fonts/mono x y (u8 buf)))
          (if ((>= i (ed/search-match-len ed))
-              (gfx/tint-rect x y w (ed/row-height ed) 255 0 0)))
+              (gfx/tint-rect-2 x y w (ed/row-height ed) 255 0 0 255 255 255)))
          (set x (+ x w))
          (set buf (+ buf 1))
          (set i (+ i 1))))

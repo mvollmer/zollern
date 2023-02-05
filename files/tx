@@ -1,7 +1,11 @@
-;;; TX - simple type setting
+@** TX - simple type setting
 
-;; Data structures, this is deliberately a stress test for malloc/free
+This is not TeX.
 
+@
+Data structures, this is deliberately a stress test for malloc/free.
+
+@=
 (enum
   nt-hbox
   nt-vbox
@@ -21,6 +25,7 @@
   c-ink-x
   c-ink-y
   c-ink-font
+  c-ink-color
   ;; parsing
   c-rbuf
   c-at-bol
@@ -30,6 +35,7 @@
   ;; markup state
   c-verbatim
   c-font
+  c-color
   c-line-width
   c-line-skip
   c-par-skip)
@@ -54,6 +60,7 @@
 (struct tx/tbox
   (:base tx/box)
   tb-font
+  tb-color
   tb-str)
 
 (defconst tx/NATURAL-SIZE 40000)
@@ -396,6 +403,7 @@
   ink-setfont-sans-b
   ink-setfont-sans-l
   ink-setfont-mono
+  ink-setcolor
   ink-glyphs
   ink-end)
 
@@ -458,6 +466,13 @@
            ((== font fonts/mono)
             (tx/emit-byte ctxt tx/ink-setfont-mono)))
        (set (tx/c-ink-font ctxt) font)))
+  (var color (tx/tb-color node))
+  (if ((!= color (tx/c-ink-color ctxt))
+       (tx/emit-byte ctxt tx/ink-setcolor)
+       (tx/emit-byte ctxt (gfx/color-r color))
+       (tx/emit-byte ctxt (gfx/color-g color))
+       (tx/emit-byte ctxt (gfx/color-b color))
+       (set (tx/c-ink-color ctxt) color)))
   (tx/emit-byte ctxt tx/ink-glyphs)
   (var text (tx/tb-str node))
   (while (u8 text)
@@ -522,6 +537,10 @@
   (var x 0)
   (var y 0)
   (var font 0)
+  (var color-r 0)
+  (var color-g 0)
+  (var color-b 0)
+  (var color-is-black 1)
   (var op)
   (while (!= (set op (tx/get-u8 d)) tx/ink-end)
     (if ((== op tx/ink-x)
@@ -546,6 +565,11 @@
          (set font fonts/sans-b))
         ((== op tx/ink-setfont-mono)
          (set font fonts/mono))
+        ((== op tx/ink-setcolor)
+         (set color-r (tx/get-u8 d))
+         (set color-g (tx/get-u8 d))
+         (set color-b (tx/get-u8 d))
+         (set color-is-black (and (== color-r 0) (== color-g 0) (== color-b 0))))
         ((== op tx/ink-glyphs)
          ;(dbg/str "T" ptr)
          ;(dbg/int "x" x)
@@ -556,8 +580,12 @@
          (while (set c (tx/get-u8 d))
            ;; XXX - maintain x also for skipped glyphs
            (if ((and (>= xx 0) (< xx (- x-end 15))
-                     (>= yy 0) (< yy (- y-end 15)))
-                (set xx (+ xx (gfx/glyph font xx yy c))))))))))
+                     (>= yy 0) (< yy (- y-end 20)))
+                (var w (gfx/glyph font xx yy c))
+                (if ((not color-is-black)
+                     (var h (- (gfx/font-ascent font) (gfx/font-descent font)))
+                     (gfx/tint-rect-2 xx yy w h color-r color-g color-b 255 255 255)))
+                (set xx (+ xx w)))))))))
 
 ;; Constructing
 
@@ -571,7 +599,9 @@
   (set (tx/c-ink-x c) 0)
   (set (tx/c-ink-y c) 0)
   (set (tx/c-ink-font c) 0)
+  (set (tx/c-ink-color c) (gfx/color 0 0 0))
   (set (tx/c-font c) fonts/sans)
+  (set (tx/c-color c) (gfx/color 0 0 0))
   (set (tx/c-line-width c) 700)
   (set (tx/c-line-skip c) 3)
   (set (tx/c-par-skip c) 10)
@@ -624,11 +654,12 @@
        (set (tx/c-outer-y c) (+ (tx/c-outer-y c) dy))
        (tx/free-node node))))
 
-(fun (tx/text font str)
+(fun (tx/text str)
   (var n (mem/alloc tx/tbox))
   (set (tx/n-type n) tx/nt-tbox)
   (set (tx/b-children n) 0) ;; ???
-  (set (tx/tb-font n) font)
+  (set (tx/tb-font n) (tx/c-font (ctxt/tx context)))
+  (set (tx/tb-color n) (tx/c-color (ctxt/tx context)))
   (set (tx/tb-str n) (str/dup str))
   (tx/add-context n))
 
@@ -825,7 +856,7 @@
         (else
          (tx/ensure-hmode)
          ;; (dbg/str "text" t)
-         (tx/text (tx/c-font (ctxt/tx context)) t)
+         (tx/text t)
          (tx/next-token)))))
 
 (fun (tx/parse-code-section)
@@ -837,11 +868,12 @@
   ;; parse body
   (set (tx/c-verbatim (ctxt/tx context)) 1)
   (set (tx/c-font (ctxt/tx context)) fonts/mono)
+  (set (tx/c-color (ctxt/tx context)) (gfx/color 0 80 0))
   (tx/next-token)
   (tx/skip (tx/c-par-skip (ctxt/tx context)) 0 0)
   (while (and (u8 t) (not (== (u8 t) ch/ht)))
     ;; (dbg/str "V" t)
-    (tx/text (tx/c-font (ctxt/tx context)) t)
+    (tx/text t)
     (tx/next-token)))
 
 (fun (tx/cmd-title)
@@ -875,6 +907,7 @@
 (fun (tx/parse-text-section cmd)
   (var t (tx/c-cur-token (ctxt/tx context)))
   (set (tx/c-font (ctxt/tx context)) fonts/sans)
+  (set (tx/c-color (ctxt/tx context)) (gfx/color 0 0 0))
   ;; parse header line
   (if ((str/eq cmd "**")
        (tx/cmd-title))
