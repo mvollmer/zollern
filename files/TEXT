@@ -3,13 +3,20 @@ This is an example of a wonderful [b Zollern] book. It has descriptive
 sections alternating with sections of code.
 
 @=
+
+<Painting functions>
+
 (fun (TEXT/main)
   12)
 @
 
 Back to text.
 
-@ 
+@= <Painting functions>
+
+(fun (TEXT/paint)
+  12)
+@
 And another paragraph. This goes on for a bit longer because why
 not. Paragraphs should be more than one line, I'd say.
 

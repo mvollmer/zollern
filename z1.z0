@@ -454,11 +454,28 @@
   (set l0 tk-kind-string)
   (jmp .out)
 .not-string
+  (cmp l0 :<)
+  (jne .not-angle-sym)
+  (set x2 (tk-buf x1))
+  (set (u8 x2) l0)
+  (add x2 1)
+  (getchar x0 .end-symbol)
+  (cmp l0 :@)
+  (jl .test-sym-char)
+.store-angle-sym-char
+  (set (u8 x2) l0)
+  (add x2 1)
+  (cmp l0 :>)
+  (je .end-symbol)
+  (getchar x0 .end-symbol)
+  (jmp .store-angle-sym-char)
+.not-angle-sym
   (set x2 (tk-buf x1))
 .store-sym-char
   (set (u8 x2) l0)
   (add x2 1)
   (getchar x0 .end-symbol)
+.test-sym-char
   (cmp l0 :spc)
   (jle .end-symbol-put-back)
   (cmp l0 :lp)
@@ -3187,7 +3204,7 @@
   (je .done)
   (call comp-expr)
   (call fixup-run)
-  (call exp-reset)
+  ;;(call exp-reset)
   (jmp .loop)
 .done
   (call compiler-fini)
