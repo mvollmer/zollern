@@ -345,6 +345,7 @@
 (def tk-kind-symbol        3)
 (def tk-kind-string        4)
 (def tk-kind-question-mark 5)
+(def tk-kind-fragment-def  6)
 
 (def (getchar ?fb ?eof-label)
   (set l0 ?fb)
@@ -370,6 +371,10 @@
   (set x1 l1)
   (set l0 (fb-ptr x0))
   (je .bol)
+  (set x3 0)
+  (jmp .skip-whitespace)
+.in-code-header
+  (set x3 1)
 .skip-whitespace
   (getchar x0 .eof)
 .maybe-whitespace
@@ -385,6 +390,7 @@
   (je .bol)
   (jmp .skip-comment)
 .bol
+  (set x3 0)
   (getchar x0 .eof)
   (cmp l0 :@)
   (je .bol-at)
@@ -392,7 +398,7 @@
 .bol-at
   (getchar x0 .eof)
   (cmp l0 :=)
-  (je .skip-whitespace)
+  (je .in-code-header)
 .skip-tx-block
   (getchar x0 .eof)
 .skip-tx-block-maybe-nl
@@ -488,6 +494,11 @@
 .end-symbol
   (set l0 0)
   (set (u8 x2) l0)
+  (cmp x3 0)
+  (je .normal-symbol)
+  (set l0 tk-kind-fragment-def)
+  (jmp .out)
+.normal-symbol
   (set l0 tk-kind-symbol)
   (jmp .out)
 .eof
