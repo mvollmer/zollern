@@ -1,4 +1,36 @@
 @** Sokoban
+
+@* The game
+
+Sokoban is a puzzle game where you move boxes on a grid. The basic
+game is pretty straightforward to implement, but it is also a
+nice playground for graph algorithms.
+
+The basic rules of the puzzle are these: Each level has a number
+of boxes scattered around a maze-like room, and you have to collect
+them into a neat target arrangement. You move a box by pushing
+it from one side with a little bulldozer. The bulldozer can only
+push one box at a time and it can not pull them.
+
+The game lets you control the bulldozer with the arrow keys. Backspace
+will undo the last move, all the way back to the beginning. Clicking
+with the mouse on a empty tile will compute the shortest path
+to this tile. Pressing SPC will cause the bulldozer to follow
+this path.
+
+Some of the floor tiles are lighter than others; a box on a lighter
+tile has no chance of reaching any of the target locations. This
+is a first step of helping the player find useful moves.
+
+The game does not yet detect when all boxes are in their target
+locations, but he Page-Down and Page-Up keys will switch to the
+next and previous levels, respectively. Thus, this program is
+not really good at being a game. Indeed, it will probably develop
+more algorithm tricks like showing all possible box moves, and
+finding box moves that are guaranteed to end in a dead-lock after
+N steps, etc.
+
+@* The program
 @=
 
 (defconst soko/width 20)

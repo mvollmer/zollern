@@ -1,3 +1,5 @@
+@=
+
 (struct shell/instance
   cur
   cur-name
