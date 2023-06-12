@@ -820,21 +820,7 @@
   (set l0 l1)
   (ret))
 
-(code exp-read
-  (set l3 (ctxt-comp cp))
-  (let l1 (cc-token l3))
-  (let l2 (cc-tokenbuf l3))
-  (set (tk-buf l1) l2)
-  (push x0)
-  (push x1)
-  (set x0 l0)
-  (set x1 l1)
-  (call next-token)
-  (call .read1)
-  (pop x1)
-  (pop x0)
-  (ret)
-.read1
+(code exp-read1
   (set l0 (tk-kind x1))
   (cmp l0 tk-kind-open)
   (jne .not-open)
@@ -849,7 +835,7 @@
   (je .eof-in-list)
   (cmp l0 tk-kind-close)
   (je .list-done)
-  (call .read1)
+  (call exp-read1)
   (set l1 x2)
   (call exp-make-pair)
   (set x2 l0)
@@ -913,7 +899,7 @@
   (set l0 x0)
   (set l1 x1)
   (call next-token)
-  (call .read1)
+  (call exp-read1)
   (set l1 0)
   (call exp-make-pair)
   (push l0)
@@ -926,6 +912,37 @@
 .not-question-mark
   (set l0 (tk-buf x1))
   (jmp exp-make-string))
+
+(code exp-read-all
+  ;; l0 - file-buffer
+  (set l3 (ctxt-comp cp))
+  (let l1 (cc-token l3))
+  (let l2 (cc-tokenbuf l3))
+  (set (tk-buf l1) l2)
+  (push x0)
+  (push x1)
+  (push x2)
+  (set x0 l0) ;; file-buffer
+  (set x1 l1) ;; token
+  (set x2 0)  ;; result
+.loop
+  (set l0 x0)
+  (set l1 x1)
+  (call next-token)
+  (call exp-read1)
+  (cmp l0 0)
+  (je .done)
+  (set l1 x2)
+  (call exp-make-pair)
+  (set x2 l0)
+  (jmp .loop)
+.done
+  (set l0 x2)
+  (call exp-list-reverse)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret))
 
 (data exp-write-strbuf 20)
 
@@ -3207,15 +3224,17 @@
   (set l1 (fb-node x0))
   (set l1 (dm-time l1))
   (set (bk-time l0) l1)
+  (set l0 x0)
+  (call exp-read-all)
+  (set x0 l0)
 .loop
   (call fixup-init)
-  (set l0 x0)
-  (call exp-read)
-  (cmp l0 0)
+  (cmp x0 0)
   (je .done)
+  (set l0 (exp-first x0))
+  (set x0 (exp-rest x0))
   (call comp-expr)
   (call fixup-run)
-  ;;(call exp-reset)
   (jmp .loop)
 .done
   (call compiler-fini)
