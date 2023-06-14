@@ -862,9 +862,12 @@ Data structures, this is deliberately a stress test for malloc/free.
 (fun (tx/parse-code-section)
   (var c (ctxt/tx context))
   (var t (tx/c-cur-token c))
+  (var is-main 0)
   ;; parse header line
   (tx/skip 15 0 0)
-  (if ((not (str/eq t "]"))
+  (if ((str/eq t "]")
+       (set is-main 1))
+      (else
        (tx/begin-hbox)
        (tx/parse-text)
        (tx/text " =")
@@ -877,7 +880,8 @@ Data structures, this is deliberately a stress test for malloc/free.
   (while (and (u8 t) (not (== (u8 t) ch/ht)))
     ;; (dbg/str "V" t)
     (tx/begin-hbox)
-    (tx/skip 15 0 0)
+    (if ((not is-main)
+         (tx/skip 15 0 0)))
     (tx/text t)
     (tx/end)
     (tx/next-token))

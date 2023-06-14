@@ -61,9 +61,7 @@ N steps, etc.
   tile-target
   tile-box
   tile-box-on-target
-
   tile-target-reaching)
-
 
 (struct soko/data
   dozer-dir

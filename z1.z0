@@ -369,9 +369,9 @@
   (push x3)
   (set x0 l0)
   (set x1 l1)
+  (set x3 0)
   (set l0 (fb-ptr x0))
   (je .bol)
-  (set x3 0)
   (jmp .skip-whitespace)
 .in-code-header
   (set x3 1)
@@ -390,7 +390,13 @@
   (je .bol)
   (jmp .skip-comment)
 .bol
-  (set x3 0)
+  (cmp x3 0)
+  (je .wasnt-code-header)
+  (set l0 (tk-buf x1))
+  (set (u8 l0) 0)
+  (set l0 tk-kind-fragment-def)
+  (jmp .out)
+.wasnt-code-header
   (getchar x0 .eof)
   (cmp l0 :@)
   (je .bol-at)
@@ -796,6 +802,7 @@
   (call exp-make-with-string)
   (set (exp-type l0) exp-type-symbol)
   (set (exp-sym-type l0) def-type-undef)
+  (set (exp-sym-val l0) 0)
   (set l1 (cc-symbols x3))
   (set l2 (u64 l1 x1))
   (set (exp-sym-link l0) l2)
@@ -913,6 +920,51 @@
   (set l0 (tk-buf x1))
   (jmp exp-make-string))
 
+(code exp-splice-fragments
+  ;; l0 - list to splice fragments into
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (jmp .test)
+.loop
+  (set l0 (exp-first x0))
+  (set l1 (exp-type l0))
+  (cmp l1 exp-type-pair)
+  (jne .not-pair)
+  (call exp-splice-fragments)
+  (jmp .next)
+.not-pair
+  (cmp l1 exp-type-symbol)
+  (jne .next)
+  (set x1 (exp-sym-val l0))
+  (cmp x1 0)
+  (je .next)
+  (set (exp-sym-val l0) 0)
+  (set l0 x1)
+  (call exp-splice-fragments)
+  (set l0 (exp-first x1))
+  (set (exp-first x0) l0)
+  (set l2 (exp-rest x0))
+  (set l0 (exp-rest x1))
+  (set (exp-rest x0) l0)
+  (set l0 x0)
+.test-tail
+  (set x1 (exp-rest l0))
+  (cmp x1 0)
+  (je .found-tail)
+  (set l0 x1)
+  (jmp .test-tail)
+.found-tail
+  (set (exp-rest l0) l2)
+.next
+  (set x0 (exp-rest x0))
+.test
+  (cmp x0 0)
+  (jne .loop)
+  (pop x1)
+  (pop x0)
+  (ret))
+
 (code exp-read-all
   ;; l0 - file-buffer
   (set l3 (ctxt-comp cp))
@@ -924,21 +976,46 @@
   (push x2)
   (set x0 l0) ;; file-buffer
   (set x1 l1) ;; token
-  (set x2 0)  ;; result
+  (set l0 0)
+  (push l0)
+  (set x2 sp)  ;; result tail ptr
 .loop
   (set l0 x0)
   (set l1 x1)
   (call next-token)
+  (set l0 (tk-kind x1))
+  (cmp l0 tk-kind-fragment-def)
+  (jne .normal)
+  (set l0 (tk-buf x1))
+  (set l1 (u8 l0))
+  (cmp l1 0)
+  (jne .def-fragment)
+  (set x2 sp)
+  (jmp .find-tail)
+.def-fragment
+  (call exp-intern)
+  (let x2 (exp-sym-val l0))
+.find-tail
+  (set l0 (u64 x2))
+  (cmp l0 0)
+  (je .loop)
+  (let x2 (exp-rest l0))
+  (jmp .find-tail)
+.normal
   (call exp-read1)
   (cmp l0 0)
   (je .done)
-  (set l1 x2)
+  (set l1 0)
   (call exp-make-pair)
-  (set x2 l0)
+  (set (u64 x2) l0)
+  (let x2 (exp-rest l0))
   (jmp .loop)
 .done
-  (set l0 x2)
-  (call exp-list-reverse)
+  (set (u64 x2) 0)
+  (pop l0)
+  (set x0 l0)
+  (call exp-splice-fragments)
+  (set l0 x0)
   (pop x2)
   (pop x1)
   (pop x0)
