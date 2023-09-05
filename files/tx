@@ -872,7 +872,7 @@ Data structures, this is deliberately a stress test for malloc/free.
        (tx/parse-text)
        (tx/text " =")
        (tx/end)
-       (tx/skip 5 0 0)))
+       (tx/skip 0 0 0)))
   ;; parse body
   (set (tx/c-verbatim c) 1)
   (set (tx/c-font c) fonts/mono)
