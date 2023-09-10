@@ -35,3 +35,10 @@ all just a test for the literate programming features of Zollern.
 @= <define utility functions>
 (fun (TEXT/debug l v)
   (dbg/int l v))
+
+@
+But let's have one more utility.
+
+@= <define utility functions>
+(fun (TEXT/log msg)
+  (dbg/out msg))
