@@ -36,8 +36,7 @@ some time, it didn't have floats either...)
 (var x_re_2 (f* x_re x_re))
 (var x_im_2 (f* x_im x_im))
 
-@
-The magnitude of a complex number is (sqrt (+ (* re re) (* im
+@ The magnitude of a complex number is (sqrt (+ (* re re) (* im
 im))) and if we want to compare it to some other valud, it is
 more efficient to square both quatities and compare the results,
 instead of taking a square root. (At least back in the days.
@@ -57,27 +56,123 @@ for us.
 (set x_im (f+ (f* (i->f 2) x_re x_im) c_im))
 (set x_re (f+ x_re_2 (f- 0 x_im_2) c_re))
 
+@* Plotting
+
+Now that we have a function that tells us whether a complex number
+belongs to the Mandelbrot set, we only need to compute for each
+pixel of the screen.
+
+The Mandelbrot set has infnite detail and we want to zoom in to
+see as much as we can. And also zoom out again, of course.
+
+Thus, the application data for the Mandelbrot viewer contains
+the bounds of the complex plane that the [code paint] function
+should plot, and the [code input] function modifies them to achieve
+the zooming.
 
 @=
-(defconst mandel/NORM 1000000)
-(defconst mandel/MAX      255)
-
-(defconst mandel/re-min -2500000)
-(defconst mandel/re-max  1000000)
-(defconst mandel/im-min -1000000)
-(defconst mandel/im-max  1000000)
-
-(fun (mandel/float fix)
-  (f/ (i->f fix) (i->f mandel/NORM)))
-
-(fun (mandel/fix float)
-  (f->i (f* float (i->f mandel/NORM))))
-
 (struct mandel/data
   cur-re-min cur-re-max
   cur-im-min cur-im-max
   x-size y-size
   need-render)
+
+@
+The [code x-size] and [code y-size] fields are needed to work
+around some shortcomings of the [code gfx] book: The [code input]
+function needs to know how big the screen is to compute new bounds
+during zooming, but only the [code paint] function is told that
+size.
+
+Similarily, [code need-render] is used to avoid the expensive
+Mandelbrot computations when possible. The [code gfx] book
+assumes that [code paint] needs to be called after every input
+event, but most input events do not actually change how the screen
+should look.
+
+This will be fixed in the [code gfx] book pretty soon, promise!
+
+@=
+<define the [code mandel/render] function>
+
+(fun (mandel/paint inst x y w h)
+  (if ((mandel/need-render inst)
+       (set (mandel/x-size inst) w)
+       (set (mandel/y-size inst) h)
+       (mandel/render inst)))
+  (set (mandel/need-render inst) 1))
+
+(fun (mandel/input inst state input event-x event-y)
+  (set (mandel/need-render inst) 0)
+  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
+       (gfx/quit inst)
+       (mem/free inst))
+      ((== input gfx/ev-key-backspace)
+       <zoom out>
+       (set (mandel/need-render inst) 1))
+      ((== input gfx/ev-button-1-press)
+       <zoom in>
+       (set (mandel/need-render inst) 1))))
+  
+(book/funtab mandel/efuns
+  mandel/paint
+  mandel/input)
+
+(fun (mandel/main)
+  (var inst (mem/alloc mandel/data))
+  <init zoom>
+  (set (mandel/need-render inst) 1)
+  (gfx/launch inst "mandel" "main" mandel/efuns))
+
+@
+Zooming is pretty straightforward. It just looks like a lot of
+code because Zollern is so very verbose when accessing structure
+fields. Hopefully, we can some day write [code inst.re-min] instead
+of [code (mandel/cur-re-min inst)].
+
+@= <zoom out>
+(var dx1 (f- (mandel/cur-re-max inst) (mandel/cur-re-min inst)))
+(var dy1 (f- (mandel/cur-im-max inst) (mandel/cur-im-min inst)))
+(set (mandel/cur-re-min inst) (f- (mandel/cur-re-min inst) dx1))
+(set (mandel/cur-re-max inst) (f+ (mandel/cur-re-max inst) dx1))
+(set (mandel/cur-im-min inst) (f- (mandel/cur-im-min inst) dy1))
+(set (mandel/cur-im-max inst) (f+ (mandel/cur-im-max inst) dy1))
+
+@= <zoom in>
+(var re-len (f- (mandel/cur-re-max inst) (mandel/cur-re-min inst)))
+(var im-len (f- (mandel/cur-im-max inst) (mandel/cur-im-min inst)))
+(var x (f+ (mandel/cur-re-min inst) (f/ (f* (i->f event-x) re-len) (i->f (mandel/x-size inst)))))
+(var y (f+ (mandel/cur-im-min inst) (f/ (f* (i->f event-y) im-len) (i->f (mandel/y-size inst)))))
+(var dx2 (f/ re-len (i->f 4)))
+(var dy2 (f/ im-len (i->f 4)))
+(set (mandel/cur-re-min inst) (f- x dx2))
+(set (mandel/cur-re-max inst) (f+ x dx2))
+(set (mandel/cur-im-min inst) (f- y dy2))
+(set (mandel/cur-im-max inst) (f+ y dy2))
+
+@
+The initial zoom settings should show the whole Mandelbrot set,
+and since Zollern has no syntax for literal floating point numbers,
+we use integers.
+
+@= <init zoom>
+(set (mandel/cur-re-min inst) (i->f -2))
+(set (mandel/cur-re-max inst) (i->f 1))
+(set (mandel/cur-im-min inst) (i->f -1))
+(set (mandel/cur-im-max inst) (i->f 1))
+
+@* Rendering
+
+Computing the color for a single pixel of course calls [code mandel/iter]
+for the corresponding complex number. The return value is turned
+into a color so that points in the set will be black, and the
+rest is pretty arbitrary. It is fun to change the formula just
+to see what happens.
+
+Most of the code is again due to Zollern being so verbose with
+math and structure accesses.
+
+@= <define the [code mandel/render] function>
 
 (fun (mandel/render-point inst x y)
   (var re-min (mandel/cur-re-min inst))
@@ -86,15 +181,53 @@ for us.
   (var im-max (mandel/cur-im-max inst))
   (var re (f+ re-min (f* (i->f x) (f/ (f- re-max re-min) (i->f (mandel/x-size inst))))))
   (var im (f+ im-min (f* (i->f y) (f/ (f- im-max im-min) (i->f (mandel/y-size inst))))))
-  (var c (- 255 (mandel/iter re im mandel/MAX)))
+  (var c (- 255 (mandel/iter re im 255)))
   (gfx/put-pixel x y (gfx/color (* c 15) (* c 1) (* c 32))))
 
+@
+Now that we can render a single point, rendering the whole screen
+is trivial. But there is a trick to speed up the computation
+enourmously!
+
+If you can find a closed curve in the complex plane (that does
+not contain the origin) so that [code mandel/iter] returns the
+same value for each point on the curve, then every point inside
+the curve will also yield that same value. (citation needed)
+
+We assume that this can be extended to the colors used by [code
+mandel/render-point]: If we can find a closed curve of pixels
+all of the same color, then we can fill the interior of that
+curve with that same color.
+
+The curves that we try are rectangles. First we render the outline
+of a rectanle, then we check if the whole thing is the same color.
+If so, we are done and fill the rectangle with that color.
+
+If not, the rectangle is subdivided into four by rendering one
+horizontal and one vertial line through its center. That gives
+us four rectangle outlines, that can be recursively tested for
+same-colorness.
+
+So we need functions to render horizontal and vertical lines of
+pixels. Easy enough.
+
+@= <define the [code mandel/render] function>
 (fun (mandel/render-h-line inst x1 x2 y)
   (var x x1)
-  (while (<= x x2)
+  (while (<= x x2) 
     (mandel/render-point inst x y)
     (set x (+ x 1))))
 
+(fun (mandel/render-v-line inst x y1 y2)
+  (var y y1)
+  (while (<= y y2)
+    (mandel/render-point inst x y)
+    (set y (+ y 1))))
+@
+We also need a function to check whether a rectangle is all the
+same color. A bit tedious to code, but still easy.
+
+@= <define the [code mandel/render] function>
 (fun (mandel/get-h-line-color x1 x2 y)
   (var c (gfx/get-pixel x1 y))
   (var x (+ x1 1))
@@ -105,12 +238,6 @@ for us.
     (set x (+ x 1)))
   (label out)
   c)
-
-(fun (mandel/render-v-line inst x y1 y2)
-  (var y y1)
-  (while (<= y y2)
-    (mandel/render-point inst x y)
-    (set y (+ y 1))))
 
 (fun (mandel/get-v-line-color x y1 y2)
   (var c (gfx/get-pixel x y1))
@@ -132,23 +259,44 @@ for us.
        (set c -1)))
   c)
 
+@
+Now we can put it all together. The recursive step consists of
+checking a already rendered rectangle, and either filling it
+or subdividing it further.
+
+A special case is important: A rectangle that is only 2 pixels
+wide or high will end the recursion as well, since it doesn't
+have any interior pixels that would need to be processed.
+
+@= <define the [code mandel/render] function>
 (fun (mandel/fill-rect inst x1 x2 y1 y2)
   ;; XXX - must also subdivide when origin is in rectangle
   (if ((or (< (- x2 x1) 2)
            (< (- y2 y1) 2)))
       ((!= (var c (mandel/get-rect-color x1 x2 y1 y2)) -1)
-       (gfx/rect x1 y1 (- x2 x1) (- y2 y1) c))
+       <fill it with one color>)
       (else
-       (var half-x (/ (+ x1 x2) 2))
-       (var half-y (/ (+ y1 y2) 2))
-       (mandel/render-h-line inst (+ x1 1) (- x2 1) half-y)
-       (mandel/render-v-line inst half-x (+ y1 1) (- half-y 1))
-       (mandel/render-v-line inst half-x (+ half-y 1) (- y2 1))
-       (mandel/fill-rect inst x1 half-x y1 half-y)
-       (mandel/fill-rect inst half-x x2 y1 half-y)
-       (mandel/fill-rect inst x1 half-x half-y y2)
-       (mandel/fill-rect inst half-x x2 half-y y2))))
+       <subdivide it and recurse>)))
 
+@= <fill it with one color>
+(gfx/rect x1 y1 (- x2 x1) (- y2 y1) c))
+
+@= <subdivide it and recurse>
+(var half-x (/ (+ x1 x2) 2))
+(var half-y (/ (+ y1 y2) 2))
+(mandel/render-h-line inst (+ x1 1) (- x2 1) half-y)
+(mandel/render-v-line inst half-x (+ y1 1) (- half-y 1))
+(mandel/render-v-line inst half-x (+ half-y 1) (- y2 1))
+(mandel/fill-rect inst x1 half-x y1 half-y)
+(mandel/fill-rect inst half-x x2 y1 half-y)
+(mandel/fill-rect inst x1 half-x half-y y2)
+(mandel/fill-rect inst half-x x2 half-y y2)
+
+@
+The recursive process expects a rendered rectangle outline, so
+to get it all started, we need to render one explicitly.
+
+@= <define the [code mandel/render] function>
 (fun (mandel/render-rect inst x1 x2 y1 y2)
   (mandel/render-h-line inst x1 x2 y1)
   (mandel/render-h-line inst x1 x2 y2)
@@ -160,55 +308,5 @@ for us.
   (mandel/render-rect inst 0 (- (mandel/x-size inst) 1) 0 (- (mandel/y-size inst) 1))
   (gfx/show))
 
-(fun (mandel/render2 inst)
-  (var y 0)
-  (while (< y (mandel/y-size inst))
-    (mandel/render-h-line inst 0 (mandel/x-size inst) y)
-    (set y (+ y 1)))
-  (gfx/show))
-
-(fun (mandel/paint inst x y w h)
-  (if ((mandel/need-render inst)
-       (set (mandel/x-size inst) w)
-       (set (mandel/y-size inst) h)
-       (mandel/render inst)))
-  (set (mandel/need-render inst) 1))
-
-(fun (mandel/input inst state input event-x event-y)
-  (set (mandel/need-render inst) 0)
-  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
-       (gfx/quit inst)
-       (mem/free inst))
-      ((== input gfx/ev-key-backspace)
-       (var dx1 (f- (mandel/cur-re-max inst) (mandel/cur-re-min inst)))
-       (var dy1 (f- (mandel/cur-im-max inst) (mandel/cur-im-min inst)))
-       (set (mandel/cur-re-min inst) (f- (mandel/cur-re-min inst) dx1))
-       (set (mandel/cur-re-max inst) (f+ (mandel/cur-re-max inst) dx1))
-       (set (mandel/cur-im-min inst) (f- (mandel/cur-im-min inst) dy1))
-       (set (mandel/cur-im-max inst) (f+ (mandel/cur-im-max inst) dy1))
-       (set (mandel/need-render inst) 1))
-      ((== input gfx/ev-button-1-press)
-       (var re-len (f- (mandel/cur-re-max inst) (mandel/cur-re-min inst)))
-       (var im-len (f- (mandel/cur-im-max inst) (mandel/cur-im-min inst)))
-       (var x (f+ (mandel/cur-re-min inst) (f/ (f* (i->f event-x) re-len) (i->f (mandel/x-size inst)))))
-       (var y (f+ (mandel/cur-im-min inst) (f/ (f* (i->f event-y) im-len) (i->f (mandel/y-size inst)))))
-       (var dx2 (f/ re-len (i->f 4)))
-       (var dy2 (f/ im-len (i->f 4)))
-       (set (mandel/cur-re-min inst) (f- x dx2))
-       (set (mandel/cur-re-max inst) (f+ x dx2))
-       (set (mandel/cur-im-min inst) (f- y dy2))
-       (set (mandel/cur-im-max inst) (f+ y dy2))
-       (set (mandel/need-render inst) 1))))
-
-(book/funtab mandel/efuns
-  mandel/paint
-  mandel/input)
-
-(fun (mandel/main)
-  (var inst (mem/alloc mandel/data))
-  (set (mandel/cur-re-min inst) (mandel/float mandel/re-min))
-  (set (mandel/cur-re-max inst) (mandel/float mandel/re-max))
-  (set (mandel/cur-im-min inst) (mandel/float mandel/im-min))
-  (set (mandel/cur-im-max inst) (mandel/float mandel/im-max))
-  (set (mandel/need-render inst) 1)
-  (gfx/launch inst "mandel" "main" mandel/efuns))
+@
+And that's the whole story.
