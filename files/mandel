@@ -36,13 +36,14 @@ some time, it didn't have floats either...)
 (var x_re_2 (f* x_re x_re))
 (var x_im_2 (f* x_im x_im))
 
-@ The magnitude of a complex number is (sqrt (+ (* re re) (* im
-im))) and if we want to compare it to some other valud, it is
-more efficient to square both quatities and compare the results,
-instead of taking a square root. (At least back in the days.
-It might not make any difference here.) So to test whether the
-magnitude of x is greater than 2, we check whether (+ (* re re)
-(* im im)) is greater than 4.
+@
+The magnitude of a complex number is [code (sqrt (+ (* re re)
+(* im im)))] and if we want to compare it to some other value,
+it is more efficient to square both quatities and compare the
+results, instead of taking a square root. (At least back in the
+days. It might not make any difference here.) So to test whether
+the magnitude of x is greater than 2, we check whether [code
+(+ (* re re) (* im im))] is greater than 4.
 
 This is why we have computed the squares of the real and imaginary
 parts earlier on. If the language would have native complex numbers,
@@ -157,9 +158,9 @@ we use integers.
 
 @= <init zoom>
 (set (mandel/cur-re-min inst) (i->f -2))
-(set (mandel/cur-re-max inst) (i->f 1))
-(set (mandel/cur-im-min inst) (i->f -1))
-(set (mandel/cur-im-max inst) (i->f 1))
+(set (mandel/cur-re-max inst) (i->f 2))
+(set (mandel/cur-im-min inst) (i->f -2))
+(set (mandel/cur-im-max inst) (i->f 2))
 
 @* Rendering
 
