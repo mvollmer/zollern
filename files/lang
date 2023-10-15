@@ -1,32 +1,539 @@
+@** Programming, level one
+
+This book defines the Zollern programming language on level one,
+called [b Z1]. Half of the compiler for this language is written
+in the level 0 bootstrap assembler language [b Z0]. The other
+half is contained in this book.
+
+The following text will first briefly describe the elements of
+Z1, and then proceed to implement them with all necessary detail.
+
+@* No types
+
+Z1 has functions with parameters and local variables, but it doesn't
+have types. Parameters and variables are 64 bit quantities and
+it depends on the operations that are used with them how those
+bits are interpreted.
+
+There is a [code +] syntax that treats them as signed integers,
+and also a [code f+] that treats them as floating point numbers.
+And then there is syntax like [code u8] that treats them as a
+memory address. It is up to the programmer to keep this all straight.
+
+@* Expression syntax
+
+Z1 uses a lot of parenthesises for its syntax. The basic elements
+are lists, symbols, and literals.
+
+Symbols are more or less just words, and are made up from almost
+any character that isn't used for something else. For example,
+[code hello] is a symbol and so is [code @+~yo~+@]. The names
+of the macros mentioned above, [code +], [code f+], and [code
+u8], are all symbols.
+
+Literals are the integers like [code 1234] and [code -12], and
+double-quoted strings like [code "hello"].
+
+Lists of course use [code (] and [code )] for their boundaries
+and just white-space for element separation. For example, [code
+(one two three)] is a list of three symbols, and
+@c
+(+ (u8 ptr 1) (fetch 2))
+@
+is a nested list that already looks like code.
+
+Comments start with a [code ;] character and end at the next new-line
+character.
+
+@* Functions versus macros
+
+Almost everything in a Z1 program is an "expression", something
+that can be evaluated to yield a value. An expression is written
+as a list where the first element is the operator and the rest
+are the arguments. For example, this expression
+@c
+(+ 1 2 (* 3 4))
+@
+has [code +] as the operator and [code 1], [code 2], and [code
+(* 3 4)] as the arguments.
+
+What an expression means depends on the operator, and there are
+two fundamental cases: Functions and Macros.
+
+If the operator is a symbol that has a macro definition associated
+with it, then the expression is expanded into a new expression
+using that macro definition. The new expression is then compiled
+in place of the original one.
+
+If the operator is not a macro, then it is interpreted as a expression
+itself, and the result of evaluating that expression is expected
+to be the memory address of some machine code. At run-time, that
+code is called as a function.
+
+There are no other cases. Things that are keywords in other languages,
+like [code if] or [code while], are macros in Z1.
+
+Some examples:
+@c
+(+ 1 2)
+@
+This is a macro expression since [code +] is defined as a macro
+below.
+@c
+(gfx/rect x y 10 10 (gfx/color 40 40 50))
+@
+This expression has two calls to functions in the [code gfx] book.
+Pretty straightforward.
+@c
+((u64 funcs 5) 9)
+@
+This reads a 64-bit value from the fifth element of the [code
+funcs] array, and calls whatever that value is as a function
+with argument [code 9]. The [code (u64 funcs 5)] part is a macro
+expression using the [code u64] accessor defined below.
+
+@* Functions
+
+New functions are defined with [code fun]:
+@c
+(fun (my/foo x)
+  (+ x 12))]
+@
+The code above defines a function called [code my/foo] with
+one argument called [code x]. Calling the function will add 12
+to [code x] and return the result.  For example,
+@c
+(my/foo 10)
+@
+will result in [code 22].
+
+The name of a function must include the name of the book that
+it is defined in as a prefix. When calling a function, the name
+of it's book must be included. This is Z1's way to avoid having
+a module system.
+
+Functions can only be defined at the top-level, not nested within
+other expressions.
+
+A function can call other functions that have been defined earlier
+(including itself), but functions in the same book that are defined
+later can not be called. A trick to implement mutual recursion
+with this restriction is to pass later defined functions as parameters
+to earlier defined ones.
+
+Local variables are declared with [code var]. The function [code
+my/foo] from above could be defined like this with the help of
+a local variable:
+@c
+(fun (my/foo x)
+  (var result x)
+  (set result (+ result 12))
+  result)
+@
+First, [code x] is copied into [code result], and the [code 12]
+is added to it. This example also shows that function can have
+more than one expression in it. The last one determines the return
+value of the function.
+
+Variable declarations are expressions and evaluate to the initialization
+value. They can appear anywhere, at the top-level of a function,
+or deep within a nested expression in a nested loop. For example:
+@c
+(fun (my/foo)
+  (while (var t (my/next-task))
+    (my/do-task t)))
+@
+Assigning a new value to a variable is done with [code set], as
+already seen above. The value of a [code set] expression is the
+same value that has been stored into the variable.
+
+@* Control flow
+
+Z1 has the usual control flow constructs: [code if], [code while],
+and of course [code goto].
+
+But let's start at the [code begin]ing. If you want to evaluate
+a sequence of expressions in a place where the language only
+allows one, you can use [code begin]:
+@c
+(begin
+  expr-1
+  expr-2
+  ...
+  expr-n)
+@
+This will evaluate all expressions in turn and ignore their results,
+except for the last one, which will become the value of the whole
+[code begin] expression.
+
+Looping is done with [code while] in the obvious way:
+@c
+(while cond
+  expr-1
+  ...
+  expr-n)
+@
+As long as [code cond] evaluated to true, the expressions in the
+body are evaluated. If [code cond] is false on the first iteration,
+the body will not be executed at all.
+
+If you want a "do-while" loop, which evaluates the body at least
+once and tests the condition after each iteration, you can combine
+[code while] and [code begin]:
+@c
+(while (beging
+         expr-1
+         ...
+         expr-n
+         cond))
+@
+This also shows that the body of a [code while] loop can be empty.
+
+Multi-way branching on conditions is done with [code if]:
+@c
+(if (cond-1
+     expr-1.1
+     ...
+     expr-1.n)
+    (cond-2
+     expr-2.1
+     ...
+     expr-2.n)
+    ...
+    (else
+     expr-n.1
+     ...
+     expr-n.n))
+@
+The conditions are evaluated one after the other, and the first
+that is true determines the expressions that are executed. The
+[code else] condition is always taken when it is its turn.
+
+Pay close attention to the parentheseseses. You need to write
+@c
+(if ((< x 2)
+     do-something-when-x-is-less-than-2))
+@
+instead of [code (if (< x 2) ...)]. This is a slight inconvenience
+when there is only one condition and no else-branch, but makes
+the general case nice and uniform.
+
+This brings us to the king of all control structures, [code goto].
+It will divert the control flow of a function to an arbitrary
+location, indicated by a [code label]. For example:
+@c
+(fun (b/find lookup max val)
+  (var pos 0)
+  (while (< i max)
+    (if ((== (lookup pos) val)
+         (goto found)))
+    (set pos (+ pos 1)))
+  (label found)
+  pos)
+@
+
+A [code label] expression does not evaluates to any defined value,
+but maybe Z1 will one day be improved to have a value passing
+[code goto], and maybe even [code return].
+
+One has to be careful where to place [code goto] and [code label]
+expressions. Although they are syntactically valid anywhere where
+a expression is allowed, one has to be careful not jump to a
+different level of expression nesting. That would leave the stack
+in shambles. Z1 could be improved here as well, to allow jumps
+out of nested expressions.
+
+@* Memory access and data structures
+
+Since Z1 has no types, it also has no real data structures like
+arrays and structs. One has to access memory directly and be
+careful about it.
+
+Reading from memory is done with one of many accessors such as
+[code u8], [code u32], etc. For example,
+@c
+(u32 ptr)
+@
+evaluates to the value of the 4 bytes at address [code ptr], while
+@c
+(u32 ptr 10)
+@
+uses [code ptr] plus 40 as the address. If a accessor is used
+with two arguments, the second one is a offset that is added
+to the address. The offset counts whatever the accessor is accessing:
+four bytes for [code u32], two bytes for [code u16], etc.
+
+All expressions in Z1 evaluate to a 64-bit value, so the quantities
+read from memory are extended to 64-bit: the unsigned accessors,
+[code u32] etc, extend with leading zeroes, while the signed
+ones, [code s32] etc, extend by replicating the sign bit.
+
+Storing into memory is done with [code set]:
+@c
+(set (u32 ptr) 1)
+@
+This will store [code 1] into the 4 bytes at address [code ptr].
+Storing will just truncate the 64-bit value to however many bits
+are actually written to memory, so there is no difference between
+signed and unsigned accessors in this case. But they are all
+provided anyway, so that the code can be clear and symmetric.
+
+Here is a list of all accessors, but you probably can guess them:
+@c
+u8 u16 u32 u64 s8 s16 s32 s64
+@
+
+So in order to implement an array one can allocate some memory
+somehow and then loop over it with the second-parameter version
+of an accessor:
+@c
+(fun (b/inc arr len)
+  (var i 0)
+  (while (< i len)
+    (set (u32 arr i) (+ (u32 arr i) 1))
+    (set i (+ i 1))))
+@
+
+Structures get some amount of help from Z1 in the form of the
+[code defstruct] macro. That macro will define a number of accessors
+based on a description of the structure. For example, this
+@c
+(defstruct book/structure
+  (foo u32)
+  (bar u16))
+@
+will define macros called [code book/foo] and [code book/bar]
+that can be used to access those two fields when given the address
+of a structure:
+@c
+(book/foo ptr) ;; same as (u32 ptr)
+(book/bar ptr) ;; same as (u16 (+ ptr 4))
+
+(set (book/bar ptr) 1234) ;; same as (set (u16 (+ ptr 4)) 1234)
+@
+The [code defstruct] macro will also define [code book/structure]
+to evaluate to the size of the whole thing:
+@c
+(mem/alloc book/structure) ;; same as (mem/alloc 6)
+@
+A structure can also contain arrays:
+@c
+(defstruct book/structure
+  ...
+  (baz u32 10))
+
+(book/baz ptr off) ;; same as (u32 (+ ptr ...) off)
+@
+But there is no good way to have arrays of structures. Room for
+improvement!
+
+@* Macros
+
+Z1 is lacking many many things that more serious languages have,
+like types, modules, closures, etc. But it has macros, and in
+fact, macros are used to implement the constructs explained above.
+
+Macros are a way to transform one expression to another, at compile
+time. For example, we might want to introduce a [code until]
+loop, which is like a [code while] loop but stops when the condition
+becomes true instead of false. We already have [code while] and
+[code not], so we can express [code until] in terms of it.
+@c
+(until cond ...)
+@
+should be compiled like
+@c
+(while (not cond) ...)
+@
+In Z1, this can be written like this:
+@c
+(def (book/until ?cond . ?body)
+  (while (not ?cond) . ?body))
+@
+The [code ?] question mark character here is special and denotes
+a pattern matching variable. The [code .] dot character together
+with the next symbol denotes "the rest of the list".
+
+So a macro definition consists of a "head" that is matched with
+the original expression, and a "body" that is substituted for
+that expression, after the variables have been replaced with
+the corresponding pieces of the original expression.
+
+Z1 macros are not hygienic, they don't rename variables to avoid
+conflicts. For example, if you would use the [code until] macro
+in a function that has a local variable called [code not], confusion
+would arise:
+@c
+(fun (my/func)
+  (var not 12)
+  (until (> not 14)
+    (set not (+ not 1))))
+@
+Now the [code not] in the expansion of [code until] would no longer
+refer to the boolean negation operator [code lang/not], but to
+the local variable [code not].
+
+Z1 solves this by not allowing any kind of shadowing. The declaration
+of [code not] in [code my/func] above would be rejected by the
+compiler because [code lang/not] already exists and is visible
+as [code not].
+
+Likewise, redeclaration of local variables or labels is not allowed;
+they must all be unique in a given function.
+
+Thus, a macro expansion should use freshly created, guaranteed
+unique variable names. This can be done, but requires a more
+advanced form a macro definition where you write some code that
+gets runs during compilation whenever the macro is expanded.
+
+To explain this, consider first this macro definition:
+@c
+(def (my/repeat ?n . ?body)
+  (begin
+    (var i 0)
+    (while (< i 0)
+      (begin . ?body)
+      (set i (+ i 1)))))
+@
+This is problematic since the macro assumes that it can use a
+local variable named [code i] all for itself. And even if it
+would use a rarer name, like [code my-repeat-private-counter],
+this still wouldn't work when a function uses [code my/repeat]
+more than once. Each expansion needs its own unique variable
+name.
+
+Here is how to get it:
+@c
+(def (my/repeat ?n . ?body)
+  ?(begin
+     (var counter (exp/gensym))
+     (syntax-expand
+      (begin
+        (var ?counter 0)
+        (while (< ?counter 0)
+          (begin . ?body)
+          (set ?counter (+ ?counter 1)))))))
+@
+The [code ?(begin ...)] expression contains regular Z1 code that
+gets executed by the compiler during compilation when [code my/repeat]
+is expanded. That code then eventually uses [code syntax-expand]
+to switch back to template-expansion-mode to construct the replacement
+expression, using the newly generated symbol for the loop counter.
+
+Check out the implementations of [code syntax-parse] and [code
+syntax-expand] below to learn all the details. Macro-defining
+macros are especially interesting!
+
+@* The lower half of the Z1 compiler
+
+As mentioned many times above, the advertised syntax of Z1 like
+[code while] is implemented as macros. These macros ultimately
+expand into a number of [b primitives] that are actually understood
+by the lower half of the compiler.
+
+Primitives are expressions where the operator is a literal integer.
+For example, [code (9 0 x y)] is a primitive expression that
+will add [code x] and [code y]. Another example would be [code
+(10 z)], which declared a local variable called [code z], but
+can not initialize it.
+
+There is a long list of these primitives further down below, so
+we will not describe them all here.
+
+In addition to understanding these primitives, the lower half
+of the compiler also provides a API to construct expressions
+at run time. For example, the function call [code (exp/intern
+"while")] will return a pointer to a (opaque) data structure
+that represents the symbol with name "while", and [code (exp/make-pair
+first rest)] can be used to build up lists.
+
+@** Implementation
+
+We would like to define some macros, but we have only primitives
+at this point. How do we get started?
+
+The first thing is to give names to primitives, so that we can
+write [code (prim-var z)] instead of [code (10 z)].
+
+If we would have all of Z1 already, with pattern matching and
+templates and everything, we could easily do it like this:
+@c
+(def (prim-var ?sym)
+  (10 ?sym))
+@
+But we don't, so we have to do it manually, using only the numeric
+primitives.
+
+Primitive macros are implemented via a transformer function. This
+is a regular function that gets called by the compiler during
+compilation. That function receives a pointer to a data structure
+that represents the expression that the function should transform.
+That data structure can of course represent lists, symbols, integers,
+and strings.
+
+The transformer function for [code prim-var] could look like this
+@c
+(1 (lang/$prim-var form)
+  (exp/make-pair (exp/make-number 10) (exp/rest form)))
+@
+The [code 1] is the primitive number for [code fun].
+
+Lists are represented as linked pairs of values. The first value
+in a pair is the first element of the list, and the second value
+is a pointer to the rest of the list. The last pair has a zero
+as its "rest" pointer. Thus, a empty list is just a zero value.
+
+We can install this transformer as a macro like so:
+@c
+(2 lang/prim-var 0 lang/$prim-var)
+@
+The [code 2] is the primitive for defining macros, and the [code
+0] says that it is a macro for a operator position. (You can
+also have macros for symbols in variable positions, and in [code
+set] expressions.)
+
+Not too bad, now we only have to copy/paste this 15 more times
+and adjust it to cover all primitives!
+
+Let's try to do better and write a macro that produces all of
+tha boilerplate from just
+@c
+(defprim prim-var number)
+@
+To help with this, let us quickly make a function to produce the
+general form of a primitive:
 @=
-;; A macro for defining primitives.
-;;
-;; We have to write this without any convenience helpers...
-;;
-;; (defprim NAME A)
-;; =>
-;; (0
-;;   (1 ($nn form) ($prim-1 form A))
-;;   (2 NAME 0 $nn))
-;;
-;; (defprim NAME A B)
-;; =>
-;; (0
-;;   (1 ($nn form) ($prim-2 form A B))
-;;   (2 NAME 0 $nn))
-
 (1 (lang/$prim-1 form a)
-  (exp/make-pair
-   (exp/make-number a)
-   (exp/rest form)))
+  (exp/make-pair (exp/make-number a) (exp/rest form)))
+@
+The transformer function for [code defprim-1] then needs to produce this:
+@c
+(0
+  (1 (lang/$some-unique-name form) (lang/$prim-1 form 10))
+  (2 lang/prim-var 0 lang/$some-unique-name))
+@
+The [code 0] at the beginning is the primitive number for [code
+begin] and the unique name is of course produced by [code exp/gensym].
 
+That is not all, unfortunately, since the lower half also has
+primitives with two numbers: [code (9 0 ...)] for [code (+ ...)],
+defined via [code (defprim + 9 0)]. That makes its implementation
+easier, but our life a bit harder.
+
+So, the same again with two numbers. Helper function:
+@=
 (1 (lang/$prim-2 form a b)
-  (exp/make-pair
-   (exp/make-number a)
-   (exp/make-pair
-    (exp/make-number b)
-    (exp/rest form))))
-
+  (exp/make-pair (exp/make-number a) (exp/make-pair (exp/make-number b) (exp/rest form))))
+@
+And the kind of output that the transformer needs to produce:
+@c
+(0
+  (1 (lang/$some-unique-name form) (lang/$prim-1 form 9 0))
+  (2 lang/+ 0 lang/$some-unique-name))
+@
+Here then is the big transformer function for [code defprim],
+all in one go:
+@=
 (1 (lang/$defprim form)
   (0
    (10 gensym) (11 gensym (exp/global (exp/gensym)))
@@ -70,12 +577,20 @@
        0)
       0)))))
 (2 lang/defprim 0 lang/$defprim)
+@
+This is a lot of intricately nested [code exp/make-this] and [code
+exp/make-that], just to produce the relatively small macro expansions.
+It's impossible to get this right on first try, and impossible
+to spot errors in it. (There a couple of new primitives in that
+code, namely [code 11] and [code 6]. Look them up below, if you
+are curious.)
 
-;; Primitives
-;;
-;; Some primitives are okay for direct use, but some need to be
-;; wrapped in nicer clothing, like 'fun' and 'var'.
-
+But we have done it now (after a couple of tries, admittedly),
+and we can use it to write down the list of primitives. Note
+that some of the real Z1 features are directly translated to
+primitives (like [code goto] and most of the arithmetic operators,
+but some are not, like [code -] and [code if]).
+@=
 (defprim lang/begin      0)
 (defprim lang/prim-fun   1)
 (defprim lang/prim-mac   2)
@@ -117,9 +632,170 @@
 (defprim lang/f/         9 9)
 
 (defprim lang/prim-u64  13 3)
+@
+@* Syntax templates
 
-;; Syntax templates, aka quasi-quote
+Let's never write such a big transformer function as [code lang/$defprim]
+by hand again. Rather, let's implement [code syntax-expand] right
+away, which does that job for us.
 
+By now, you can probably guess what kind of code [code syntax-expand]
+is going to produce. It will expand into many many calls to [code
+exp/make-this] and [code exp/make-that] that will, when executed
+during compilation, create the desired expression data structure.
+
+For example, [code (syntax-expand (foo ?a)] will produce
+@c
+(exp/make-pair (exp/intern "foo") (exp/make-pair a 0))
+@
+Note how symbols without leading question mark will become themselves
+part of the expression, while the ones with a leading question
+mark turn into naked variable references. In the example above,
+[code a] needs to already be defined outside of the invocation
+of [code syntax-expand], and point to some expression data structure.
+
+The question mark can not only lead symbols, any expression is
+valid.  This
+@c
+(syntax-expand (foo ?(exp/gensym)))
+@
+turns into
+@c
+(exp/make-pair (exp/intern "foo") (exp/make-pair (exp/gensym) 0))
+@
+Thus, the expression following a question mark is copied verbatim
+to the transformer code.
+
+The question mark is indeed magic: the code that reads expressions
+from a text file will treat it specially. A input string like
+[code "?<expr>"] gets turned into [code (meta <expr>)]. Thus,
+[code syntax-expand] is actually looking for the symbol [code
+meta] when processing its input, not the question mark character.
+
+Here is a function to help with that. It return true when [code
+form] is a list that has [code meta] as its first element.
+@=
+(prim-fun (lang/is-meta form meta)
+  (prim-if (== (exp/type form) 0)
+           (prim-if (== (exp/first form) meta)
+                    1
+                    0)
+           0))
+@
+This is still a bit clunky to write; we still don't have [code
+and], for example.
+
+The syntax expansion process is a recursive process, of course,
+because it deals with nested lists. So let's first tackle the
+base cases, symbols, strings, and numbers.
+
+For example [code (syntax-expand 123)] needs to expand to code
+that constructs the expression object for the number [code 123].
+
+That code is [code (exp/make-number 123)]. Thus, the implementation
+of [code syntax-expand] needs to call [code exp/make-pair] etc
+in the right way to produce this expansion. The different levels
+here can be confusing.
+
+Here is the function that will eventually be called when computing
+the expansion of a [code (syntax-expand 123)]:
+@=
+(prim-fun (lang/expand-number number)
+  (exp/make-pair (exp/intern "exp/make-number")
+                 (exp/make-pair number
+                                0)))
+@
+The [code number] argument of that function is the expression
+object for the number [code 123], not the number 123 itself.
+That's why we can pass [code number] directly to [exp/make-pair].
+
+Here is a similar function for strings:
+@=
+(prim-fun (lang/expand-string string)
+  (exp/make-pair (exp/intern "exp/make-string")
+                 (exp/make-pair string
+                                0)))
+@
+And here is one for symbols:
+@=
+(prim-fun (lang/expand-symbol symbol)
+  (exp/make-pair (exp/intern "exp/intern")
+                 (exp/make-pair (exp/make-string (exp/symbol-name symbol))
+                                0)))
+@
+Note that in this case we don't include the symbol directly in
+the expansion, because a naked symbol would be interpreted as
+a variable reference, of course. The [code exp/intern] function
+expects a string.
+
+These three functions will be called from the final expansion
+function, [code expand-template]. For lists, that function will
+call [code expand-list], which will (more or less) simply iterate
+over a list and call [code expand-template] for each element.
+But Z1 does not allow mutual recursion like this.
+
+To fix this, [code expand-template] will pass itself to [code
+expand-list], in the [code recurse] argument.
+
+@=
+(prim-fun (lang/expand-list list meta dot recurse)
+  (begin
+    (prim-var tail)
+    (prim-var result)
+    (prim-var result-length)
+    (set tail (exp/make-number 0))
+    (set result 0)
+    (set result-length 0)
+    (label loop)
+    (prim-if list
+             (begin)
+             (goto done))
+    (prim-var first)
+    (set first (exp/first list))
+    (prim-if (== first dot)
+             (begin
+               (set tail (recurse (exp/first (exp/rest list)) meta dot))
+               (prim-if (exp/rest (exp/rest list))
+                        (exp/syntax)
+                        (begin))
+               (goto done))
+             (begin
+               (set result (exp/make-pair (recurse first meta dot) result))
+               (set result-length (+ result-length 1))))
+    (set list (exp/rest list))
+    (goto loop)
+    (label done)
+    (exp/make-pair
+     (exp/intern "$rcons*")
+     (exp/make-pair
+      (exp/make-number result-length)
+      (exp/make-pair
+       tail
+       result)))))
+@
+Note how [code expand-list] uses the [code $rcons*] function in
+its output. This is done as an optimization, to avoid many many
+nested calls to [code exp/make-pair].
+
+A typical call to [code $rcons*] looks like this:
+@c
+($rcons* 3 0
+  (exp/make-number 2)
+  (exp/make-number 1)
+  (exp/intern "+"))
+@
+This will return the list [code (+ 1 2)]. The [code 3] is the
+number of elements that should be in the list. There must be
+one argument for each of them. The [code 0] is the [code exp/rest]
+field of the last pair in the new list. Oh, and the arguments
+of [code $rcons] are in the reverse order of the elements in
+the final list.
+
+Here is that function. Note how it implements a variable number
+of arguments although Z1 has no support for them. Tricky, but
+we know what we are doing.
+
+@=
 (prim-fun (lang/$rcons* n tail)
   (begin
     (prim-var result)
@@ -129,111 +805,79 @@
     (label loop)
     (prim-if (== n 0)
              (goto done)
-             12)
+             (begin))
     (set result (exp/make-pair (prim-u64 next) result))
     (set next (+ next 8))
     (set n (prim-minus n 1))
     (goto loop)
     (label done)
     result))
+@
+Now we have lists, symbols, strings, and numbers. This only leaves
+the [code meta] forms, which should be trivial, since [code (syntax-expand
+(meta x))] expands to just [code x]. But there is one extra complication:
+[code syntax-expand] allows for quoting of [code meta] expressions
+to help with macros that define macros. (There are some typical
+uses further below in this book.)
 
-(prim-fun (lang/is-meta form meta)
-  (prim-if (== (exp/type form) 0)
-           (prim-if (== (exp/first form) meta)
-                    1
-                    0)
-           0))
+A double [code meta] strips one [code meta] and produces the second
+[code meta] expression verbatim in the output. For example, [code
+(syntax-expand (meta (meta x)))] expands to code that constructs
+[code (meta x)].
+@=
+(prim-fun (lang/expand-meta form meta dot recurse)
+  (begin
+    (prim-var arg)
+    (set arg (exp/first (exp/rest form)))
+    (prim-if (is-meta arg meta)
+             <handle the double meta case>
+             arg)))
+@
+Note how the code below uses [code $rcons*] to construct a call
+to [code $rcons*]. This leads to double reversed argument lists.
+How confusing!
 
+@= <handle the double meta case>
+($rcons* 5 0
+  (exp/make-pair
+   (exp/intern "exp/intern")
+   (exp/make-pair
+    (exp/make-string "meta")
+    0))
+  (recurse (exp/first (exp/rest arg)) meta dot)
+  (exp/make-number 0)
+  (exp/make-number 2)
+  (exp/intern "$rcons*"))
+
+@
+Now we have all the pieces and the final case analysis is straighforward:
+@=
 (prim-fun (lang/expand-template form meta dot)
   (begin
-    (prim-var tail)
-    (prim-var result)
-    (prim-var result-length)
-    (prim-var first)
     (prim-var type)
-    (prim-var arg)
-    (set tail (exp/make-number 0))
-    (set result 0)
-    (set result-length 0)
-    (label loop)
-    (prim-if form
-             (begin)
-             (goto done))
-    (set first (exp/first form))
-    (set type (exp/type first))
-    (set arg 0)
-    (prim-if (== type 0) ;; pair
-             (set arg (expand-template first meta dot))
-             (begin))
-    (prim-if (== type 1) ;; symbol
-             (prim-if (== first meta)
-                      (begin
-                        (set arg (exp/first (exp/rest form)))
-                        (prim-if (is-meta arg meta)
-                                 ($rcons* 5 0
-                                          (exp/make-pair
-                                           (exp/intern "exp/intern")
-                                           (exp/make-pair
-                                            (exp/make-string "meta")
-                                            0))
-                                          (exp/make-pair
-                                           (exp/intern "exp/first")
-                                           (exp/make-pair
-                                            (expand-template (exp/rest arg) meta dot)
-                                            0))
-                                          (exp/make-number 0)
-                                          (exp/make-number 2)
-                                          (exp/intern "$rcons*"))
-                                 arg)
-                        (goto out))
-                      (prim-if (== first dot)
-                               (begin
-                                 (set tail (expand-template (exp/first (exp/rest form))
-                                                            meta dot))
-                                 (goto done))
-                               ;; `(exp/intern ,(exp/make-string (exp/symbol-name first)))
-                               (set arg (exp/make-pair
-                                         (exp/intern "exp/intern")
-                                         (exp/make-pair
-                                          (exp/make-string (exp/symbol-name first))
-                                          0)))))
-             (begin))
-    (prim-if (== type 2) ;; string
-             (set arg (exp/make-pair
-                       (exp/intern "exp/make-string")
-                       (exp/make-pair
-                        first
-                        0)))
-             (begin))
-    (prim-if (== type 3) ;; number
-             (set arg (exp/make-pair
-                       (exp/intern "exp/make-number")
-                       (exp/make-pair
-                        first
-                        0)))
-             (begin))
-    (prim-if arg
-             (begin
-               (set result (exp/make-pair arg result))
-               (set result-length (+ result-length 1)))
-             (begin))
-    (set form (exp/rest form))
-    (goto loop)
-    (label done)
-    (exp/make-pair
-     (exp/intern "$rcons*")
-     (exp/make-pair
-      (exp/make-number result-length)
-      (exp/make-pair
-       tail
-       result)))
-    (label out)))
+    (set type (exp/type form))
+    (prim-if (is-meta form meta)
+             (expand-meta form meta dot expand-template)
+             (prim-if (== type 0)
+                      (expand-list form meta dot expand-template)
+                      (prim-if (== type 1)
+                               (expand-symbol form)
+                               (prim-if (== type 2)
+                                        (expand-string form)
+                                        (prim-if (== type 3)
+                                                 (expand-number form)
+                                                 (exp/syntax))))))))
 
 (prim-fun (lang/$syntax-expand form)
-  (expand-template (exp/first (exp/rest form))
-                   (exp/intern "meta") (exp/intern ".")))
+  (expand-template (exp/first (exp/rest form)) (exp/intern "meta") (exp/intern ".")))
 (prim-mac lang/syntax-expand 0 lang/$syntax-expand)
+@
+This now also explains the [code meta] and [code dot] arguments
+you have seen above: they are just the expression objects for
+the actual symbols. They are passed around to avoid having to
+call [code exp/intern] multiple times.
 
+@=
 ;; Simple destructuring
 
 ;; (parse-exp PTR VAR)

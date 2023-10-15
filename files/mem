@@ -1,3 +1,4 @@
+@=
 (struct mem/context
   mem-avail)
 

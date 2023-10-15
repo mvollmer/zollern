@@ -52,7 +52,8 @@ Data structures, this is deliberately a stress test for malloc/free.
 (struct tx/box
   (:base tx/node)
   b-width b-height b-depth
-  b-children)
+  b-children
+  b-fg-color b-bg-color)
 
 (fun (tx/is-box node)
   (< (tx/n-type node) tx/nt-glue))
@@ -405,6 +406,9 @@ Data structures, this is deliberately a stress test for malloc/free.
   ink-setfont-mono
   ink-setcolor
   ink-glyphs
+  ink-save-pos
+  ink-tint
+  ink-tint2
   ink-end)
 
 (fun (tx/more-ink ctxt)
@@ -893,6 +897,32 @@ Data structures, this is deliberately a stress test for malloc/free.
     (tx/next-token))
   (tx/skip (- 15 (tx/c-par-skip c)) 0 0))
   
+(fun (tx/parse-code-block-section)
+  (var c (ctxt/tx context))
+  (var t (tx/c-cur-token c))
+  (tx/skip 10 0 0)
+  ;; skip header line
+  (while (not (str/eq t "]"))
+    (tx/next-token))
+  ;; parse body
+  (set (tx/c-verbatim c) 1)
+  (set (tx/c-font c) fonts/mono)
+  (tx/next-token)
+  (var need-empty-line 0)
+  (while (and (u8 t) (not (== (u8 t) ch/ht)))
+    (if ((== (u8 t 0) ch/nl)
+         (set need-empty-line 1))
+        (else
+         (if (need-empty-line
+              (tx/skip 15 0 0)))
+         (set need-empty-line 0)
+         (tx/begin-hbox)
+         (tx/skip 30 0 0)
+         (tx/text t)
+         (tx/end)))
+    (tx/next-token))
+  (tx/skip (- 7 (tx/c-par-skip c)) 0 0))
+  
 (fun (tx/cmd-title)
   (var c (ctxt/tx context))
   (tx/par)
@@ -954,6 +984,8 @@ Data structures, this is deliberately a stress test for malloc/free.
        (tx/next-token)))
   (if ((str/eq cmd "=")
        (tx/parse-code-section))
+      ((str/eq cmd "c")
+       (tx/parse-code-block-section))
       (else
        (tx/parse-text-section cmd))))
 
@@ -1044,8 +1076,12 @@ Data structures, this is deliberately a stress test for malloc/free.
   tx/input)
 
 (fun (tx/launch name)
+  (var old-app (gfx/find name "tx"))
   (var inst (mem/alloc tx/instance))
-  (set (tx/inst-y-off inst) 0)
+  (if (old-app
+       (set (tx/inst-y-off inst) (tx/inst-y-off (gfx/app-instance old-app))))
+      (else
+       (set (tx/inst-y-off inst) 0)))
   (tx/start)
   (tx/process-file name)
   (set (tx/inst-ink inst) (tx/stop))
