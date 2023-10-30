@@ -324,10 +324,10 @@ handle_event (SDL_Event *e)
     }
   else if (e->type == SDL_TEXTINPUT)
     {
-      // XXX - SDL reports KMOD_RALT for AltGr, so let's hack the two
+      // XXX - SDL reports KMOD_RALT for AltGr, so let's hack the three
       //       cases on my keyboard that I use AltGr for...
       int mod = SDL_GetModState();
-      if (e->text.text[0] == '~' || e->text.text[0] == '@')
+      if (e->text.text[0] == '~' || e->text.text[0] == '@' || e->text.text[0] == '|')
         mod &= ~KMOD_RALT;
       send_input_event (e->text.text[0], mod);
     }
