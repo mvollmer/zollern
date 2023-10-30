@@ -287,7 +287,7 @@ So in order to implement an array one can allocate some memory
 somehow and then loop over it with the second-parameter version
 of an accessor:
 @c
-(fun (b/inc arr len)
+(fun (my/inc arr len)
   (var i 0)
   (while (< i len)
     (set (u32 arr i) (+ (u32 arr i) 1))
@@ -295,37 +295,47 @@ of an accessor:
 @
 
 Structures get some amount of help from Z1 in the form of the
-[code defstruct] macro. That macro will define a number of accessors
+[code struct] macro. That macro will define a number of accessors
 based on a description of the structure. For example, this
 @c
-(defstruct book/structure
+(struct my/structure
   (foo u32)
   (bar u16))
 @
-will define macros called [code book/foo] and [code book/bar]
+will define macros called [code my/foo] and [code my/bar]
 that can be used to access those two fields when given the address
 of a structure:
 @c
-(book/foo ptr) ;; same as (u32 ptr)
-(book/bar ptr) ;; same as (u16 (+ ptr 4))
+(my/foo ptr) ;; same as (u32 ptr)
+(my/bar ptr) ;; same as (u16 (+ ptr 4))
 
-(set (book/bar ptr) 1234) ;; same as (set (u16 (+ ptr 4)) 1234)
+(set (my/bar ptr) 1234) ;; same as (set (u16 (+ ptr 4)) 1234)
 @
-The [code defstruct] macro will also define [code book/structure]
+The [code struct] macro will also define [code book/structure]
 to evaluate to the size of the whole thing:
 @c
-(mem/alloc book/structure) ;; same as (mem/alloc 6)
+(mem/alloc my/structure) ;; same as (mem/alloc 6)
 @
-A structure can also contain arrays:
+And lastly, a [code struct] expression also defines an accessor
+for arrays of structures:
 @c
-(defstruct book/structure
-  ...
-  (baz u32 10))
-
-(book/baz ptr off) ;; same as (u32 (+ ptr ...) off)
+(my/structure ptr 5)  ;; same as (+ ptr (* 6 5))
 @
-But there is no good way to have arrays of structures. Room for
-improvement!
+Thus, the [code my/structure] accessor returns the address of
+the structure at index 5. This works well with the field accessors:
+@c
+(set (my/foo (my/structure array i)) 10)
+@
+A structure can contain arrays and other structures, and arrays
+of structures:
+@c
+(struct my/other-structure
+  (baz u32 10)
+  (quux my/structure))
+
+(my/baz ptr off) ;; same as (u32 (+ ptr 0) off)
+(my/quux ptr)    ;; same as (+ ptr 40)
+@
 
 @* Macros
 
@@ -454,6 +464,8 @@ at this point. How do we get started?
 
 The first thing is to give names to primitives, so that we can
 write [code (prim-var z)] instead of [code (10 z)].
+
+@* Names for primitives
 
 If we would have all of Z1 already, with pattern matching and
 templates and everything, we could easily do it like this:
@@ -632,8 +644,8 @@ but some are not, like [code -] and [code if]).
 (defprim lang/f/         9 9)
 
 (defprim lang/prim-u64  13 3)
-@
-@* Syntax templates
+
+@* Syntax expansion
 
 Let's never write such a big transformer function as [code lang/$defprim]
 by hand again. Rather, let's implement [code syntax-expand] right
@@ -707,7 +719,7 @@ the expansion of a [code (syntax-expand 123)]:
 @
 The [code number] argument of that function is the expression
 object for the number [code 123], not the number 123 itself.
-That's why we can pass [code number] directly to [exp/make-pair].
+That's why we can pass [code number] directly to [code exp/make-pair].
 
 Here is a similar function for strings:
 @=
@@ -877,38 +889,67 @@ you have seen above: they are just the expression objects for
 the actual symbols. They are passed around to avoid having to
 call [code exp/intern] multiple times.
 
+@* Syntax parsing
+
+Now we can create the output of a macro transformer quite easily
+with [code syntax-expand]. But we usually need some local variables
+that point to expression objects that we want to substitute into
+the template.
+
+Most of these expression objects come directly from the input
+form of the macro transformer. Take, for example, this definition:
+@c
+(def (my/+= ?a ?b)
+  (set ?a (+ ?a ?b)))
+@
+If we would write the transformer function for this by hand, it
+would maybe look like this:
+@c
+(fun (my/transformer form)
+  (var a (exp/first (exp/rest form)))
+  (var b (exp/first (exp/rest (exp/rest form))))
+  (syntax-expand (set ?a (+ ?a ?b))))
+@
+We would like to replace the many many calls to [code exp/first]
+and [code exp/rest] with [code syntax-parse]:
+@c
+(fun (my/transformer form)
+  (syntax-parse form (_ ?a ?b))
+  (syntax-expand (set ?a (+ ?a ?b))))
+@
+A [code syntax-parse] invocation does not in fact expand directly
+into calls to [code exp/first] and [code exp/rest], but into
+a number of utility macros. Let's look at them first, and the
+it will all become clear very quickly.
+
+The simplest is [code parse-skip], which just advances over one
+element of the input form. Again, if we would have [code def],
+we could just define it like this:
+@c
+(def (lang/parse-skip ?ptr)
+  (set ?ptr (exp/rest ?ptr)))
+@
+But since we don't, we must write its transformer function by
+hand. But luckily we have [code syntax-expand] already:
 @=
-;; Simple destructuring
-
-;; (parse-exp PTR VAR)
-;; =>
-;; (begin
-;;   (prim-var VAR)
-;;   (set VAR (exp/first PTR))
-;;   (set PTR (exp/rest PTR)))
-
-;; (parse-opt PTR VAR DEF)
-;; =>
-;; (begin
-;;   (prim-var VAR)
-;;   (prim-if PTR
-;;     (begin
-;;       (set VAR (exp/first PTR)
-;;       (set PTR (exp/rest PTR)))
-;;     (set VAR (syntax-expand DEF)))
-
-;; (parse-eol PTR)
-;; =>
-;; (prim-if PTR
-;;   (begin)
-;;   (exp/syntax))
-
-;; (parse-rst PTR VAR)
-;; =>
-;; (begin
-;;   (prim-var VAR)
-;;   (set VAR PTR))
-
+(prim-fun (lang/$parse-skip form)
+  (begin
+    (prim-var ptr-sym) (set ptr-sym (exp/first (exp/rest form)))
+    (prim-if (exp/rest (exp/rest form)) (exp/syntax) (begin))
+    (syntax-expand (set ?ptr-sym (exp/rest ?ptr-sym)))))
+(prim-mac lang/parse-skip 0 lang/$parse-skip)
+@
+The next one doesn't just advance along the input form, it also
+stores the current element in a new variable.
+@c
+(def (lang/parse-exp ?ptr ?var)
+  (begin
+    (prim-var ?var)
+    (set ?var (exp/first ?ptr))
+    (set ?ptr (exp/rest ?ptr))))
+@
+The real implementation has to be done without [code def]:
+@=
 (prim-fun (lang/$parse-exp form)
   (begin
     (prim-var ptr-sym) (set ptr-sym (exp/first (exp/rest form)))
@@ -918,56 +959,95 @@ call [code exp/intern] multiple times.
                      (set ?var-sym (exp/first ?ptr-sym))
                      (set ?ptr-sym (exp/rest ?ptr-sym))))))
 (prim-mac lang/parse-exp 0 lang/$parse-exp)
+@
+The next one is [code parse-opt], which does the same job as [code
+parse-exp] but also allows for case that there is no current
+element anymore.
+@c
+(def (lang/parse-opt ?ptr ?var)
+  (prim-if ?ptr
+           (parse-exp ?ptr ?var)
+           (set ?var 0)))
+@
+Without [code def]:
 
+@=
 (prim-fun (lang/$parse-opt form)
   (begin
-    (parse-exp form _)
-    (parse-exp form ptr-sym)
-    (parse-exp form var-sym)
-    (prim-var def-exp)
-    (prim-if form
-             (begin
-               (set def-exp (syntax-expand (syntax-expand ?(exp/first form))))
-               (set form (exp/rest form)))
-             (begin
-               (set def-exp (exp/make-number 0))))
+    (parse-skip form)
+    (parse-exp form ptr)
+    (parse-exp form var)
     (prim-if form (exp/syntax) (begin))
-    (syntax-expand (begin
-                     (prim-var ?var-sym)
-                     (prim-if ?ptr-sym
-                              (begin
-                                (set ?var-sym (exp/first ?ptr-sym))
-                                (set ?ptr-sym (exp/rest ?ptr-sym)))
-                              (begin
-                                (set ?var-sym ?def-exp)))))))
+    (syntax-expand (prim-if ?ptr
+                            (parse-exp ?ptr ?var)
+                            (set ?var 0)))))
 (prim-mac lang/parse-opt 0 lang/$parse-opt)
-
+@
+Note how we can use the utility macros already to make implementing
+[code parse-opt] cleaner. Here is the missing one: [code
+parse-eol] raises a syntax error if the input form is not exhausted.
+@c
+(def (lang/parse-eol ?ptr)
+  (prim-if ?ptr
+           (exp/syntax)
+           (begin)))
+@=
 (prim-fun (lang/$parse-eol form)
   (begin
-    (parse-exp form _)
-    (parse-exp form ptr-sym)
+    (parse-skip form)
+    (parse-exp form ptr)
     (prim-if form (exp/syntax) (begin))
-    (syntax-expand (prim-if ?ptr-sym (exp/syntax) (begin)))))
+    (syntax-expand (prim-if ?ptr (exp/syntax) (begin)))))
 (prim-mac lang/parse-eol 0 lang/$parse-eol)
-
+@
+And the last one, for picking up the rest of the input form:
+@c
+(def (lang/parse-rest ?ptr ?var)
+  (begin
+    (prim-var ?var)
+    (set ?var ?ptr)))
+@=
 (prim-fun (lang/$parse-rst form)
   (begin
-    (parse-exp form _)
-    (parse-exp form ptr-sym)
-    (parse-exp form var-sym)
+    ;; (syntax-parse (_ ?ptr ?var))
+    (parse-skip form)
+    (parse-exp form ptr)
+    (parse-exp form var)
     (parse-eol form)
     (syntax-expand (begin
-                     (prim-var ?var-sym)
-                     (set ?var-sym ?ptr-sym)))))
+                     (prim-var ?var)
+                     (set ?var ?ptr)))))
 (prim-mac lang/parse-rst 0 lang/$parse-rst)
+@
+Armed with these, we could write [code my/+=] like this now:
+@c
+(fun (my/transformer form)
+  (parse-skip form)
+  (parse-exp form a)
+  (parse-exp form b)
+  (parse-eol form)
+  (syntax-expand (set ?a (+ ?a ?b))))
+@
+The job of [code syntax-parse] is to turn a pattern with meta
+variables into a sequence of [code parse-this] and [code parse-that]
+calls. This is not going to be sophisticated as there will be
+no branching and no backtracking.
 
-;; (syntax-parse PTR PATTERN)
+Here is a table of how [code syntax-parse] translates patterns:
+@c
+_        ->   (parse-skip ptr)
+?var     ->   (parse-exp ptr var)
+?(var)   ->   (parse-opt ptr var)
+. ?var   ->   (parse-rst ptr var)
+@
+Nested lists are turned into nested invocations of [code syntax-parse].
 
+@=
 (prim-fun (lang/$syntax-parse form)
   (begin
     (prim-var result)
-    (prim-var first)
     (prim-var tmp)
+    (prim-var tmp2)
     (prim-var underscore)
     (prim-var dot)
     (prim-var meta)
@@ -983,95 +1063,129 @@ call [code exp/intern] multiple times.
     (prim-if pattern
              (begin)
              (goto done))
-    (set first (exp/first pattern))
+    (parse-exp pattern first)
     (prim-if (== first underscore)
              (set result (exp/make-pair
-                          (syntax-expand (set ?ptr (exp/rest ?ptr)))
+                          (syntax-expand (parse-skip ?ptr))
                           result))
              (prim-if (== first dot)
                       (begin
-                        (set tmp (exp/first (exp/rest pattern))) ; (meta var)
-                        (set result (exp/make-pair
-                                     (syntax-expand (parse-rst ?ptr ?(exp/first (exp/rest tmp))))
-                                     result))
+                        <handle . (meta var)>
                         (goto done-no-eol-check))
                       (prim-if (== (exp/type first) 0)
                                (prim-if (== (exp/first first) meta)
                                         (begin
-                                          (set tmp (exp/first (exp/rest first)))
-                                          (prim-if (== (exp/type tmp) 0)
-                                                   (begin
-                                                     (set result (exp/make-pair
-                                                                  (syntax-expand
-                                                                   (parse-opt ?ptr . ?tmp))
-                                                                  result)))
-                                                   (set result (exp/make-pair
-                                                                (syntax-expand (parse-exp ?ptr ?tmp))
-                                                                result))))
+                                          <handle ?var and ?(var)>)
                                         (begin
-                                          (set tmp (exp/gensym))
-                                          (set result (exp/make-pair
-                                                       (syntax-expand (begin
-                                                                        (parse-exp ?ptr ?tmp)
-                                                                        (syntax-parse ?tmp ?first)))
-                                                       result))))
+                                          <handle nested lists>))
                                (exp/syntax))))
-    (set pattern (exp/rest pattern))
     (goto loop)
     (label done)
-    (set result (exp/make-pair (syntax-expand (parse-eol ?ptr))
-                               result))
+    (set result (exp/make-pair 
+                 (syntax-expand (parse-eol ?ptr))
+                 result))
     (label done-no-eol-check)
     (syntax-expand (begin . ?(exp/reverse result)))))
-
 (prim-mac lang/syntax-parse 0 lang/$syntax-parse)
 
-;; (def (NAME . ARGS) EXP)
-;; =>
-;; (begin
-;;   (prim-fun ($$ form)
-;;     (begin
-;;       (syntax-parse form (_ . ARGS))
-;;       (syntax-expand EXP)))
-;;   (prim-mac NAME 0 $$))
-;;
-;; (def NAME EXO)
-;; =>
-;; (begin
-;;   (prim-fun ($$ form)
-;;     (syntax-expand EXP))
-;;   (prim-mac NAME 1 $$))
+@= <handle ?var and ?(var)>
+(parse-skip first)
+(parse-exp first exp-var)
+(parse-eol first)
+(prim-if (== (exp/type exp-var) 0)
+  (begin
+    (parse-exp exp-var opt-var)
+    (parse-eol exp-var)
+    (set result (exp/make-pair
+                 (syntax-expand (parse-opt ?ptr ?opt-var))
+                 result)))
+  (set result (exp/make-pair
+               (syntax-expand (parse-exp ?ptr ?exp-var))
+               result)))
 
+@= <handle . (meta var)>
+(parse-exp pattern meta-var)
+(parse-eol pattern)
+(parse-skip meta-var)
+(parse-exp meta-var rest-var)
+(parse-eol meta-var)
+(set result (exp/make-pair
+             (syntax-expand (parse-rst ?ptr ?rest-var))
+             result))
+
+@= <handle nested lists>
+(set tmp (exp/gensym))
+(set result (exp/make-pair
+             (syntax-expand (begin
+                              (parse-exp ?ptr ?tmp)
+                              (syntax-parse ?tmp ?first)))
+             result))
+
+@* Surface syntax of Z1 (most of it)
+
+Now that we have both [code syntax-parse] and [code syntax-expand],
+we can finally define [code def], which will combine both into
+a convenient tool. And once we have [code def], we can finally
+define most of the surface syntax of Z1 that has been described
+at the beginning of this book. Hurray!
+
+But first we need to mention macro definitions for bare symbols.
+In addititon to macros that look like function calls, such as
+[code (+ 1 2)], you can also define expansions for symbols directly.
+For exmaple, this definition
+@c
+(def my/MAGIC-CONSTANT (- 3))
+@
+will replace any occurance of [code my/MAGIC-CONSTANT] with [code
+(- 3)] during compilation.
+
+@=
 (prim-fun (lang/$def form)
   (begin
-    (prim-var $name)
-    (prim-var $arg)
-    (set $name (exp/global (exp/gensym)))
-    (set $arg (exp/gensym))
-    (syntax-parse form (_ ?head ?exp))
-    (prim-if (== (exp/type head) 1)
-             (begin
-               (syntax-expand
-                (begin
-                  (prim-fun (?$name ?$arg)
-                            (syntax-expand (begin ?exp)))
-                  (prim-mac ?head 1 ?$name))))
-             (begin
-               (syntax-parse head (?name . ?args))
-               (syntax-expand
-                (begin
-                  (prim-fun (?$name ?$arg)
-                            (begin
-                              (syntax-parse ?$arg (_ . ?args))
-                              (syntax-expand ?exp)))
-                  (prim-mac ?name 0 ?$name)))))))
-
+    (prim-var transformer-name)
+    (prim-var transformer-arg)
+    (set transformer-name (exp/global (exp/gensym)))
+    (set transformer-arg (exp/gensym))
+    (syntax-parse form (_ ?macro-head ?macro-body))
+    (prim-if (== (exp/type macro-head) 1)
+             <handle a symbol macro definition>
+             <handle a macro call definition>)))
 (prim-mac lang/def 0 lang/$def)
 
-;; Enhanced versions of some primitives
+@= <handle a symbol macro definition>
+(syntax-expand
+  (begin
+    (prim-fun (?transformer-name ?transformer-arg)
+              (syntax-expand ?macro-body))
+    (prim-mac ?macro-head 1 ?transformer-name)))
 
-;; (if (COND1 . THEN1) (COND2 . THEN2) ... (ELSE . REST))
+@= <handle a macro call definition>
+(begin
+  (syntax-parse macro-head (?macro-name . ?macro-args))
+  (syntax-expand
+   (begin
+     (prim-fun (?transformer-name ?transformer-arg)
+               (begin
+                 (syntax-parse ?transformer-arg (_ . ?macro-args))
+                 (syntax-expand ?macro-body)))
+     (prim-mac ?macro-name 0 ?transformer-name))))
 
+@
+And here comes finally [code if]. Note how its definition uses
+recursion to handle the sequence of [code (cond exp-1 ...)] forms
+inside the [code if].
+
+The base case is [code (if)], which is translated to [code (begin)].
+The recursion case is [code (if (cond exp-1 ...) rest ...)] which
+is translated to
+@c
+(prim-if cond
+  (begin exp1 ...)
+  (if rest))
+@
+Note how [code syntax-parse] and [code syntax-expand] make this quite
+compact to express.
+@=
 (def (lang/if . ?form)
   ?(prim-if form
             (begin
@@ -1080,31 +1194,29 @@ call [code exp/intern] multiple times.
             (syntax-expand (begin))))
 
 (def lang/else 1)
-
-;; (var NAME)
-;; =>
-;; (prim-var NAME)
-;;
-;; (var NAME INIT)
-;; =>
-;; (begin
-;;  (prim-var NAME)
-;;  (set NAME INIT))
-
+@
+The [code var] syntax is even easier, and it is our first example
+of a optional form, see the [code ?(init)] part. We can even
+use the real [code if] to distinguish between the two cases.
+@=
 (def (lang/var ?name ?(init))
   (begin (prim-var ?name)
     ?(if (init
           (syntax-expand (set ?name ?init)))
          (else
           (syntax-expand (begin))))))
-
-;; (fun HEAD . BODY)
-;; =>
-;; (prim-fun HEAD (begin . BODY))
-
+@
+Functions are also easy. The difference between [code prim-fun]
+and [code fun] is just that the latter can take an arbitrary
+number of expressions in its body, while the former can take
+only exactly one. This is a job for [code begin], of course.
+@=
 (def (lang/fun ?head . ?body)
   (prim-fun ?head (begin . ?body)))
-
+@
+And here is [code while]. It uses [code goto] to jump back to
+the start as long as the condition is true.
+@=
 (def (lang/while ?cond . ?body)
   ?(begin
      (var loop (exp/gensym))
@@ -1116,78 +1228,46 @@ call [code exp/intern] multiple times.
         (begin . ?body)
         (label ?test)
         (if (?cond (goto ?loop)))))))
-
-;; Setters
-
-(def (lang/defset ?head ?val ?exp)
-  ?(begin
-     (var $name (exp/global (exp/gensym)))
-     (if ((== (exp/type head) 1)
-          (syntax-expand
-           (begin
-             (fun (?$name form ?val) (syntax-expand ?exp))
-             (prim-mac ?head 3 ?$name))))
-         (else
-          (syntax-parse head (?name . ?args))
-          (syntax-expand
-           (begin
-             (fun (?$name form ?val)
-                  (syntax-parse form (_ . ?args))
-                  (syntax-expand ?exp))
-             (prim-mac ?name 2 ?$name)))))))
-
-;; Memory access
-
-(fun (lang/sizeof sym)
-  (if ((== sym (exp/intern "u64")) 8)
-      ((== sym (exp/intern "u32")) 4)
-      ((== sym (exp/intern "u16")) 2)
-      ((== sym (exp/intern "u8"))  1)
-      ((== sym (exp/intern "s64")) 8)
-      ((== sym (exp/intern "s32")) 4)
-      ((== sym (exp/intern "s16")) 2)
-      ((== sym (exp/intern "s8"))  1)
-      (else
-       (exp/syntax))))
-
-(def (lang/defprim-accessor ?name ?size ?a)
-  (begin
-    (def ?name ?size)
-    (def (?name ??ptr ??(idx))
-         ??(if (idx
-                ?(if ((== (exp/number-value size) 1)
-                      (syntax-expand (syntax-expand (13 ?a (+ ??ptr ??idx)))))
-                     (else
-                      (syntax-expand (syntax-expand (13 ?a (+ ??ptr (* ??idx ?size))))))))
-               (else
-                (syntax-expand (13 ?a ??ptr)))))
-    (defset (?name ??ptr ??(idx)) val
-            ??(if (idx
-                   (syntax-expand (14 ?a (+ ??ptr (* ??idx ?size)) ??val)))
-                  (else
-                   (syntax-expand (14 ?a ??ptr ??val)))))))
-
-(defprim-accessor lang/u8  1 0)
-(defprim-accessor lang/u16 2 1)
-(defprim-accessor lang/u32 4 2)
-(defprim-accessor lang/u64 8 3)
-
-(defprim-accessor lang/s8  1 4)
-(defprim-accessor lang/s16 2 5)
-(defprim-accessor lang/s32 4 6)
-(defprim-accessor lang/s64 8 7)
-
-
-;; Arithmetic
-
+@
+The primitive versions of the arithmetic operators [code +], [code
+*], and [code /] can be used directly to implement the surface
+syntax, but [code -] behaves specially with only one argument.
+@=
 (def (lang/- ?a . ?rest)
   ?(if (rest
         (syntax-expand (prim-minus ?a . ?rest)))
        (else
         (syntax-expand (prim-neg ?a)))))
+@
+The logical operators [code and] and [code or] are more interesting.
+We want them to evaluate from left to right, and stop as soon
+as the result is clear. This allows one to write conditions like
+[code (and ptr (u8 ptr))] where the later expressions would be
+undefined if the earlier ones evaluate to false.
 
-;; Logical operators
+Also, we want the operators to return the last value that has
+been computed. For example, [code (or value default)] evaluates
+to one of [code value] or [code default].
 
+The expansion is again a recursive process, as with [code if].
+Here are the rules:
+@c
+(and a)        =>  a
+(and a b ...)  =>  (if (a
+                        (and b ...))
+                       (else
+                        0))
+
+(or a)         =>  a
+(or a b ...)   =>  (if (a
+                        a)
+                       (else
+                        (or b ...)))
+@
+With [code or], we don't want to evaluate [code a] twice in the
+second rule above. The actual implementation fixes that with
+a temporary variable.
+@=
 (def (lang/and ?a . ?rest)
   ?(if (rest
         (syntax-expand
@@ -1202,12 +1282,41 @@ call [code exp/intern] multiple times.
          (if ((var ?tmp ?a) ?tmp) (else (or . ?rest)))))
        (else
         a)))
-
+@
+We don't need to explain [code not], do we?
+@=
 (def (lang/not ?a)
   (if (?a 0) (else 1)))
 
-;; Compile-time expressions
+@* Compile time constants
 
+The Z1 compiler doesn't do any optimizations. Consider this code:
+@c
+(def my/buf-size 200)
+(def my/double-buf-size (* 2 my/bufsize))
+@
+Whenever [code my/double-buf-size] is used, Z1 emits machine code
+to multiply 2 and 200. That's not great, but Z1 is really not
+concerned about efficiency, so we could just ignore this.
+
+However, there are places in the Z1 grammar that need a number
+that is known at compile time. One such place is arrays with
+[code struct] like this:
+@c
+(struct my/instance-data
+  (buf u8 my/double-buf-size))
+@
+For these places, we will use a little interpreter that can evaluate
+simple Z1 expressions at compile time. And we can also use it
+to gain some efficiency in other places.
+
+The interpreter itself is the function [code const-expr]. It takes
+as input a expression object like a transformer and returns a
+64 bit integer that is the value of that expression. This function
+can be used in macro definitions.
+
+The implementation is of course nicely recursive:
+@=
 (fun (lang/is-prim form a)
   (and (== (exp/type form) 0)
        (== (exp/type (exp/first form)) 3)
@@ -1240,22 +1349,242 @@ call [code exp/intern] multiple times.
        res)
       (else
        (exp/syntax))))
-
+@
+For regular code, there is [code defconst]. It defines a symbol
+macro like [code (def name ...)], but it guarantees that the
+expansion is a single integer literal.
+@=
 (def (lang/defconst ?name ?val)
   (def ?name ?(exp/make-number (const-expr val))))
+@
+Thus, we should really write the following to make the double
+buffering struct work:
+@c
+(defconst my/buf-size 200)
+(defconst my/double-buf-size (* 2 my/bufsize))
 
-;; Stack memory
-
+(struct my/instance-data
+  (buf u8 my/double-buf-size))
+@
+And here is a Z1 expression that has not been explain above: [code
+(mem buf (* 2 100))] allocates 200 bytes on the stack and makes their
+address available as [code buf]. Note how it uses [code const-expr].
+@=
 (def (lang/mem ?name ?size)
   (prim-mem ?name ?(exp/make-number (const-expr size))))
+@
 
-;; Context
+@* Setters and memory accessors
 
+We are reaching the end of the upper half of the Z1 compiler implementation,
+but one advanced topic is still open: setters and accessors.
+The introduction has mentioned [code u8] etc and how [code (set
+(u8 ptr) 0)] stores into memory, but we still need to translate
+this into Z1 primitives.
+
+To do that, we first implement the general concept of setters.
+
+A setter is a macro that is recognized within a [code set] expression.
+They are defined with [code defset]. For example, after this
+definition:
+@c
+(defset (my/foo ?ptr) val
+  (my/set-attribute ?ptr "foo" ?val))
+@
+one can write [code (set (my/foo ptr) 12)] and the compiler will
+expand this into [code (my/set-attribute ptr "foo" 12)] and then
+compile that instead.
+
+There are also setters for bare symbols.  After
+@c
+(defset my/bar val
+  (my/set-bar ?val))
+@
+the code [code (set my/bar x)] is compiled as [code (my/set-bar x)].
+
+Setters for macro calls use the [code prim-mac] number 4, and
+setters for bare symbols use number 3.
+
+@=
+(def (lang/defset ?head ?val ?body)
+  ?(begin
+     (var $name (exp/global (exp/gensym)))
+     (if ((== (exp/type head) 1)
+          <handle symbol setter macro>)
+         (else
+          <handle setter call macro>))))
+
+@= <handle symbol setter macro>
+(syntax-expand
+  (begin
+    (fun (?$name form ?val) (syntax-expand ?body))
+    (prim-mac ?head 3 ?$name)))
+
+@= <handle setter call macro>
+(syntax-parse head (?name . ?args))
+(syntax-expand
+  (begin
+    (fun (?$name form ?val)
+         (syntax-parse form (_ . ?args))
+         (syntax-expand ?body))
+    (prim-mac ?name 2 ?$name)))
+@
+With [code defset] in hand, we can define the memory accessors.
+Of course, we don't want to copy/paste a lot of code, so we write
+a macro to define the accessor macros. This is not the first
+macro-defining macro in this book (that was argueably [code def]
+or maybe [code defconst]), but this is the first that uses double
+metas.
+
+For [code u32], we want to define these macros:
+@c
+(def (u32 ?ptr)              (13 2 ?ptr))
+(def (u32 ?ptr ?idx)         (13 2 (+ ?ptr (* 4 ?idx))))
+
+(defset (u32 ?ptr) val       (14 2 ?ptr ?val))
+(defset (u32 ?ptr ?idx) val  (14 2 (+ ?ptr (* 4 ?idx)) ?val))
+@
+The numbers 13, 14, and 2 are primitives that make sense to the
+lower half of the Z1 compiler. And since we can't really do pattern
+matching with [code syntax-parse], we need to handle the optional
+[code ?idx] parameter via [code ?(idx)] and a [code if] in the
+expander. Thus, the writer macro should actually be like this:
+@c
+(defset (u32 ?ptr ?(idx)) val
+  ?(if (idx
+        (syntax-expand (14 2 (+ ?ptr (* 4 ?idx)) ?val)))
+       (else
+        (syntax-expand (14 2 ?ptr) ?val))))
+@
+If you look closely at the definition of [code defprim-accessor]
+below, you can see how this is embedded in the bigger picture.
+The question marks that should appear in the expanded code need
+to be doubled.
+
+The reader definition throws in another level of complexity: It
+optimizes the offset calculation for [code u8] by omitting the
+useless multiplication by 1. This happens during expansion of
+[code defprim-accessor], as indicated by the single question
+mark that switches from syntax template to Z1 code.
+
+(The decision whether or not [code ?idx] is present is made during
+the expansion of [code u32], say, and the code for that consequently
+has double question marks. This is all a consequence of how [code
+syntax-expand] has been implemented above, so you might want
+to refer back to that to fully understand what's going on here.)
+
+@=
+(def (lang/defprim-accessor ?name ?size ?a)
+  (begin
+    (def ?name ?size)
+    <define the reader macro>
+    <define the writer macro>))
+
+@= <define the reader macro>
+(def (?name ??ptr ??(idx))
+  ??(if (idx
+         ?(if ((== (exp/number-value size) 1)
+               (syntax-expand (syntax-expand (13 ?a (+ ??ptr ??idx)))))
+              (else
+               (syntax-expand (syntax-expand (13 ?a (+ ??ptr (* ?size ??idx))))))))
+        (else
+         (syntax-expand (13 ?a ??ptr)))))
+
+@= <define the writer macro>
+(defset (?name ??ptr ??(idx)) val
+  ??(if (idx
+         (syntax-expand (14 ?a (+ ??ptr (* ?size ??idx)) ??val)))
+        (else
+         (syntax-expand (14 ?a ??ptr ??val)))))
+@
+And here then is the table for defining all of the accessors.
+@=
+(defprim-accessor lang/u8  1 0)
+(defprim-accessor lang/u16 2 1)
+(defprim-accessor lang/u32 4 2)
+(defprim-accessor lang/u64 8 3)
+
+(defprim-accessor lang/s8  1 4)
+(defprim-accessor lang/s16 2 5)
+(defprim-accessor lang/s32 4 6)
+(defprim-accessor lang/s64 8 7)
+
+@* The global context
+
+You might have noticed that Z1 does not have global variables.
+Global constants can be had via [code defconst], but [code var]
+only works inside functions.
+
+There is one exception, the global context. This is a single global
+variable which is (by convention) managed by the [code ctxt]
+book.
+
+The global context collects everything: the list of compiled books,
+access to the filesystem, access to the framebuffer, dynamic
+memory allocation, etc. The idea is that there could be multiple
+separate Zollerns by giving each its own global context. Maybe
+a new version of the shell can be developed by running it in
+a sub-Zollern.
+
+@=
 (def lang/context (16))
 (defset lang/context val (17 ?val))
 
-;; Structs
+@* Enumerations
 
+Enumrations are easy by now, but the general structure of the
+[code enum] macro definition is worth looking at. It follows
+a pattern that could be useful in a number of situation, and
+it is also good training for how to think about macros.
+
+@=
+(def (lang/enum . ?members)
+  (begin .
+    ?(begin
+       <collect definitions>
+       defs)))
+@
+
+A expression like [code (enum a b ...)] expands into
+@c
+(begin
+  (def a 0)
+  (def b 1)
+  ...)
+@
+A macro can only epxand into a single expression, so in order
+to have many, we must wrap them into [code begin]. Consequently,
+the definition of [code enum] looks like [code (begin . ?definitions)]
+at the top level.
+
+In order to compute [code definitions], we need to run some Z1
+code, so we will use something like [code (begin . ?(<compute
+definitions>))]. But we want more than one expression for that
+computation, so [code <compute definitions>] will start with
+[code (begin ...)] itself.
+
+That's how we arrive at the curious pattern [code (begin . ?(begin
+...))].
+
+@= <collect definitions>
+(var defs 0)
+(var value 0)
+(while members
+  (var name (exp/global (exp/first members)))
+  (set defs (exp/make-pair
+             (syntax-expand (def ?name ?(exp/make-number value)))
+             defs))
+  (set members (exp/rest members))
+  (set value (+ value 1)))
+
+@* Structures
+
+The macro for defining structures, [code struct], is pretty long
+since it generates a lot of code. But it is not particularily
+difficult, now that we know how to read double question marks
+and the general pattern of macros that define a set of macros.
+
+@=
 (def (lang/struct ?name . ?fields)
   (begin .
     ?(begin
@@ -1271,62 +1600,75 @@ call [code exp/intern] multiple times.
        (while fields
          (set field (exp/first fields))
          (if ((== (exp/type field) 1)
-              (set field-name field)
-              (set field-accessor (exp/intern "u64"))
-              (set field-array-spec 0))
+              <setup for a default field>)
              ((== (exp/type field) 0)
-              (set field-name (exp/first field))
-              (set field-accessor (exp/first (exp/rest field)))
-              (set field-array-spec (exp/rest (exp/rest field))))
+              <setup for a field with type and optional array length>)
              (else
               (exp/syntax)))
          (if ((== field-name (exp/intern ":base"))
               (set offset (const-expr field-accessor)))
              (else
-              (set field-element-size (lang/sizeof field-accessor))
-              (if (field-array-spec
-                   (set field-size (* field-element-size (const-expr (exp/first field-array-spec)))))
-                  (else
-                   (set field-size field-element-size)))
-              (set field-name (exp/global field-name))
+              <compute field size>
               (set field-loc (exp/make-number offset))
+              (set field-name (exp/global field-name))
               (set defs
                    (exp/make-pair
                     (if (field-array-spec
-                         (syntax-expand
-                          (begin
-                            (def (?field-name ??ptr ??(idx))
-                                 ??(if (idx
-                                        (syntax-expand (?field-accessor (+ ??ptr ?field-loc) ??idx)))
-                                       (else
-                                        (syntax-expand (+ ??ptr ?field-loc)))))
-                            (defset (?field-name ??ptr ??idx) val
-                                    (set (?field-accessor (+ ??ptr ?field-loc) ??idx) ??val)))))
+                         <emit array accessors>)
                         (else
-                         (syntax-expand
-                          (begin
-                            (def (?field-name ??ptr) (?field-accessor (+ ??ptr ?field-loc)))
-                            (defset (?field-name ??ptr) val (set (?field-accessor (+ ??ptr ?field-loc)) ??val))))))
+                         <emit single field accessors>))
                     defs))
               (set offset (+ offset field-size))))
          (set fields (exp/rest fields)))
-       (set defs (exp/make-pair
-                  (syntax-expand (def ?name ?(exp/make-number offset)))
-                  defs))
+       <add structure size macro>
+       <add whole-structure accessor>
        defs)))
 
-;; Enums
+@= <setup for a default field>
+(set field-name field)
+(set field-accessor (exp/intern "u64"))
+(set field-array-spec 0)
 
-(def (lang/enum . ?members)
-  (begin .
-    ?(begin
-       (var defs 0)
-       (var value 0)
-       (while members
-         (var name (exp/global (exp/first members)))
-         (set defs (exp/make-pair
-                    (syntax-expand (def ?name ?(exp/make-number value)))
-                    defs))
-         (set members (exp/rest members))
-         (set value (+ value 1)))
-       defs)))
+@= <setup for a field with type and optional array length>
+(set field-name (exp/first field))
+(set field-accessor (exp/first (exp/rest field)))
+(set field-array-spec (exp/rest (exp/rest field)))
+
+@= <compute field size>
+(set field-element-size (const-expr field-accessor))
+(if (field-array-spec
+     (set field-size (* field-element-size (const-expr (exp/first field-array-spec)))))
+  (else
+   (set field-size field-element-size)))
+
+@= <emit single field accessors>
+(syntax-expand
+  (begin
+    (def (?field-name ??ptr) (?field-accessor (+ ??ptr ?field-loc)))
+    (defset (?field-name ??ptr) val (set (?field-accessor (+ ??ptr ?field-loc)) ??val))))
+
+@= <emit array accessors>
+(syntax-expand
+  (begin
+    (def (?field-name ??ptr ??(idx))
+         ??(if (idx
+                (syntax-expand (?field-accessor (+ ??ptr ?field-loc) ??idx)))
+               (else
+                (syntax-expand (+ ??ptr ?field-loc)))))
+    (defset (?field-name ??ptr ??idx) val
+            (set (?field-accessor (+ ??ptr ?field-loc) ??idx) ??val))))
+
+@= <add structure size macro>
+(set defs (exp/make-pair
+           (syntax-expand (def ?name ?(exp/make-number offset)))
+           defs))
+
+@= <add whole-structure accessor>
+(set defs (exp/make-pair
+           (syntax-expand 
+            (def (?name ??ptr ??(idx))
+                 ??(if (idx
+                        (syntax-expand (+ ??ptr (* ?(exp/make-number offset) ??idx))))
+                       (else
+                        (syntax-expand ??ptr)))))
+           defs))
