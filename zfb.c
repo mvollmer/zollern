@@ -347,7 +347,7 @@ handle_event (SDL_Event *e)
       else if (e->button.button == SDL_BUTTON_RIGHT)
         input = -EV_BTN_3_PRESS;
       if (input)
-        send_input_event (input,SDL_GetModState());
+        send_input_event (input, SDL_GetModState());
     }
   else if (e->type == SDL_MOUSEBUTTONUP)
     {
@@ -358,6 +358,16 @@ handle_event (SDL_Event *e)
         input = -EV_BTN_2_RELEASE;
       else if (e->button.button == SDL_BUTTON_RIGHT)
         input = -EV_BTN_3_RELEASE;
+      if (input)
+        send_input_event (input, SDL_GetModState());
+    }
+  else if (e->type == SDL_MOUSEWHEEL)
+    {
+      int input = 0;
+      if (e->wheel.y > 0)
+        input = -EV_SCR_UP;
+      else if (e->wheel.y < 0)
+        input = -EV_SCR_DOWN;
       if (input)
         send_input_event (input, SDL_GetModState());
     }
