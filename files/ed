@@ -34,7 +34,7 @@ file can be larger than one page...
 (fun (ed/textbuf-init tb)
   (set (ed/textbuf-page-count tb) 0)
   (set (ed/textbuf-len tb) 0))
- 
+
 (fun (ed/textbuf-fini tb)
   (var i 0)
   (while (< i (ed/textbuf-page-count tb))
@@ -515,6 +515,14 @@ file can be larger than one page...
   (if ((< p 1)
        (ed/indent-to ed 0)
        (goto return)))
+  ;; Special case: Z0 local labels
+  (var pp p)
+  (while (and (< pp (ed/len ed))
+              (== (ed/char ed pp) ch/spc))
+    (set pp (+ pp 1)))
+  (if ((and (< pp (ed/len ed)) (== (ed/char ed pp) ch/.))
+       (ed/indent-to ed 0)
+       (goto return)))
   ;; Find backwards: (newline or open paren) on level zero
   (var level 0)
   (set p (- p 2))
@@ -526,14 +534,17 @@ file can be larger than one page...
         ((== (ed/char ed p) ch/rp) (set level (+ level 1))))
     (set p (- p 1)))
   ;; Find what follows
-  (var pp p)
+  (set pp p)
   (while (begin
            (set pp (+ pp 1))
            (and (< pp (ed/len ed))
                 (== (ed/char ed pp) ch/spc))))
   (if ((or (and (== p 0) (> level 0)) (== (ed/char ed p) ch/nl))
-       ;; Indent to same level as this line
-       (ed/indent-to ed (- pp p 1)))
+       ;; Indent to same level as this line, except for Z0 local labels
+       (if ((ed/looking-at ed pp ".")
+            (ed/indent-to ed 2))
+           (else
+            (ed/indent-to ed (- pp p 1)))))
       ((and (< pp (ed/len ed)) (== (ed/char ed pp) ch/lp))
        ;; If another open paren follows the stopping paren, indent to that
        (ed/indent-to ed (- pp (ed/find-bol ed pp))))
