@@ -1,8 +1,0 @@
-(code main
-  (set l0 message)
-  (call print)
-  (set l0 0)
-  (jmp sys-exit))
-
-(code message
-  (1 "Hello World" :nl 0))
