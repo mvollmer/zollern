@@ -1,5 +1,328 @@
 @** Z1 compiler
+
+This is the middle third of the Z1 language implementation, the
+compiler from Z1 primitives such as [code (9 0 a b)] to machine
+code.
+
+It is written in the assembly language defined and implemented
+by the [code asm] book. It is compiled outside of Zollern when
+Zollern boots, and changing it thus requires a full reboot for
+those changes to take effect.
+
+This is a pretty long program, for a number of reasons. First,
+a compiler is a substantial program all by itself, even one that
+does no optimizations. Then, in addition to the compiler, we
+also have to implement its run-time since we start completely
+from scratch. We have to implement memory allocation and a file
+system, for example. And last, assembler is just very verbose.
+
+@* The Z0 assembler language
+
+Z0 implements its own variant of x86-64 assembler, with lots of
+parentheses, of course. The [code asm] book has all the details
+of how it is defined, and here we give an overview from the point
+of actually using the assembly language.
+
+Instructions look like this:
+@c
+(add l0 l1)
+@
+This will add the 64 bits in register [code l1] to register [code
+l0].
+
+Instructions can only appear in [code code] blocks. In addition
+to instructions, a [code code] block can also contain labels.
+When used in instructions, these labels refer to the address
+of the instruction that follows them.
+
+Labels can be global or local. Global labels are visible in all
+[code code] blocks, and can consequently only be defined once.
+Local labels are only visible within the [code code] block that
+they are defined in. Local labels start with a [code .] dot character.
+
+Labels can be used before they are defined.
+
+Let's look at the first real code, which is quite typical for
+a function definition.
+
+The following defines the function [code strlen]. How it receives
+its arguments is not expressed in the code itself; the caller
+just has to know.
+
+In this case, [code strlen] expects a pointer in [code l0]. This
+is typical: unless documented otherwise, functions defined in
+assembler expect their arguments in the local registers.
+
+(Functions compiled by this compiler expect their arguments on
+the stack.)
+
 @=
+(code strlen
+  (set l1 l0)
+  (jmp .test)
+.loop
+  (add l0 1)
+.test
+  (set l2 (u8 l0))
+  (cmp l2 0)
+  (jne .loop)
+  (sub l0 l1)
+  (ret))
+@
+A [code code] expression tells the Z0 assembler to put the following
+values into the read-only part of the executable.
+
+The [code strlen] symbol is global (since it doesn't start with
+a dot) and can be used within instructions to refer to the address
+of the instruction following it. The [code .loop] and [code .test]
+labels are local to the [code code] expression. Other code expressions
+can define as well them for their own use without risk of conflict.
+
+There are a number of 64-bit registers, and some conventions for
+how to use them.
+
+The caller-saved (or local) registers [code l0] to [code l8] can
+be freely used by a function, and don't need to be saved. Consequently,
+they must be assumed to have been overwritten after calling a
+function.
+
+The callee-saved registers [code x0] to [code x4] must be be saved
+and restored when you want to use them in a function. This means
+of course that you can assume that they will not change across
+a function call.
+
+And then there are the stack pointer [code sp] and the context
+register [code cp].
+
+Memory can be accessed with the [code set] instruction like this:
+@c
+(set l0 (u64 l1))
+(set (u32 l2) 12)
+@
+This will load the 64 bits at address [code l1] into [code l0],
+and store the number 12 into the 32 bits at address [code l2].
+
+Branching is done with [code cmp] and a set of conditional jump
+instructions like [code je] (jump if equal), [code jne] (jump
+if not equal), [code jg] (jump if greater), [code jge] (jump
+if greater or equal), etc.
+
+Let's continue with more string utility functions.
+@=
+(code strcpy
+  (jmp .test)
+.loop
+  (add l0 1)
+  (add l1 1)
+.test
+  (set l2 (u8 l1))
+  (set (u8 l0) l2)
+  (cmp l2 0)
+  (jne .loop)
+  (ret))
+
+(code streq
+  (jmp .test)
+.loop
+  (add l0 1)
+  (add l1 1)
+.test
+  (set l2 (u8 l0))
+  (set l3 (u8 l1))
+  (cmp l2 l3)
+  (je .eq)
+  (set l0 0)
+  (ret)
+.eq
+  (cmp l2 0)
+  (jne .loop)
+  (set l0 1)
+  (ret))
+
+(code strneq
+  ;; l0 - nul-terminated string
+  ;; l1 - counted string
+  ;; l2 - length of counted string
+  (jmp .test)
+.loop
+  (add l0 1)
+  (add l1 1)
+  (sub l2 1)
+.test
+  (set l3 (u8 l0))
+  (cmp l2 0)
+  (jne .cmp)
+  (cmp l3 0)
+  (jne .not-eq)
+  (set l0 1)
+  (ret)
+.cmp
+  (set l4 (u8 l1))
+  (cmp l3 l4)
+  (je .eq)
+.not-eq
+  (set l0 0)
+  (ret)
+.eq
+  (cmp l3 0)
+  (jne .loop)
+  (set l0 1)
+  (ret))
+@
+Normally, utility functions like [code strlen] or [code strcpy]
+come from a standard library, but we had to define them explicitly
+above since there is no such library.
+
+In fact, we need to define names for ASCII values if we want to
+have that convenience...
+@=
+(def (defenum . ?rest)
+  (defenum-at 0 . ?rest))
+
+(def (defenum-at ?pos ?first . ?rest)
+  (def ?first ?pos)
+  (defenum-at (+ ?pos 1) . ?rest))
+
+(def (defenum-at ?pos)
+  (begin))
+
+(defenum
+  ;; 0x00
+  :nul :soh :stx :etx :eot :enq :ack :bel
+  :bs  :ht  :nl  :vt  :np  :cr  :so  :si
+  :dle :dc1 :dc2 :dc3 :dc4 :nak :syn :etb
+  :can :em  :sub :esc :fs  :gs  :rs  :us
+
+  ;; 0x20
+  :spc :!   :dq  :#   :$   :%   :&   :sq
+  :lp  :rp  :*   :+   :,   :-   :.   :/
+  :0   :1   :2   :3   :4   :5   :6   :7
+  :8   :9   ::   :sc  :<   :=   :>   :?
+
+  ;; 0x40
+  :@   :A   :B   :C   :D   :E   :F   :G
+  :H   :I   :J   :K   :L   :M   :N   :O
+  :P   :Q   :R   :S   :T   :U   :V   :W
+  :X   :Y   :Z   :[   :bsl :]   :^   :_
+
+  ;; 0x60
+  :bt  :a   :b   :c   :d   :e   :f   :g
+  :h   :i   :j   :k   :l   :m   :n   :o
+  :p   :q   :r   :s   :t   :u   :v   :w
+  :x   :y   :z   :{   :bar :}   :~   :del)
+@
+
+And we also have to implement calls into the OS kernel ourselves.
+
+The following works for x86-64 Linux. There, the OS kernel
+is entered with a special [code syscall] instruction and the
+kernel expects arguments to be in specific registers.
+
+Which system call to execute is specified in [code l0], and the
+arguments for it are in these registers, in order:
+@c
+l4, l3, l2, l7, l5, l6
+@
+We want to arrange things so that code calling into the OS can
+specify the six arguments in the well know order [code l0] to
+[code l5].  Thus we have to perform this mapping:
+@c
+l0, l1, l2, l3, l4, l5
+ |
+ v
+l4, l3, l2, l7, l5, l6
+@
+This has to happen in the right order, of course, so that we only
+copy [code l1] to [code l3] after using [code l3] to set [code
+l7].
+
+The [code asm] book does not define speciality instructions like
+[code syscall]. That is fine, we can define it right here.
+@=
+(def (syscall)
+  (1 0x0F 0x05))
+@
+And here is the macro for defining individual functions for each
+of the syscalls that we need below.
+@=
+(def (defsyscall ?func ?nsys ?nargs)
+  (code ?func
+    (sel (>= ?nargs 4)
+         (set l7 l3)
+         (begin))
+    (sel (>= ?nargs 6)
+         (set l6 l5)
+         (begin))
+    (sel (>= ?nargs 5)
+         (set l5 l4)
+         (begin))
+    (sel (>= ?nargs 1)
+         (set l4 l0)
+         (begin))
+    (sel (>= ?nargs 2)
+         (set l3 l1)
+         (begin))
+    (set l0 ?nsys)
+    (syscall)
+    (ret)))
+@
+And here is the table with all of them.
+@=
+(defsyscall sys-read         0  3)
+(defsyscall sys-write        1  3)
+(defsyscall sys-open         2  3)
+(defsyscall sys-close        3  1)
+(defsyscall sys-fstat        5  2)
+(defsyscall sys-mmap         9  6)
+(defsyscall sys-munmap      11  2)
+(defsyscall sys-brk         12  1)
+(defsyscall sys-exit        60  1)
+(defsyscall sys-ftruncate   77  2)
+@
+
+Here is the big structure filled out by [code sys-fstat]. We will
+only look at [code st_size], but why not define the whole thing.
+@=
+(defstruct sys-fstat-buf
+  (u64 st_dev)
+  (u64 st_ino)
+  (u64 st_nlink)
+  (u32 st_mode)
+  (u32 st_uid)
+  (u32 st_gid)
+  (u32 st_pad0)
+  (u64 st_rdev)
+  (s64 st_size)
+  (s64 st_blksize)
+  (s64 st_blocks)
+  (s64 st_atime_sec)
+  (s64 st_atime_nsec)
+  (s64 st_mtime_sec)
+  (s64 st_mtime_nsec)
+  (s64 st_ctime_sec)
+  (s64 st_ctime_nsec)
+  (s64 st_pad1)
+  (s64 st_pad2)
+  (s64 st_pad3))
+@
+And some more utility functions that make use of syscalls.
+@=
+(code print
+  (push l0)
+  (call strlen)
+  (set l2 l0)
+  (set l0 1)
+  (pop l1)
+  (jmp sys-write))
+
+(code newline
+  (set l0 1)
+  (let l1 (u8 .newline))
+  (set l2 1)
+  (jmp sys-write)
+.newline
+  (1 :nl))
+
 (code panic
   (cmp l0 0)
   (je .no-print)
@@ -7,39 +330,84 @@
 .no-print
   (set l0 125)
   (jmp sys-exit))
+@
 
-;; Context
-;;
-;; This struct is pointed to by the 'cp' register and carries some
-;; context pointers that would otherwise have to be passed explicitly.
-;;
-;; ctxt-books is the list of compiled books
-;; ctxt-comp is the current compiler-context.
+@* Memory allocation
 
-(defstruct context
-  (u64 ctxt-disk)
-  (u64 ctxt-books)
-  (u64 ctxt-comp))
+Let's build the foundations for the compiler by implementing memory
+allocation.
 
-;; Memory
-;;
-;; At the lowest level, memory is mostly allocated in *pages* of 16
-;; KiB.  We get more memory from the OS via the brk syscall in chunks
-;; of 2 MiB, which is then carved up into pages.  When pages are
-;; returned, they go on a free list and are reused for the next
-;; request.
+Memory is allocated in [emph pages] of 16 KiB. We get more memory
+from the OS via the [code mmap] syscall in chunks of 2 MiB, which
+is then carved up into pages. When pages are returned, they go
+on a free list and are reused for the next request.
 
+These pages are the fundamental mechanism for all memory allocation
+in Zollern, not just for this compiler.
+
+The list of reusable pages is stored in the global variable [code
+mem-free-pages]. If this list is empty, the next page can be
+made from the memory between the addresses stored in [code mem-next]
+and [code mem-end].  These three variables are declared like so:
+@=
 (data
   mem-free-pages 8
   mem-next 8
   mem-end 8)
+@
+The number [code 8] tell Z0 to reserve 8 bytes (64 bits) in the
+writeable data segment of the program. The symbols can be used
+to refer to the address of these bytes.
 
+How this is used in instructions can be seen here:
+@=
 (code mem-init
+  (set (u64 mem-free-pages) 0)
   (set (u64 mem-next) 0)
   (set (u64 mem-end) 0)
   (ret))
+@
+The [code mem-init] function stores [code 0] into all three global
+variables.
 
+Ok, here is the function to return a page for reuse:
+@=
+(code page-put
+  (set l1 (u64 mem-free-pages))
+  (set (u64 l0) l1)
+  (set (u64 mem-free-pages) l0)
+  (ret))
+@
+The list of free pages is formed by storing pointers to the next
+in the first 8 bytes of each page.
+
+To warm up further, here is slightly more complicated function
+with a loop. It returns a whole list of pages for reuse.
+@=
+(code page-put-many
+  (push x0)
+  (set x0 l0)
+  (jmp .test)
+.loop
+  (set l0 x0)
+  (set x0 (u64 l0))
+  (call page-put)
+.test
+  (cmp x0 0)
+  (jne .loop)
+  (pop x0)
+  (ret))
+@
+Note how it uses [code x0] to store a local variable that should
+remain valid across the call to [code page-put]. The original
+value of [code x0] is saved on the stack with [code push] and
+restored from there with [code pop].
+
+And here is how to get a new page. It's a pretty long function,
+but it doesn't even have a loop. Or does it?
+@=
 (def PAGE_SIZE (* 16 1024))
+(def ALLOC_SIZE (* 128 PAGE_SIZE))
 
 (code page-get
   (set l0 (u64 mem-free-pages))
@@ -59,7 +427,7 @@
   (ret)
 .get-mem
   (set l0 0)
-  (set l1 (* 2 1024 1024))
+  (set l1 ALLOC_SIZE)
   (set l2 7) ; PROT_READ | PROT_WRITE | PROT_EXEC
   (set l3 34) ; MAP_ANONYMOUS | MAP_PRIVATE
   (set l4 -1)
@@ -68,7 +436,7 @@
   (cmp l0 0)
   (jl .oom)
   (set (u64 mem-next) l0)
-  (add l0 (* 2 1024 1024))
+  (add l0 ALLOC_SIZE)
   (set (u64 mem-end) l0)
   (jmp .make-page)
 .oom
@@ -76,33 +444,30 @@
   (jmp panic)
 .message
   (1 "Can't get memory\n" 0))
+@
 
-(code page-put
-  (set l1 (u64 mem-free-pages))
-  (set (u64 l0) l1)
-  (set (u64 mem-free-pages) l0)
-  (ret))
+The compiler will need memory to store things like the lists and
+symbols it reads from the source file. Using a whole page for
+a single symbol is of course too wasteful, and we need to subdivide
+pages into smaller, variable sized pieces. The name for this
+concept is a memory pool.
 
-(code page-put-many
-  (push x0)
-  (set x0 l0)
-  (jmp .test)
-.loop
-  (set l0 x0)
-  (set x0 (u64 l0))
-  (call page-put)
-.test
-  (cmp x0 0)
-  (jne .loop)
-  (pop x0)
-  (ret))
+We make this job easier by never returning any of these pieces
+individually for reuse by the pool. Once the compiler is done,
+the whole pool is returned as one piece.
 
-;; (data p (sizeof mem-pool))
-;;
-;; (mem-pool-init p)
-;; (mem-pool-alloc p size)
-;; (mem-pool-reset p)
+The [code mem] book has a more sophisticated allocator that can
+be used by [code Z1] programs, but this compiler gets by with
+this simpler one.
 
+A memory pool needs some state, which is stored in the [code mem-pool]
+structure, and after initializing it with [code mem-pool-init],
+one can get memory from it with [code mem-pool-alloc].
+
+The compiler has only one memory pool, the one for constructing
+the expression objects managed by the [code exp] API.
+
+@=
 (defstruct mem-pool
   (u64 mp-pages)
   (u64 mp-end)
@@ -147,7 +512,11 @@
   (jmp panic)
 .message
   (1 "pool allocation too large\n" 0))
+@
+After one file has been compiled into a book, the memory pool
+is reset, which frees all the pages used for it.
 
+@=
 (code mem-pool-reset
   (set (mp-end l0) 0)
   (set (mp-next l0) 0)
@@ -155,18 +524,29 @@
   (set (mp-pages l0) 0)
   (set l0 l1)
   (jmp page-put-many))
+@
+Note that this function does not end with [code (ret)]. Instead
+it jumps directly to [code page-put-many], which will eventually
+execute the [code (ret)]. This is a tail call optimization. Pretty
+straightforward in assembler!
 
-;; Reading files
+@* Reading files
 
-(defstruct disk
-  (u64 disk-start)
-  (u64 disk-end))
+And now comes a lot of boring code to find and read files in a
+Zollern disk. This functionality is duplicated in the [code fs]
+book and the details are described there.
 
-(data
-  disk (sizeof disk))
+The Z1 compiler needs its own code to read files since it needs
+to compile all the rest during bootstrap, including the [code
+fs] book.
 
-;; (disk-open name)
+A Zollern disk can be seen as a big array of 16k pages. The first
+page contains a [code disk-header] structure, followed by 63
+[code disk-meta] structures. Each [code disk-meta] structure
+describes one file. It contains the name of the file, its size
+in bytes, and 92 pointers to the pages with the file content.
 
+@=
 (defstruct disk-header
   (u32 dh-magic)
   (u32 dh-version)
@@ -177,6 +557,16 @@
   (u32 dm-size)
   (u32 dm-time)
   (u16 dm-ptrs 92))
+@
+The [code disk] structure is used at run-time to remember where
+the Zollern disk is mapped into memory.
+@=
+(defstruct disk
+  (u64 disk-start)
+  (u64 disk-end))
+
+(data
+  disk (sizeof disk))
 
 (code disk-open
   (push x0)
@@ -222,9 +612,17 @@
   (1 "Can't read disk\n" 0)
 .wrong-magic-message
   (1 "Not a zdisk\n" 0))
+@
 
-;; (find-file fb name)
+The [code find-file] function will fill a [code file-buffer] structure
+with all the state needed by [code get-filebuf-char] to read the
+file character by character.
 
+It iterates over the [code disk-meta] entries in the first page
+of the disk until it finds one with the requested name. This
+[code disk-meta] entry is remembered in the [code file-buffer].
+
+@=
 (defstruct file-buffer
   (u64 fb-node)
   (u64 fb-block)
@@ -269,7 +667,12 @@
   (pop x0)
   (set l0 0)
   (ret))
+@
 
+Reading a character from a file is pretty straighforward, if tedious
+(like everything in assembler).
+
+@=
 (code get-filebuf-char
   (set l1 (fb-ptr l0))
   (set l2 (fb-end l0))
@@ -293,7 +696,9 @@
 .not-eof
   (let l2 (dm-ptrs l2))
   (set l1 (fb-block l0))
-  (set l2 (u16 l2 l1))
+  (mul l1 2)
+  (add l1 l2)
+  (set l2 (u16 l1))
   (mul l2 (* 16 1024))
   (set l1 disk)
   (set l1 (disk-start l1))
@@ -315,7 +720,10 @@
   (sub l1 1)
   (set (fb-ptr l0) l1)
   (ret))
-
+@
+Books remember how old the file was that they were compiled from.
+This is not really a wall time, but just a global sequence number.
+@=
 (code file-time
   ;; l0 - name
   (sub sp (sizeof file-buffer))
@@ -330,8 +738,30 @@
   (add sp (sizeof file-buffer))
   (ret))
 
-;; Tokens
+@* Parsing tokens
 
+Now starts the compiler proper, with the parsing of the tokens,
+as is tradtition.
+
+The function [code next-token] does this job, but first we define
+some macros for it to handle the tedium of reading the next character
+while also handling the end-of-file condition.
+@=
+(def (getchar ?fb ?eof-label)
+  (set l0 ?fb)
+  (call get-filebuf-char)
+  (cmp l0 -1)
+  (je ?eof-label))
+
+(def (ungetchar ?fb)
+  (set l0 ?fb)
+  (call unget-filebuf-char))
+@
+
+The result of tokenization is delivered in a [code token-struct]
+structure. It contains a pointer to the characters of the token,
+and it's syntactical kind.
+@=
 (defstruct token-struct
   (u64 tk-buf)
   (u8  tk-kind)
@@ -346,23 +776,18 @@
 (def tk-kind-string        4)
 (def tk-kind-question-mark 5)
 (def tk-kind-fragment-def  6)
+@
 
-(def (getchar ?fb ?eof-label)
-  (set l0 ?fb)
-  (call get-filebuf-char)
-  (cmp l0 -1)
-  (je ?eof-label))
+The [code next-token] function itself is presented in multiple
+blocks that [code jmp] to each other. This allows us to insert
+some paragraphs of documentation into the middle of it. (Remember,
+Z0 does not handle [code <fragments>], which we would otherwise
+have used.)
 
-(def (ungetchar ?fb)
-  (set l0 ?fb)
-  (call unget-filebuf-char))
-
+@=
 (code next-token
   ;; l0: file-buffer
   ;; l1: token-struct
-  ;;
-  ;; Reads the next token from file-buffer l0 into token-struct l1.
-  ;;
   (push x0)
   (push x1)
   (push x2)
@@ -370,22 +795,42 @@
   (set x0 l0)
   (set x1 l1)
   (set x3 0)
+  (jmp nt.skip-whitespace))
+@
+
+The first thing is to skip over all the characters that should
+be ignored, like whitespace, comments, and indeed all the [code
+\@] sections that don't contain code.
+
+When a [code @=] section is encountered, [code next-token] always
+produces a [code tk-kind-fragment-def] token. When the [code @=]
+marker appears on a line by itself with nothing following
+it, then token string will be empty. This case is handled here
+while skipping whitespace.
+
+The case when something follows the [code @=] marker is handled
+further down when parsing symbols. The [code x3] register is
+used to inform that part of [code next-token] that the symbol
+is part of a fragment definition header.
+
+@=
+(code nt.skip-whitespace
   (set l0 (fb-ptr x0))
   (je .bol)
-  (jmp .skip-whitespace)
+  (jmp .next-char)
 .in-code-header
   (set x3 1)
-.skip-whitespace
-  (getchar x0 .eof)
+.next-char
+  (getchar x0 nt.eof)
 .maybe-whitespace
   (cmp l0 :nl)
   (je .bol)
   (cmp l0 :spc)
-  (jle .skip-whitespace)
+  (jle .next-char)
   (cmp l0 :sc)
-  (jne .not-whitespace)
+  (jne nt.handle-single-character-tokens)
 .skip-comment
-  (getchar x0 .eof)
+  (getchar x0 nt.eof)
   (cmp l0 :nl)
   (je .bol)
   (jmp .skip-comment)
@@ -395,47 +840,54 @@
   (set l0 (tk-buf x1))
   (set (u8 l0) 0)
   (set l0 tk-kind-fragment-def)
-  (jmp .out)
+  (jmp nt.out)
 .wasnt-code-header
-  (getchar x0 .eof)
+  (getchar x0 nt.eof)
   (cmp l0 :@)
   (je .bol-at)
   (jmp .maybe-whitespace)
 .bol-at
-  (getchar x0 .eof)
+  (getchar x0 nt.eof)
   (cmp l0 :=)
   (je .in-code-header)
 .skip-tx-block
-  (getchar x0 .eof)
+  (getchar x0 nt.eof)
 .skip-tx-block-maybe-nl
   (cmp l0 :nl)
   (je .skip-tx-block-bol)
   (jmp .skip-tx-block)
 .skip-tx-block-bol
-  (getchar x0 .eof)
+  (getchar x0 nt.eof)
   (cmp l0 :@)
   (je .bol-at)
-  (jmp .skip-tx-block-maybe-nl)
-.bol-at-end
-  (getchar x0 .eof)
-.not-whitespace
+  (jmp .skip-tx-block-maybe-nl))
+@
+After skipping of all the things that should be ignored, we next
+check whether we are looking at one of the single character tokens
+[code (], [code )], or [code ?].
+@=
+(code nt.handle-single-character-tokens
   (cmp l0 :lp)
   (jne .not-open)
   (set l0 tk-kind-open)
-  (jmp .out)
+  (jmp nt.out)
 .not-open
   (cmp l0 :rp)
   (jne .not-close)
   (set l0 tk-kind-close)
-  (jmp .out)
+  (jmp nt.out)
 .not-close
   (cmp l0 :?)
-  (jne .not-question-mark)
+  (jne nt.handle-strings)
   (set l0 tk-kind-question-mark)
-  (jmp .out)
-.not-question-mark
+  (jmp nt.out))
+@
+Next in line are strings. They are enclosed in double quotes but
+can also contain escape sequences.
+@=
+(code nt.handle-strings
   (cmp l0 :dq)
-  (jne .not-string)
+  (jne nt.handle-symbols)
   (set x2 (tk-buf x1))
 .next-string-char
   (getchar x0 .eof-in-string)
@@ -464,10 +916,28 @@
   (set l0 0)
   (set (u8 x2) l0)
   (set l0 tk-kind-string)
-  (jmp .out)
-.not-string
+  (jmp nt.out)
+.eof-in-string
+  (let l0 (u8 .eof-in-string-message))
+  (jmp compiler-abort)
+.eof-in-string-message
+  (1 "Unexpected end of file in string\n" 0))
+@
+Everything else is a symbol. (Or a number, that distinction is
+made later.) 
+
+There is also a special syntax for symbols:
+@c
+<arbitrary characters enclosed in [emph angle] brackets>
+@
+These are meant to be
+used as fragment identifiers, but as far as the parser is concerned,
+they are just symbols. You [emph could] use them as local variable
+names, but that would be confusing.
+@=
+(code nt.handle-symbols
   (cmp l0 :<)
-  (jne .not-angle-sym)
+  (jne .not-angle-symbol)
   (set x2 (tk-buf x1))
   (set (u8 x2) l0)
   (add x2 1)
@@ -481,7 +951,7 @@
   (je .end-symbol)
   (getchar x0 .end-symbol)
   (jmp .store-angle-sym-char)
-.not-angle-sym
+.not-angle-symbol
   (set x2 (tk-buf x1))
 .store-sym-char
   (set (u8 x2) l0)
@@ -503,50 +973,45 @@
   (cmp x3 0)
   (je .normal-symbol)
   (set l0 tk-kind-fragment-def)
-  (jmp .out)
+  (jmp nt.out)
 .normal-symbol
   (set l0 tk-kind-symbol)
-  (jmp .out)
-.eof
+  (jmp nt.out))
+@
+Wrapping up is pretty easy now.
+@=
+(code nt.eof
   (set l0 tk-kind-eof)
-.out
+  (jmp nt.out))
+
+(code nt.out
   (set (tk-kind x1) l0)
   (pop x3)
   (pop x2)
   (pop x1)
   (pop x0)
-  (ret)
-.eof-in-string
-  (let l0 (u8 .eof-in-string-message))
-  (jmp compiler-abort)
-.eof-in-string-message
-  (1 "Unexpected end of file in string\n" 0))
+  (ret))
 
-;;; Books
+@* Compiler state
 
-;; What elsewhere is called a library or a module, we call a book.
-;; (And a collection of books is a library.)
+The compiler uses quite a bit of state, which is all collected
+in the [code compiler-context] structure. We don't need to explain
+all the fields here, but you can find the expected [code mem-pool]
+in it, as well as a [code token-struct].
 
-(defstruct book
-  (u32 bk-refs)
-  (u64 bk-name)
-  (u32 bk-time)
-  (u64 bk-next)
-  (u64 bk-pages)
-  (u64 bk-globals)
-  (u64 bk-deps)
-  (u64 bk-extra-1)
-  (u64 bk-extra-2)
-  (u64 bk-extra-3)
-  (u64 bk-extra-4))
+Each compilation has its own [code compiler-context] of course.
+But instead of passing it around as an explicit argument to each
+function, it is accessed via the special context register [code
+cp].
 
-(defstruct book-link
-  (u64 bl-link)
-  (u64 bl-book))
+The [code cp] register points to a [code context] structure, which
+has one field reserved for the compiler context.
 
-;;; Compiler context
-
-;; All functions that use a compiler context expect it in (ctxt-comp cp).
+@=
+(defstruct context
+  (u64 ctxt-disk)
+  (u64 ctxt-books)
+  (u64 ctxt-comp))
 
 (defstruct compiler-context
   (u64 cc-print-hook)
@@ -568,8 +1033,11 @@
   (u64 cc-abort-sp)
   (u8 cc-tokenbuf 1024))
 
-;; Printing while compiling
-
+@
+Here is an example of how this all works. The [code cc-print]
+function will the [emph print hook] of the compiler context to
+output some text.
+@=
 (code cc-print
   ;; l0 - string
   (set l1 (ctxt-comp cp))
@@ -585,19 +1053,25 @@
   (add sp 16)
   (ret))
 
-;; Definition types
+@* Expression objects
 
-(def def-type-undef 0)
-(def def-type-func  1)
-(def def-type-macro 2)
-(def def-type-var   4)
-(def def-type-mem   5)
-(def def-type-label 4)
+Let's continue with the parser. After splitting the input into
+tokens, these tokens need to be turned into a data structure
+that represents symbols, numbers strings, and lists.
 
-;; Expressions
+These are the expression objects that the macros in the [code
+lang] book work with.
 
-(def EXP-HASH-SIZE 1023)
+All expression objects are allocated from the [code cc-tmp-pool]
+of the compiler context, and none of them are freed before the
+whole compilation is done.
 
+All expression objects derive from the common [code exp-base]
+structure, which stores the type of the object. After this type,
+each type of expression object stores its own data, like the
+actual number value for a [code exp-type-number] object.
+
+@=
 (def exp-type-pair   0)
 (def exp-type-symbol 1)
 (def exp-type-string 2)
@@ -612,38 +1086,6 @@
   (u64 exp-sym-val)
   (u8  exp-sym-type))
 
-(def (exp-sym-define ?sym ?type ?val)
-  (cmp (exp-sym-type ?sym) def-type-undef)
-  (jne error-redef-exp)
-  (set (exp-sym-type ?sym) ?type)
-  (set (exp-sym-val ?sym) ?val))
-
-(code error
-  (push l0)
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-curexp l0))
-  (call exp-write)
-  (pop l0)
-  (jmp compiler-abort))
-
-(code error-redef-exp
-  (let l0 (u8 .redef-error-string))
-  (jmp error)
-.redef-error-string
-  (1 "\nredefined\n" 0))
-
-(code error-not-local-exp
-  (let l0 (u8 .not-local-error-string))
-  (jmp error)
-.not-local-error-string
-  (1 "\nnot a local variable\n" 0))
-
-(code error-not-label-exp
-  (let l0 (u8 .not-label-error-string))
-  (jmp error)
-.not-label-error-string
-  (1 "\nnot a label\n" 0))
-
 (defstruct exp-string
   (exp-base base))
 
@@ -655,19 +1097,17 @@
 (defstruct exp-number
   (exp-base base)
   (s64 exp-num-val))
+@
+At the start of a compilation, the memory pool is initialized,
+and at the end, it is freed. Symbols are stored in a hash table,
+and that hash table is also allocated by [code exp-init].
+@=
+(def EXP-HASH-SIZE 1023)
 
 (code exp-init
   (set l0 (ctxt-comp cp))
   (let l0 (cc-tmp-pool l0))
   (call mem-pool-init)
-  (jmp exp-reset))
-
-(code exp-fini
-  (set l0 (ctxt-comp cp))
-  (let l0 (cc-tmp-pool l0))
-  (jmp mem-pool-reset))
-
-(code exp-reset
   (push x0)
   (set x0 (ctxt-comp cp))
   (let l0 (cc-tmp-pool x0))
@@ -689,6 +1129,28 @@
   (pop x0)
   (ret))
 
+(code exp-fini
+  (set l0 (ctxt-comp cp))
+  (let l0 (cc-tmp-pool l0))
+  (jmp mem-pool-reset))
+@
+Expression objects are created with functions like [code exp-make-number].
+This is the exact same function that is also known as [code exp/make-number]
+to Z1 code.
+@=
+(code exp-make-number
+  (push x0)
+  (set x0 l0)
+  (set l0 (ctxt-comp cp))
+  (let l0 (cc-tmp-pool l0))
+  (set l1 (sizeof exp-number))
+  (call mem-pool-alloc)
+  (set l1 exp-type-number)
+  (set (exp-type l0) l1)
+  (set (exp-num-val l0) x0)
+  (pop x0)
+  (ret))
+
 (code exp-make-pair
   (push x0)
   (push x1)
@@ -705,20 +1167,12 @@
   (pop x1)
   (pop x0)
   (ret))
-
-(code exp-make-number
-  (push x0)
-  (set x0 l0)
-  (set l0 (ctxt-comp cp))
-  (let l0 (cc-tmp-pool l0))
-  (set l1 (sizeof exp-number))
-  (call mem-pool-alloc)
-  (set l1 exp-type-number)
-  (set (exp-type l0) l1)
-  (set (exp-num-val l0) x0)
-  (pop x0)
-  (ret))
-
+@
+Unlike pairs and numbers, strings and symbols have variable size.
+Here is a utility function for creatin a string or a symbol by
+allocating enough space for the expression object followed by
+the characters of the string or symbol name.
+@=
 (code exp-make-with-string
   ;; l0 - string
   ;; l1 - header size
@@ -743,7 +1197,9 @@
   (pop x1)
   (pop x0)
   (ret))
-
+@
+Making strings is then easy.
+@=
 (code exp-make-string
   ;; l0 - string
   (set l1 (sizeof exp-string))
@@ -751,7 +1207,9 @@
   (set l1 exp-type-string)
   (set (exp-type l0) l1)
   (ret))
-
+@
+But making symbols is not, since there is a hash table involved.
+@=
 (code exp-intern
   ;; l0 - name
   (push x0) ;; name
@@ -777,7 +1235,9 @@
   (set x1 l2)
   (set x3 (ctxt-comp cp))
   (set l0 (cc-symbols x3))
-  (set x2 (u64 l0 x1))
+  (mul x1 8)
+  (add x1 l0)
+  (set x2 (u64 x1))
   (jmp .find-test)
 .find-loop
   (set x2 (exp-sym-link x2))
@@ -801,32 +1261,58 @@
   (set l1 (sizeof exp-symbol))
   (call exp-make-with-string)
   (set (exp-type l0) exp-type-symbol)
-  (set (exp-sym-type l0) def-type-undef)
+  (set (exp-sym-type l0) 0)
   (set (exp-sym-val l0) 0)
   (set l1 (cc-symbols x3))
-  (set l2 (u64 l1 x1))
+  (set l2 (u64 x1))
   (set (exp-sym-link l0) l2)
-  (set (u64 l1 x1) l0)
+  (set (u64 x1) l0)
   (pop x3)
   (pop x2)
   (pop x1)
   (pop x0)
   (ret))
+@
+Symbols can also carry a definition, consisting of a type and
+a value. 
 
-(code exp-list-reverse
-  (set l1 0)
-.loop
-  (cmp l0 0)
-  (je .done)
-  (set l2 (exp-rest l0))
-  (set (exp-rest l0) l1)
-  (set l1 l0)
-  (set l0 l2)
-  (jmp .loop)
-.done
-  (set l0 l1)
-  (ret))
+This definition is the reason for putting symbols into a hash
+table, of course. This way, every reference to a symbol in the
+source text is resolved to the exact same object in memory, and
+we can store things in that object that we want to associate
+with that symbol.
+@=
+(def def-type-undef 0)
+(def def-type-func  1)
+(def def-type-macro 2)
+(def def-type-var   4)
+(def def-type-mem   5)
+(def def-type-label 4)
 
+(def (exp-sym-define ?sym ?type ?val)
+  (cmp (exp-sym-type ?sym) def-type-undef)
+  (jne error-redef-exp)
+  (set (exp-sym-type ?sym) ?type)
+  (set (exp-sym-val ?sym) ?val))
+
+@* The reader
+
+But now we are ready for the [emph reader], the function [code
+exp-read1] that turns a sequence of tokens into an expression
+object.
+
+The function [code exp-read1] should be called with a token already
+in the token buffer, and once it returns, the token buffer is
+empty.
+
+The reader is pretty straightforward if you are familiar with
+recursice descent parsing since the grammar is so simple. The
+only slightly tricky thing is the distinction between numbers
+and symbols. The tokenizer [code next-token] does not recognize
+numbers, just sequences of characters that might be either a
+symbol or a number.
+
+@=
 (code exp-read1
   (set l0 (tk-kind x1))
   (cmp l0 tk-kind-open)
@@ -919,52 +1405,35 @@
 .not-question-mark
   (set l0 (tk-buf x1))
   (jmp exp-make-string))
-
-(code exp-splice-fragments
-  ;; l0 - list to splice fragments into
-  (push x0)
-  (push x1)
-  (set x0 l0)
-  (jmp .test)
+@
+Here is the little list reversing function used by [code exp-read1].
+@=
+(code exp-list-reverse
+  (set l1 0)
 .loop
-  (set l0 (exp-first x0))
-  (set l1 (exp-type l0))
-  (cmp l1 exp-type-pair)
-  (jne .not-pair)
-  (call exp-splice-fragments)
-  (jmp .next)
-.not-pair
-  (cmp l1 exp-type-symbol)
-  (jne .next)
-  (set x1 (exp-sym-val l0))
-  (cmp x1 0)
-  (je .next)
-  (set (exp-sym-val l0) 0)
-  (set l0 x1)
-  (call exp-splice-fragments)
-  (set l0 (exp-first x1))
-  (set (exp-first x0) l0)
-  (set l2 (exp-rest x0))
-  (set l0 (exp-rest x1))
-  (set (exp-rest x0) l0)
-  (set l0 x0)
-.test-tail
-  (set x1 (exp-rest l0))
-  (cmp x1 0)
-  (je .found-tail)
-  (set l0 x1)
-  (jmp .test-tail)
-.found-tail
-  (set (exp-rest l0) l2)
-.next
-  (set x0 (exp-rest x0))
-.test
-  (cmp x0 0)
-  (jne .loop)
-  (pop x1)
-  (pop x0)
+  (cmp l0 0)
+  (je .done)
+  (set l2 (exp-rest l0))
+  (set (exp-rest l0) l1)
+  (set l1 l0)
+  (set l0 l2)
+  (jmp .loop)
+.done
+  (set l0 l1)
   (ret))
+@
+The compiler works by parsing a whole book before starting to
+compile its first expression. That way fragments such as [code
+<do some magic here>] can be resolved. This job is done by [code
+exp-read-all] together with [code exp-splice-fragments],
 
+Whenever a new code section starts, [code next-token] produces
+a [code tk-kind-fragment-def] token. If the token is not the
+empty string, it is turned into a symbol and the expressions
+are appended to the value of this symbol. If it [emph is] the
+empty string, the expressions are appended to the main reault.
+
+@=
 (code exp-read-all
   ;; l0 - file-buffer
   (set l3 (ctxt-comp cp))
@@ -1020,7 +1489,65 @@
   (pop x1)
   (pop x0)
   (ret))
+@
+After all reading has been done, each expressions is examined
+whether it is a symbol with a value. If so, it is replaced (in
+place) with the value of that symbol.
 
+@=
+(code exp-splice-fragments
+  ;; l0 - list to splice fragments into
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (jmp .test)
+.loop
+  (set l0 (exp-first x0))
+  (set l1 (exp-type l0))
+  (cmp l1 exp-type-pair)
+  (jne .not-pair)
+  (call exp-splice-fragments)
+  (jmp .next)
+.not-pair
+  (cmp l1 exp-type-symbol)
+  (jne .next)
+  (set x1 (exp-sym-val l0))
+  (cmp x1 0)
+  (je .next)
+  (set (exp-sym-val l0) 0)
+  (set l0 x1)
+  (call exp-splice-fragments)
+  (set l0 (exp-first x1))
+  (set (exp-first x0) l0)
+  (set l2 (exp-rest x0))
+  (set l0 (exp-rest x1))
+  (set (exp-rest x0) l0)
+  (set l0 x0)
+.test-tail
+  (set x1 (exp-rest l0))
+  (cmp x1 0)
+  (je .found-tail)
+  (set l0 x1)
+  (jmp .test-tail)
+.found-tail
+  (set (exp-rest l0) l2)
+.next
+  (set x0 (exp-rest x0))
+.test
+  (cmp x0 0)
+  (jne .loop)
+  (pop x1)
+  (pop x0)
+  (ret))
+@
+For diagnostics and debugging, expression objects need to be turned
+back into text via [code exp-write]. Note that [code exp-write]
+even handles improper lists, although the reader will never produce
+them and the compiler does not know what to do with them. But
+for debugging, it is good to have a robust writer, of course.
+(But then again, the writer doesn't bother to quote characters
+inside strings...)
+@=
 (data exp-write-strbuf 20)
 
 (code exp-write
@@ -1124,35 +1651,96 @@
 .unknown-string
   (1 "<unknown>" 0))
 
+@
+Here are some functions for error diagnostics that use [code exp-write].
+Error reporting of the Z1 compler is pretty basic. It only reports
+the first error, and doesn't even include the line number of
+the offending expression.
+
+Letting the compiler continue after an error is difficult, but
+it runs so fast that having to recompile after fixing only a
+single error should be no problem. As they say, Speed of iteration
+beats Quality of iteration.
+
+@=
+(code error
+  (push l0)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-curexp l0))
+  (call exp-write)
+  (pop l0)
+  (jmp compiler-abort))
+
+(code error-redef-exp
+  (let l0 (u8 .redef-error-string))
+  (jmp error)
+.redef-error-string
+  (1 "\nredefined\n" 0))
+
+(code error-not-local-exp
+  (let l0 (u8 .not-local-error-string))
+  (jmp error)
+.not-local-error-string
+  (1 "\nnot a local variable\n" 0))
+
+(code error-not-label-exp
+  (let l0 (u8 .not-label-error-string))
+  (jmp error)
+.not-label-error-string
+  (1 "\nnot a label\n" 0))
+
 (def (assert-type ?exp ?type ?error)
   (cmp ?exp 0)
   (je ?error)
   (cmp (exp-type ?exp) ?type)
   (jne ?error))
 
-;; Code generation
+@* Books
 
-(code code-init
-  (set l0 (ctxt-comp cp))
-  (set (cc-code-pages l0) 0)
-  (jmp code-new-page))
+The unit of compilation in Zollern is a book. In fact, the compiler
+runs as a side effect of looking up a book by name.
 
-(code code-new-page
-  (call page-get)
-  (set l1 (ctxt-comp cp))
-  (set l2 (cc-code-pages l1))
-  (set (u64 l0) l2)
-  (set (cc-code-pages l1) l0)
-  (add l0 8)
-  (set (cc-code-ptr l1) l0)
-  (add l0 (- PAGE_SIZE 8))
-  (set (cc-code-end l1) l0)
-  (ret))
+A book has a number of definitions in it: the functions and macros
+defined via [code fun] and [code def].
 
-(code code-abort
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-code-pages l0))
-  (jmp page-put-many))
+A book can refer to definitions from other books, of course, and
+when it does the other book might get compiled, right in the
+middle of compiling the current book.
+
+A book keeps a list of all the other books that it uses definitions
+from, and prevents those books from being freed.
+
+If a book is changed and recompiled that is used by some other
+book, that other book needs to be recompiled as well before it
+will pick up the changes in the first book. This makes immediate
+sense for macros, but it is also true for functions: When a book
+calls a function in another book, it will do so directly, by
+embedding the address of the first instruction of that function
+in its own code.
+
+The [code book] structure is alloced in the code pages via [code
+code-alloc] (see below), as are all the structures that keep
+the definitions of the book.
+
+The lifetime of [code book] structures is managed with a reference
+count, via [code book-ref] and [code book-unref].
+@=
+(defstruct book
+  (u32 bk-refs)
+  (u64 bk-name)
+  (u32 bk-time)
+  (u64 bk-next)
+  (u64 bk-pages)
+  (u64 bk-globals)
+  (u64 bk-deps)
+  (u64 bk-extra-1)
+  (u64 bk-extra-2)
+  (u64 bk-extra-3)
+  (u64 bk-extra-4))
+
+(defstruct book-link
+  (u64 bl-link)
+  (u64 bl-book))
 
 (defstruct global
   (u64 glb-link)
@@ -1193,38 +1781,6 @@
 .dot-book-name
   (1 ".book" 0))
 
-(code book-register
-  ;; l0 - book
-  (push x0)
-  (push x1)
-  (set x0 l0)
-  (let x1 (ctxt-books cp))
-.remove-loop
-  (set l1 (u64 x1))
-  (cmp l1 0)
-  (je .remove-done)
-  (set l1 (bk-name l1))
-  (set l0 (bk-name x0))
-  (call streq)
-  (cmp l0 0)
-  (je .remove-skip)
-  (set l0 (u64 x1))
-  (set l1 (bk-next l0))
-  (set (u64 x1) l1)
-  (call book-unref)
-  (jmp .remove-loop)
-.remove-skip
-  (set l1 (u64 x1))
-  (let x1 (bk-next l1))
-  (jmp .remove-loop)
-.remove-done
-  (set l1 (ctxt-books cp))
-  (set (bk-next x0) l1)
-  (set (ctxt-books cp) x0)
-  (pop x1)
-  (pop x0)
-  (ret))
-
 (code book-ref
   ;; l0 - book
   (set l1 (bk-refs l0))
@@ -1258,171 +1814,64 @@
   (pop x0)
   (jmp page-put-many))
 
-(code compiler-init
-  ;; l0 - book name
-  (push l0)
-  (call cc-print)
-  (set l0 .dots)
-  (call cc-print)
-  (set l0 (ctxt-comp cp))
-  (set (cc-level l0) 0)
-  (set (cc-gensym l0) 0)
-  (call exp-init)
-  (call code-init)
-  (pop l0)
-  (jmp book-init)
-.dots
-  (1 "...\n" 0))
+@
+There is a global list of books which contains the most recently
+compiled ones for their name. When a book is recompiled, any
+book with the same name is removed from that list before the
+new one is added. This does not mean that the old books are freed,
+however. Other books might still refer to them until they, too,
+get recompiled.
 
-(code compiler-lang-init
-  (call fixup-init)
-  (let l0 (u8 .lang-name))
-  (set l1 (ctxt-comp cp))
-  (set l1 (cc-book l1))
-  (call book-find-as-dep)
-  (set l1 (ctxt-comp cp))
-  (set (cc-lang-book l1) l0)
-  (call fixup-run)
-  (ret)
-.lang-name
-  (1 "lang/." 0))
-
-(code compiler-fini
-  (jmp exp-fini))
-
-(def (size-to-type  1) u8)
-(def (size-to-type  4) u32)
-(def (size-to-type -4) u32)
-(def (size-to-type  8) u64)
-
-(def (size-to-offset  1) 1)
-(def (size-to-offset  4) 4)
-(def (size-to-offset -4) 4)
-(def (size-to-offset  8) 8)
-
-(def (code-emit ?ptr ?insn)
-  (code-emit-1 ?ptr ?insn ()))
-
-(def (code-emit ?ptr ?insn ?repl)
-  (code-emit-1 ?ptr ?insn (?repl)))
-
-(def (code-emit-1 ?ptr (?size) ?repl)
-  (begin))
-
-(def (code-emit-1 ?ptr (?size ?first . ?rest) ?repl)
-  (sel (== ?size 8) ("error: can't emit 64 bit literals")
-                    (begin))
-  (set ((size-to-type ?size) ?ptr) ?first)
-  (add ?ptr (size-to-offset ?size))
-  (code-emit-1 ?ptr (?size . ?rest) ?repl))
-
-(def (code-emit-1 ?ptr (?size ?first) (?repl))
-  (set ((size-to-type ?size) ?ptr) ?repl)
-  (add ?ptr (size-to-offset ?size)))
-
-(def (code-emit-1 ?ptr (begin ?first . ?rest) ?repl)
-  (code-emit-1 ?ptr ?first ())
-  (code-emit-1 ?ptr (begin . ?rest) ?repl))
-
-(def (code-emit-1 ?ptr (begin ?first) ?repl)
-  (code-emit-1 ?ptr ?first ?repl))
-
-(code code-grow
-  ;; l0 - size
-  (cmp l0 PAGE_SIZE)
-  (jge .too-large)
-  (set l1 (ctxt-comp cp))
-  (set l2 (cc-code-ptr l1))
-  (set l3 l2)
-  (add l3 l0)
-  (set l0 (cc-code-end l1))
-  (cmp l3 l0)
-  (jl .done)
-  (call code-new-page)
-.done
-  (ret)
-.too-large
-  (let l0 (u8 .too-large-string))
-  (jmp error)
-.too-large-string
-  (1 "too large" 0))
-
-(code code-alloc
-  ;; l0 - size
-  ;; =>
-  ;; l0 - ptr
-  (push l0)
-  (call code-grow)
-  (pop l0)
-  (set l1 (ctxt-comp cp))
-  (set l2 (cc-code-ptr l1))
-  (set l3 l2)
-  (add l3 l0)
-  (set l0 l2)
-  (set (cc-code-ptr l1) l3)
-  (ret))
-
-(code code-start
-  (set l1 (ctxt-comp cp))
-  (set l0 (cc-code-ptr l1))
-  (set l1 (cc-code-end l1))
-  (sub l1 100)
-  (cmp l0 l1)
-  (jae .new-page)
-  (ret)
-.new-page
-  (add l1 90)
-  (cmp l0 l1)
-  (jae .no-jmp)
-  (code-emit l0 (jmp 0x1234))
-  (jmp .new-page-2)
-.no-jmp
-  (set l0 0)
-.new-page-2
-  (push l0)
-  (call code-new-page)
-  (set l1 (ctxt-comp cp))
-  (set l0 (cc-code-ptr l1))
-  (set l2 l0)
-  (pop l1)
+Also, any running application keep a reference to its book and
+needs to be restarted when that book is to be replaced with a
+new version.
+@=
+(code book-register
+  ;; l0 - book
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (let x1 (ctxt-books cp))
+.remove-loop
+  (set l1 (u64 x1))
   (cmp l1 0)
-  (je .no-jmp-fixup)
-  (sub l2 l1)
-  (sub l1 4)
-  (set (u32 l1) l2)
-.no-jmp-fixup
+  (je .remove-done)
+  (set l1 (bk-name l1))
+  (set l0 (bk-name x0))
+  (call streq)
+  (cmp l0 0)
+  (je .remove-skip)
+  (set l0 (u64 x1))
+  (set l1 (bk-next l0))
+  (set (u64 x1) l1)
+  (call book-unref)
+  (jmp .remove-loop)
+.remove-skip
+  (set l1 (u64 x1))
+  (let x1 (bk-next l1))
+  (jmp .remove-loop)
+.remove-done
+  (set l1 (ctxt-books cp))
+  (set (bk-next x0) l1)
+  (set (ctxt-books cp) x0)
+  (pop x1)
+  (pop x0)
   (ret))
+@
+Here now comes the function that kicks of the compiler, [code
+book-get].
 
-(code code-end
-  (set l1 (ctxt-comp cp))
-  (set (cc-code-ptr l1) l0)
-  (ret))
+It first tries to find a book with the given name in the global
+list of books. If there isn't any, a new book is compiled from
+a file of the same name.
 
-;; Globals
+If a book is found, but the file has been changed since the last
+compilation, a new one is also compiled.
 
-(code skip-book-prefix
-  ;; l0 - full name
-  ;; ->
-  ;; l0 - full name
-  ;; l1 - suffix
-  (set l1 l0)
-  (set l2 l0)
-.loop
-  (set l3 (u8 l2))
-  (cmp l3 0)
-  (je .done)
-  (cmp l3 :/)
-  (jne .next)
-  (set l3 (u8 l2 1))
-  (cmp l3 0)
-  (je .next)
-  (set l1 l2)
-.next
-  (add l2 1)
-  (jmp .loop)
-.done
-  (ret))
-
+Otherwise, each dependency of the book is checked recursively.
+If any of them was out-of-date and has been replaced with a new
+one, a new book is also compiled for this one.
+@=
 (code book-get
   ;; l0 - name
   ;; l1 - print-hook
@@ -1518,7 +1967,272 @@
   (pop x1)
   (pop x0)
   (ret))
+@
+Once you have gotten a book from [code book-get], you can find
+a definition in it with [code book-search]. These functions are
+available to Z1 as [code book/get] and [code book/search].
 
+The variant [code book-search-fun] (or [code book/search-fun])
+only finds functions and directly returns their address. This
+is used by the shell to start an application, for example. It
+looks for the [code main] function in a book and then just calls
+that.
+@=
+(code book-search
+  ;; l0 - book
+  ;; l1 - name (suffix)
+  ;; ->
+  ;; l0 - global
+  (push x0)
+  (push x1)
+  (set x0 (bk-globals l0))
+  (set x1 l1)
+  (jmp .test)
+.loop
+  (set x0 (glb-link x0))
+.test
+  (cmp x0 0)
+  (je .done)
+  (set l0 x1)
+  (let l1 (u8 x0 (sizeof global)))
+  (call streq)
+  (cmp l0 0)
+  (je .loop)
+.done
+  (set l0 x0)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code book-search-fun
+  ;; l0 - book
+  ;; l1 - name (suffix)
+  ;; ->
+  ;; l0 - function
+  (call book-search)
+  (cmp l0 0)
+  (je .not-found)
+  (cmp (glb-type l0) def-type-func)
+  (jne .not-found)
+  (set l0 (glb-val l0))
+  (ret)
+.not-found
+  (set l0 0)
+  (ret))
+@
+Now we slowly get to the actual compiler proper. There is still
+a bit of ceremony and house keeping before the first instruction
+is emitted, but we are getting there.
+
+The [code book-get] functon above has created a new [code compiler-context],
+and the functions below use that finally open a file and start
+compiling it.
+@=
+
+(code compile-book-from-file
+  ;; l0 - book name
+  (sub sp (sizeof file-buffer))
+  (set l1 l0)
+  (set l0 sp)
+  (push l1)
+  (call find-file)
+  (cmp l0 0)
+  (jne .found)
+  (pop l0)
+  (call cc-print)
+  (let l0 (u8 .not-found-message))
+  (call cc-print)
+  (set l0 0)
+  (jmp .out)
+.not-found-message
+  (1 ": no such book\n" 0)
+.found
+  (set l1 l0)
+  (pop l0)
+  (call compile-book-from-filebuffer)
+.out
+  (add sp (sizeof file-buffer))
+  (ret))
+@
+This function is the main driver of the compilation. It reads
+all expressions and then calls [code comp-expr] for each.
+
+It also drives the [emph fixups]. These are things that can't
+be done in the middle of compiling a function (for example),
+but have to be done afterwards, like patching up jumps to labels.
+@=
+(code compile-book-from-filebuffer
+  ;; l0 - book name
+  ;; l1 - file-buffer
+  (push x0)
+  (push x1)
+  (push x2)
+  (push x3)
+  (push x4)
+  (set x0 l1)
+  (set l2 (ctxt-comp cp))
+  (set (cc-abort-sp l2) sp)
+  (call compiler-init)
+  (call compiler-lang-init)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-book l0))
+  (set l1 (fb-node x0))
+  (set l1 (dm-time l1))
+  (set (bk-time l0) l1)
+  (set l0 x0)
+  (call exp-read-all)
+  (set x0 l0)
+.loop
+  (call fixup-init)
+  (cmp x0 0)
+  (je .done)
+  (set l0 (exp-first x0))
+  (set x0 (exp-rest x0))
+  (call comp-expr)
+  (call fixup-run)
+  (jmp .loop)
+.done
+  (call compiler-fini)
+  (pop x4)
+  (pop x3)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (set l1 (ctxt-comp cp))
+  (set l0 (cc-book l1))
+  (set l2 (cc-code-pages l1))
+  (set (bk-pages l0) l2)
+  (ret))
+@
+If anything goes wrong during compilation, like finding a reference
+to a definition that can't be found, the whole process is aborted.
+Calling [code comp-abort] (or jumping to it, doesn't matter)
+will cause [code compile-from-filebuffer] to return with zero.
+
+This is done by resetting the stack pointer to how it was at the
+beginning of [code compile-from-filebuffer]. The next [code (ret)]
+instruction will then return to the caller of [code compile-from-filebuffer].
+
+Care must be taken to save and restore [emph all] caller saved
+registers since any of them might be in use when [code comp-abort]
+is called.
+@=
+(code compiler-abort
+  ;; l0 - message or null
+  (cmp l0 0)
+  (je .no-print)
+  (call cc-print)
+.no-print
+  (call compiler-fini)
+  (call code-abort)
+  (set l0 (ctxt-comp cp))
+  (set sp (cc-abort-sp l0))
+  (pop x4)
+  (pop x3)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (set l0 0)
+  (ret))
+@
+Initializing the compiler puts together all the pieces: Initializing
+the memory pool for the expression objects, initializing the
+pages for emitting code into, and initializing the new [code
+book] structure.
+
+Finalizing the compiler will not free the code pages and the book,
+of course, since those are the result of all this hassle.
+@=
+(code compiler-init
+  ;; l0 - book name
+  (push l0)
+  (call cc-print)
+  (set l0 .dots)
+  (call cc-print)
+  (set l0 (ctxt-comp cp))
+  (set (cc-level l0) 0)
+  (set (cc-gensym l0) 0)
+  (call exp-init)
+  (call code-init)
+  (pop l0)
+  (jmp book-init)
+.dots
+  (1 "...\n" 0))
+
+(code compiler-fini
+  (jmp exp-fini))
+@
+All books are equal, but one is more equal than the others: the
+[code lang] book. Every book can use its definitions without
+having to use the [code lang/] prefix all the time. This makes
+the macro definitions in the [code lang] book similar to keywords
+in other languages.
+@=
+(code compiler-lang-init
+  (call fixup-init)
+  (let l0 (u8 .lang-name))
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-book l1))
+  (call book-find-as-dep)
+  (set l1 (ctxt-comp cp))
+  (set (cc-lang-book l1) l0)
+  (call fixup-run)
+  (ret)
+.lang-name
+  (1 "lang/." 0))
+
+@* Definitions in books
+
+In the Z1 language, one has to use fully qualified names when
+referring to definitions in other books, such as [code gfx/rect]
+when referring to the [code rect] function in the [code gfx]
+book.
+
+The following functions handle looking up these external definitions
+during compilation, and creating new ones in the currently compiled
+book.
+
+The first just skips over the prefix in a fully qualified name.
+@=
+(code skip-book-prefix
+  ;; l0 - full name
+  ;; ->
+  ;; l0 - full name
+  ;; l1 - suffix
+  (set l1 l0)
+  (set l2 l0)
+.loop
+  (set l3 (u8 l2))
+  (cmp l3 0)
+  (je .done)
+  (cmp l3 :/)
+  (jne .next)
+  (set l3 (u8 l2 1))
+  (cmp l3 0)
+  (je .next)
+  (set l1 l2)
+.next
+  (add l2 1)
+  (jmp .loop)
+.done
+  (ret))
+@
+It is used by the following pretty long function that takes a
+fully qualified name and finds the book that it refers to. If
+necessary, that book will be added as a dependency to the currently
+compiled book.
+
+It ultimately uses [code book-get] to find books that have not
+yet been seen, and can thus trigger the compiler recursively.
+
+One complication worth mentioning is that in order to record a
+new dependency, we need to allocate a little bit of memory in
+the code space of the book. But this function will be called
+in the middle of compilation while instructions are being emitted
+into the same space. Thus, we make a temporary note in the mempool
+and only allocate the permanent dependency link when the fixups
+run.
+@=
 (code book-find-as-dep
   ;; l0 - full name
   ;; l1 - current book
@@ -1622,7 +2336,63 @@
 .not-found
   (set l0 0)
   (jmp compiler-abort))
+@
+Once we have the function to find a book, finding a fully qualified
+name is pretty straightforward with [code book-search].
+@=
+(code globals-search
+  ;; l0 - name (full name)
+  ;; ->
+  ;; l0 - global
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-book l1))
+  (call book-find-as-dep)
+  (cmp l0 0)
+  (je .done)
+  (call book-search)
+.done
+  (ret))
+@
+Creating new definitions in the currenly compiled book also doesn't
+need a lot of code. The following function does it and returns
+the structure that holds the definition. The caller is then supposed
+to fill it out.
 
+Note that this function uses [code code-alloc]. It can thus only
+be called between compiling top-level expressions.
+@=
+(code globals-define
+  ;; l0 - name
+  ;; =>
+  ;; l0 - global
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (call strlen)
+  (add l0 1)
+  (add l0 (sizeof global))
+  (call code-alloc)
+  (set x1 l0)
+  (let l0 (u8 x1 (sizeof global)))
+  (set l1 x0)
+  (call strcpy)
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-book l1))
+  (set l0 (bk-globals l1))
+  (set (glb-link x1) l0)
+  (set (bk-globals l1) x1)
+  (set l0 x1)
+  (pop x1)
+  (pop x0)
+  (ret))
+@
+The caller of [code globals-define] must make sure that the name
+of the new definition is fully qualified and within the current
+book. It also needs to make sure that no definition already exists
+with the same name (if appropriate).
+
+The following functions can help with that.
+@=
 (code book-check-current
   ;; l0 - full name
   ;; ->
@@ -1663,86 +2433,6 @@
 .not-current-book-string
   (1 " not in current book\n" 0))
 
-(code book-search
-  ;; l0 - book
-  ;; l1 - name (suffix)
-  ;; ->
-  ;; l0 - global
-  (push x0)
-  (push x1)
-  (set x0 (bk-globals l0))
-  (set x1 l1)
-  (jmp .test)
-.loop
-  (set x0 (glb-link x0))
-.test
-  (cmp x0 0)
-  (je .done)
-  (set l0 x1)
-  (let l1 (u8 x0 (sizeof global)))
-  (call streq)
-  (cmp l0 0)
-  (je .loop)
-.done
-  (set l0 x0)
-  (pop x1)
-  (pop x0)
-  (ret))
-
-(code book-search-fun
-  ;; l0 - book
-  ;; l1 - name (suffix)
-  ;; ->
-  ;; l0 - function
-  (call book-search)
-  (cmp l0 0)
-  (je .not-found)
-  (cmp (glb-type l0) def-type-func)
-  (jne .not-found)
-  (set l0 (glb-val l0))
-  (ret)
-.not-found
-  (set l0 0)
-  (ret))
-
-(code globals-search
-  ;; l0 - name (full name)
-  ;; ->
-  ;; l0 - global
-  (set l1 (ctxt-comp cp))
-  (set l1 (cc-book l1))
-  (call book-find-as-dep)
-  (cmp l0 0)
-  (je .done)
-  (call book-search)
-.done
-  (ret))
-
-(code globals-define
-  ;; l0 - name
-  ;; =>
-  ;; l0 - global
-  (push x0)
-  (push x1)
-  (set x0 l0)
-  (call strlen)
-  (add l0 1)
-  (add l0 (sizeof global))
-  (call code-alloc)
-  (set x1 l0)
-  (let l0 (u8 x1 (sizeof global)))
-  (set l1 x0)
-  (call strcpy)
-  (set l1 (ctxt-comp cp))
-  (set l1 (cc-book l1))
-  (set l0 (bk-globals l1))
-  (set (glb-link x1) l0)
-  (set (bk-globals l1) x1)
-  (set l0 x1)
-  (pop x1)
-  (pop x0)
-  (ret))
-
 (code error-redef-global
   (let l0 (u8 l0 (sizeof global)))
   (call cc-print)
@@ -1751,8 +2441,283 @@
 .redef-error-string
   (1 " redefined\n" 0))
 
-;; Fixups
+@* Code generation
 
+The expression objects returned by the reader need to be turned
+into machine instructions by the compiler. These instructions
+are emitted into memory pages, of course. These pages become
+the permanent output of the compiler and are returned to its
+caller as part of a [code book] structure. Once that structure
+is freed, the code pages will be returned for reuse.
+
+The compiler state maintains a pointer to where the next instuction
+should go, and another one where the current page ends. Once
+the pointer for emitting instructions gets close to the end,
+a new page is allocated and a [code jmp] instruction is inserted
+automatically from the old page to the new.
+
+Emitting instructions is done with a sequence like this:
+@c
+(call code-start)
+(code-emit l0 (push l0)
+(code-emit l0 (add l0 l1))
+(code-emit l0 (pop l1))
+(call code-end)
+@
+Calling [code code-start] will make sure that there are at least
+100 continuous bytes available and puts their address into register
+[code l0]. The instructions are emitted via the [code code-emit]
+macro, which uses a neat trick.
+
+You might recall that the assembler Z0 is actually a macro processor,
+and that [code (add l0 l1)] is actually a macro invocation. The
+expansion of that macro looks like [code (1 24 139)], which tells
+Z0 to emit two bytes with the values 24 and 139 into the output
+binary.
+
+(We have seen this also with string literals. This
+@c
+(1 "foo" 0)
+@
+tell Z0 to emit four bytes, three characters followed by a zero.)
+
+Thus, [code (code-emit l0 (add l0 l1))] turns into [code (code-emit
+l0 (1 24 139))] and all that the [code code-emit] macro has to
+do is to turn this into instructions that store the numbers 24
+and 139 to the address in [code l0], and increment [code l0]
+after each store.
+
+It is worth looking at the [code emit-code] macro a bit closer,
+to explain how Z0 macros work.
+
+Unlike Z1 macros, Z0 macros can do proper pattern matching. There
+can be multiple definitions for the same symbol, and only the
+one that matches is used to compute the expansion. For example:
+@=
+(def (size-to-type  1) u8)
+(def (size-to-type  4) u32)
+(def (size-to-type -4) u32)
+(def (size-to-type  8) u64)
+
+(def (size-to-offset  1) 1)
+(def (size-to-offset  4) 4)
+(def (size-to-offset -4) 4)
+(def (size-to-offset  8) 8)
+@
+These lines define four versions of the [code size-to-type] macro.
+(And four versions of the [code size-to-offset] macro.) None
+of the definitions have pattern variables. If one writes [code
+(size-to-type 1)], the first definition is used and the code
+expands to [code u8]. If none of them match, as with [code (size-to-type
+7)] for example, Z0 stops with a syntax error.
+
+If more than one definition of a macro matches, the [emph last]
+one to be seen by Z0 is used.
+
+One more thing needs to be mentioned for the macro definitions
+below to make sense. The [code code-emit] macro has a optional
+third argument, called the [emph replacement].
+
+A invocation like [code (code-emit l0 (1 23 45) x0)] will expand
+into code that stores 23 at [code l0] and then stores the content
+of [code x0] to the byte at [code l0] + 1. The 45 is ignored.
+
+This can be used to get around the main limitation of the [code
+code-emit] macro: It can only emit bytes that are known when
+assembling this compiler. For example [code (code-emit l0 (add
+l0 l1))] is fine, but there is no way to select the registers
+at run-time.
+
+This non-optimizing compiler here doesn't need any of that, except
+for jumps.
+
+Ok, let's look at the macro definitions.
+@=
+(def (code-emit ?ptr ?insn)
+  (code-emit-1 ?ptr ?insn ()))
+
+(def (code-emit ?ptr ?insn ?repl)
+  (code-emit-1 ?ptr ?insn (?repl)))
+@
+These two definitions turn the optional third argument of [code
+code-emit] into a always present one for [code code-emit-1],
+and the rest is done by writing defintions for [code code-emit-1],
+which will destructure the [code ?insn] argument via pattern
+matching.
+
+Remember that a instruction looks like [code (<size> <first value>
+...)] after macro expansion. The first is the base case when
+there are no values at all:
+@=
+(def (code-emit-1 ?ptr (?size) ?repl)
+  (begin))
+@
+Nothing needs to be emitted in that case.
+
+The second case is if there are two or more values. Then we emit
+the first, and recurse with the rest of the values.
+@=
+(def (code-emit-1 ?ptr (?size ?first . ?rest) ?repl)
+  (sel (== ?size 8) ("error: can't emit 64 bit literals")
+                    (begin))
+  (set ((size-to-type ?size) ?ptr) ?first)
+  (add ?ptr (size-to-offset ?size))
+  (code-emit-1 ?ptr (?size . ?rest) ?repl))
+@
+Note that the definition above also matches the case with only
+one value, [code ?rest] is the empty list in that case. But here
+is another definition, and it takes precedence because it comes
+later:
+@=
+(def (code-emit-1 ?ptr (?size ?first) (?repl))
+  (set ((size-to-type ?size) ?ptr) ?repl)
+  (add ?ptr (size-to-offset ?size)))
+@
+In the one value case with a replacement, we want to emit the
+replacement instead of value in the instruction.
+
+Instructions can actually expand into more complex forms, like
+[code (begin (1 43) (4 123456))], which represents a byte followed
+by a four-byte value. This is used by [code jmp] instructions,
+for example. The [code code-emit-1] macro needs to handle these
+cases as well, passing along the replacement.
+@=
+(def (code-emit-1 ?ptr (?size (begin . ?rest) . ?tail) ?repl)
+  (code-emit-1 ?ptr (?size . ?rest) ())
+  (code-emit-1 ?ptr (?size . ?tail) ?repl))
+
+(def (code-emit-1 ?ptr (?size (begin . ?rest)) ?repl)
+  (code-emit-1 ?ptr (?size . ?rest) ?repl))
+
+(def (code-emit-1 ?ptr (begin ?first . ?rest) ?repl)
+  (code-emit-1 ?ptr ?first ())
+  (code-emit-1 ?ptr (begin . ?rest) ?repl))
+
+(def (code-emit-1 ?ptr (begin ?first) ?repl)
+  (code-emit-1 ?ptr ?first ?repl))
+@
+And that's it. Writing macros like this is a whole different style
+of programming.
+
+We still need the supporting functions like [code code-start]
+and [code code-end]. Here they are.
+@=
+(code code-init
+  (set l0 (ctxt-comp cp))
+  (set (cc-code-pages l0) 0)
+  (jmp code-new-page))
+
+(code code-new-page
+  (call page-get)
+  (set l1 (ctxt-comp cp))
+  (set l2 (cc-code-pages l1))
+  (set (u64 l0) l2)
+  (set (cc-code-pages l1) l0)
+  (add l0 8)
+  (set (cc-code-ptr l1) l0)
+  (add l0 (- PAGE_SIZE 8))
+  (set (cc-code-end l1) l0)
+  (ret))
+
+(code code-abort
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-code-pages l0))
+  (jmp page-put-many))
+
+(code code-start
+  (set l1 (ctxt-comp cp))
+  (set l0 (cc-code-ptr l1))
+  (set l1 (cc-code-end l1))
+  (sub l1 100)
+  (cmp l0 l1)
+  (jae .new-page)
+  (ret)
+.new-page
+  (add l1 90)
+  (cmp l0 l1)
+  (jae .no-jmp)
+  (code-emit l0 (jmp 0x1234))
+  (jmp .new-page-2)
+.no-jmp
+  (set l0 0)
+.new-page-2
+  (push l0)
+  (call code-new-page)
+  (set l1 (ctxt-comp cp))
+  (set l0 (cc-code-ptr l1))
+  (set l2 l0)
+  (pop l1)
+  (cmp l1 0)
+  (je .no-jmp-fixup)
+  (sub l2 l1)
+  (sub l1 4)
+  (set (u32 l1) l2)
+.no-jmp-fixup
+  (ret))
+
+(code code-end
+  (set l1 (ctxt-comp cp))
+  (set (cc-code-ptr l1) l0)
+  (ret))
+@
+In addition to instructions, a number of data structures are also
+allocated in the code pages. This includes the [code book] structure
+as well as everything needed to record the global definitions.
+
+This is done with [code code-alloc].
+@=
+(code code-grow
+  ;; l0 - size
+  (cmp l0 PAGE_SIZE)
+  (jge .too-large)
+  (set l1 (ctxt-comp cp))
+  (set l2 (cc-code-ptr l1))
+  (set l3 l2)
+  (add l3 l0)
+  (set l0 (cc-code-end l1))
+  (cmp l3 l0)
+  (jl .done)
+  (call code-new-page)
+.done
+  (ret)
+.too-large
+  (let l0 (u8 .too-large-string))
+  (jmp error)
+.too-large-string
+  (1 "too large" 0))
+
+(code code-alloc
+  ;; l0 - size
+  ;; =>
+  ;; l0 - ptr
+  (push l0)
+  (call code-grow)
+  (pop l0)
+  (set l1 (ctxt-comp cp))
+  (set l2 (cc-code-ptr l1))
+  (set l3 l2)
+  (add l3 l0)
+  (set l0 l2)
+  (set (cc-code-ptr l1) l3)
+  (ret))
+
+@* Fixups
+
+"Fixups" are the things that need to be done after compiling a
+top-level expression.
+
+A typical example is the emitting of string literals. When the
+compiler encounters a string literal in the middle of compiling
+an expression, it can not just write it into the code space since
+that would interrupt the flow of instructions that the compiler
+is emitting there for the expression.
+
+So instead, the compiler makes a "fixup" note using the functions
+below and then once the current top-level expression has been
+completed, space for the string literal is allocated in the code
+space. The instruction that refers to it is patched up to get
+the correct address.
+@=
 (defstruct fixup
   (u64 fx-link)
   (u64 fx-func)
@@ -1815,297 +2780,20 @@
   (pop x0)
   (ret))
 
-;; Exported functions
+@* Symbol lookup and local definitions
 
-(code comp-type
-  (set l0 (u64 sp 8))
-  (set l0 (exp-type l0))
-  (ret))
+There is still more machinery to define before we can emit the
+first instruction. Now we deal with local definitions, and looking
+up symbols in general.
 
-(code comp-first
-  (set l0 (u64 sp 8))
-  (assert-type l0 exp-type-pair syntax)
-  (set l0 (exp-first l0))
-  (ret))
+A local variable definition is recorded right in the [code exp-symbol]
+structure of the expression object for the symbol itself. Global
+book definitions are retrieved [code globals-search] of course
+(see way above), but once they have been found, they are also
+cached in the [code exp-symbol] structure. This acts as a cache
+and speeds up subsequent lookups.
 
-(code comp-rest
-  (set l0 (u64 sp 8))
-  (assert-type l0 exp-type-pair syntax)
-  (set l0 (exp-rest l0))
-  (ret))
-
-(code comp-number-value
-  (set l0 (u64 sp 8))
-  (assert-type l0 exp-type-number syntax)
-  (set l0 (exp-num-val l0))
-  (ret))
-
-(code comp-symbol-name
-  (set l0 (u64 sp 8))
-  (assert-type l0 exp-type-symbol syntax)
-  (add l0 (sizeof exp-symbol))
-  (ret))
-
-(code comp-make-pair
-  (set l0 (u64 sp 8))
-  (set l1 (u64 sp 16))
-  (call exp-make-pair)
-  (ret))
-
-(code comp-make-number
-  (set l0 (u64 sp 8))
-  (call exp-make-number)
-  (ret))
-
-(code comp-make-string
-  (set l0 (u64 sp 8))
-  (call exp-make-string)
-  (ret))
-
-(code comp-intern
-  (set l0 (u64 sp 8))
-  (call exp-intern)
-  (ret))
-
-(data strbuf 30)
-
-(code strint
-  ;; l0: n
-  (set l1 (+ strbuf 29))
-  (set l2 0)
-  (set l3 10)
-  (set (u8 l1) l2)
-.loop
-  (sub l1 1)
-  (sign-extend)
-  (udiv l3)
-  (add l2 :0)
-  (set (u8 l1) l2)
-  (cmp l0 0)
-  (jne .loop)
-  (set l0 l1)
-  (ret))
-
-(code comp-gensym
-  (set l1 (ctxt-comp cp))
-  (set l0 (cc-gensym l1))
-  (add (cc-gensym l1) 1)
-  (call strint)
-  (sub l0 1)
-  (set (u8 l0) :$)
-  ;; add another '$' for the "lang" book so that its global gensyms
-  ;; don't conflict with other books gensyms
-  (set l1 (ctxt-comp cp))
-  (set l2 (cc-book l1))
-  (set l1 (cc-lang-book l1))
-  (cmp l1 l2)
-  (jne .not-lang-book)
-  (sub l0 1)
-  (set (u8 l0) :$)
-.not-lang-book
-  (call exp-intern)
-  (ret))
-
-(code comp-global
-  (set l0 (u64 sp 8))
-  (push x0)
-  (push x1)
-  (push x2)
-  (let x0 (u8 l0 (sizeof exp-symbol)))
-  (set x1 (ctxt-comp cp))
-  (set x1 (cc-book x1))
-  (set x1 (bk-name x1))
-  (set l0 x1)
-  (call strlen)
-  (push l0)
-  (set l0 x0)
-  (call strlen)
-  (pop l1)
-  (add l0 l1)
-  (add l0 2)
-  (set x2 sp)
-  (sub sp l0)
-  (and sp -8)
-  (set l0 sp)
-  (set l1 x1)
-  (call strcpy)
-  (set (u8 l0) :/)
-  (add l0 1)
-  (set l1 x0)
-  (call strcpy)
-  (set l0 sp)
-  (call exp-intern)
-  (set sp x2)
-  (pop x2)
-  (pop x1)
-  (pop x0)
-  (ret))
-
-(code comp-expand-exported
-  (set l0 (u64 sp 8))
-  (jmp comp-expand))
-
-(code comp-reverse
-  (set l0 (u64 sp 8))
-  (jmp exp-list-reverse))
-
-(code comp-syntax
-  (jmp syntax))
-
-(code comp-show
-  (set l0 (u64 sp 8))
-  (push l0)
-  (call exp-write)
-  (set l0 .newline)
-  (call cc-print)
-  (pop l0)
-  (ret)
-.newline
-  (1 "\n" 0))
-
-(code comp-export-table
-  (8 comp-type .comp-type-name)
-  (8 comp-first .comp-first-name)
-  (8 comp-rest .comp-rest-name)
-  (8 comp-number-value .comp-number-value-name)
-  (8 comp-symbol-name .comp-symbol-name-name)
-  (8 comp-make-pair .comp-make-pair-name)
-  (8 comp-make-number .comp-make-number-name)
-  (8 comp-make-string .comp-make-string-name)
-  (8 comp-intern .comp-intern-name)
-  (8 comp-gensym .comp-gensym-name)
-  (8 comp-global .comp-global-name)
-  (8 comp-expand-exported .comp-expand-name)
-  (8 comp-reverse .comp-reverse-name)
-  (8 comp-syntax .comp-syntax-name)
-  (8 comp-show .comp-show-name)
-  (8 0 0)
-.comp-type-name
-  (1 "type" 0)
-.comp-first-name
-  (1 "first" 0)
-.comp-rest-name
-  (1 "rest" 0)
-.comp-number-value-name
-  (1 "number-value" 0)
-.comp-symbol-name-name
-  (1 "symbol-name" 0)
-.comp-make-pair-name
-  (1 "make-pair" 0)
-.comp-make-number-name
-  (1 "make-number" 0)
-.comp-make-string-name
-  (1 "make-string" 0)
-.comp-intern-name
-  (1 "intern" 0)
-.comp-gensym-name
-  (1 "gensym" 0)
-.comp-global-name
-  (1 "global" 0)
-.comp-expand-name
-  (1 "expand" 0)
-.comp-reverse-name
-  (1 "reverse" 0)
-.comp-syntax-name
-  (1 "syntax" 0)
-.comp-show-name
-  (1 "show" 0))
-
-(code sys-call
-  ;; syscall args: l4,  l3,  l2,  l7,  l5, l6, number to l0.
-  (set l0 (u64 sp (* 1 8)))
-  (set l4 (u64 sp (* 2 8)))
-  (set l3 (u64 sp (* 3 8)))
-  (set l2 (u64 sp (* 4 8)))
-  (set l7 (u64 sp (* 5 8)))
-  (set l5 (u64 sp (* 6 8)))
-  (set l6 (u64 sp (* 7 8)))
-  (syscall)
-  (ret))
-
-(code sys-page-get
-  (jmp page-get))
-
-(code sys-page-put
-  (set l0 (u64 sp 8))
-  (jmp page-put))
-
-(code sys-book-get
-  (set l0 (u64 sp 8))   ;; name
-  (set l1 (u64 sp 16))  ;; print-hook
-  (set l2 (u64 sp 24))  ;; print-hook-data
-  (call book-get)
-  (ret))
-
-(code sys-book-search-fun
-  (set l0 (u64 sp 8))
-  (set l1 (u64 sp 16))
-  (jmp book-search-fun))
-
-(code sys-book-ref
-  (set l0 (u64 sp 8))
-  (jmp book-ref))
-
-(code sys-book-unref
-  (set l0 (u64 sp 8))
-  (jmp book-unref))
-
-(code sys-export-table
-  (8 sys-call .sys-call-name)
-  (8 sys-page-get .sys-page-get-name)
-  (8 sys-page-put .sys-page-put-name)
-  (8 sys-book-get .sys-book-get-name)
-  (8 sys-book-search-fun .sys-book-search-fun-name)
-  (8 sys-book-ref .sys-book-ref-name)
-  (8 sys-book-unref .sys-book-unref-name)
-  (8 0 0)
-.sys-call-name
-  (1 "call" 0)
-.sys-page-get-name
-  (1 "page-get" 0)
-.sys-page-put-name
-  (1 "page-put" 0)
-.sys-book-get-name
-  (1 "book-get" 0)
-.sys-book-search-fun-name
-  (1 "book-search-fun" 0)
-.sys-book-ref-name
-  (1 "book-ref" 0)
-.sys-book-unref-name
-  (1 "book-unref" 0))
-
-(code export-globals
-  (push x1)
-  (set x1 l0)
-  (jmp .test)
-.loop
-  (call globals-define)
-  (set l1 (u64 x1))
-  (set (glb-type l0) def-type-func)
-  (set (glb-val l0) l1)
-  (add x1 16)
-.test
-  (set l0 (u64 x1 8))
-  (cmp l0 0)
-  (jne .loop)
-  (pop x1)
-  (ret))
-
-;; Scopes
-
-;; There are only two scopes, global and local.  The local definition
-;; of a symbol is stored directly in the symbol structure, the global
-;; definition is stored in a book.
-;;
-;; If a name has a global definition, this definition is copied into
-;; the local scope on the first lookup.  This helps with repeated
-;; lookups (which we do because it leads to simpler code), and
-;; prevents a name to be defined locally after it has already been
-;; looked up globally.
-;;
-;; A unsuccessful lookup will terminate the compilation. Thus
-;; def-type-undef is never returned.
-
+@=
 (code lookup
   ;; l0 - symbol
   ;; ->
@@ -2137,411 +2825,12 @@
   (jmp compiler-abort)
 .undef-error-string
   (1 " undefined\n" 0))
+@
 
-;; Compilation
-
-(code syntax
-  (let l0 (u8 .syntax-error-string))
-  (jmp error)
-.syntax-error-string
-  (1 "\nsyntax error\n" 0))
-
-(def (parse-eol ?ptr)
-  (parse-eol ?ptr syntax))
-
-(def (parse-eol ?ptr ?error)
-  (cmp ?ptr 0)
-  (jne ?error))
-
-(def (parse-exp ?ptr ?res)
-  (parse-exp ?ptr ?res syntax))
-
-(def (parse-exp ?ptr ?res ?error)
-  (assert-type ?ptr exp-type-pair ?error)
-  (set ?res (exp-first ?ptr))
-  (set ?ptr (exp-rest ?ptr)))
-
-(def (parse-num ?ptr ?res ?max)
-  (parse-num ?ptr ?res ?max syntax))
-
-(def (parse-num ?ptr ?res ?max ?error)
-  (parse-exp ?ptr ?res ?error)
-  (assert-type ?res exp-type-number ?error)
-  (set ?res (exp-num-val ?res))
-  (cmp ?res ?max)
-  (jae ?error))
-
-(def (parse-symbol ?ptr ?res)
-  (parse-symbol ?ptr ?res  syntax))
-
-(def (parse-symbol ?ptr ?res ?error)
-  (parse-exp ?ptr ?res)
-  (assert-type ?res exp-type-symbol ?error))
-
-;; Calling convention for all comp-* functions:
-;;
-;; l0 - form
-
-(code comp-expand-form
-  ;; l0 - form
-  ;; l1 - symbol
-  ;; l2 - expander index
-  ;; l3 - extra arg
-  ;; ->
-  ;; l0 - form
-  ;; l1 - changed
-  (push l3)
-  (push l0)
-  (push l2)
-  (set l0 l1)
-  (call lookup)
-  (pop l2)
-  (cmp l0 def-type-macro)
-  (jne .not-macro)
-  (set l0 (u64 l1 l2))
-  (cmp l0 0)
-  (je .not-macro)
-  (call l0)
-  (add sp 16)
-  (set l1 1)
-  (ret)
-.not-macro
-  (pop l0)
-  (pop l3)
-  (set l1 0)
-  (ret))
-
-(code comp-expand
-.again
-  (assert-type l0 exp-type-symbol .not-symbol)
-  (set l1 l0)
-  (set l2 1)
-  (jmp .expand)
-.not-symbol
-  (assert-type l0 exp-type-pair .not-call)
-  (set l1 (exp-first l0))
-  (assert-type l1 exp-type-symbol .not-call)
-  (set l2 0)
-.expand
-  (call comp-expand-form)
-  (cmp l1 0)
-  (jne .again)
-.not-call
-  (ret))
-
-(code comp-exprs
-  ;; l0 - list
-  ;; =>
-  ;; l0 - number of emited pushes
-  (cmp l0 0)
-  (je syntax)
-  (set l2 (exp-type l0))
-  (cmp l2 exp-type-pair)
-  (jne syntax)
-  (push l0)
-  (set l2 0)
-  (set l0 (exp-rest l0))
-  (cmp l0 0)
-  (je .done)
-  (call comp-exprs)
-  (push l0)
-  (call code-start)
-  (code-emit l0 (push l0))
-  (call code-end)
-  (pop l2)
-.done
-  (pop l0)
-  (set l0 (exp-first l0))
-  (push l2)
-  (call comp-expr)
-  (pop l0)
-  (add l0 1)
-  (ret))
-
-(code comp-begin
-  (push x0)
-  (set x0 l0)
-  (jmp .test)
-.loop
-  (parse-exp x0 l0)
-  (call comp-expr)
-.test
-  (cmp x0 0)
-  (jne .loop)
-  (pop x0)
-  (ret))
-
-(code comp-if
-  (push x0)
-  (push x1)
-  (set x0 l0)
-  (parse-exp x0 l0)
-  (call comp-expr)
-  (call code-start)
-  (code-emit l0 (cmp l0 0))
-  (code-emit l0 (je 0x1234))
-  (set x1 l0)
-  (call code-end)
-  (parse-exp x0 l0)
-  (call comp-expr)
-  (call code-start)
-  (code-emit l0 (jmp 0x1234))
-  (set l1 l0)
-  (sub l1 x1)
-  (set (u32 x1 -4) l1)
-  (set x1 l0)
-  (call code-end)
-  (parse-exp x0 l0)
-  (parse-eol x0)
-  (call comp-expr)
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-code-ptr l0))
-  (sub l0 x1)
-  (set (u32 x1 -4) l0)
-  (pop x1)
-  (pop x0)
-  (ret))
-
-(code comp-unop-table
-  (8 comp-unop-neg)   ; 0
-  (8 comp-unop-not)   ; 1
-  (8 comp-unop-float) ; 2
-  (8 comp-unop-fix)   ; 3
-  comp-unop-table-end)
-
-(def comp-unop-table-size (>> (- comp-unop-table-end comp-unop-table) 3))
-
-(code comp-unop
-  (parse-num l0 l1 comp-unop-table-size)
-  (parse-exp l0 l2)
-  (parse-eol l0)
-  (push l1)
-  (set l0 l2)
-  (call comp-expr)
-  (pop l1)
-  (set l0 comp-unop-table)
-  (set l0 (u64 l0 l1))
-  (push l0)
-  (call code-start)
-  (pop l1)
-  (call l1)
-  (jmp code-end))
-
-(code comp-unop-neg
-  (code-emit l0 (neg l0))
-  (ret))
-
-(code comp-unop-not
-  (code-emit l0 (not l0))
-  (ret))
-
-(code comp-unop-float
-  (code-emit l0 (1 0x66 0x0F 0xEF 0xC0))      ; pxor %xmm0,%xmm0
-  (code-emit l0 (1 0xF2 0x48 0x0F 0x2A 0xC0)) ; cvtsi2sd %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
-  (ret))
-
-(code comp-unop-fix
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0xF2 0x48 0x0F 0x2C 0xC0)) ; cvttsd2si %xmm0,%rax
-  (ret))
-
-(code comp-binop-table
-  (8 comp-binop-eq)   ; 0
-  (8 comp-binop-neq)  ; 1
-  (8 comp-binop-lt)   ; 2
-  (8 comp-binop-lte)  ; 3
-  (8 comp-binop-gt)   ; 4
-  (8 comp-binop-gte)  ; 5
-  (8 comp-binop-mod)  ; 6
-  (8 comp-binop-flt)  ; 7
-  (8 comp-binop-flte) ; 8
-  (8 comp-binop-fgt)  ; 9
-  (8 comp-binop-fgte) ; 10
-  comp-binop-table-end)
-
-(def comp-binop-table-size (>> (- comp-binop-table-end comp-binop-table) 3))
-
-(code comp-binop
-  (parse-num l0 l1 comp-binop-table-size)
-  (parse-exp l0 l2)
-  (parse-exp l0 l3)
-  (parse-eol l0)
-  (push l1)
-  (push l2)
-  (set l0 l3)
-  (call comp-expr)
-  (call code-start)
-  (code-emit l0 (push l0))
-  (call code-end)
-  (pop l0)
-  (call comp-expr)
-  (call code-start)
-  (code-emit l0 (pop l1))
-  (pop l1)
-  (set l2 comp-binop-table)
-  (set l2 (u64 l2 l1))
-  (call l2)
-  (jmp code-end))
-
-(def (comp-emit-setcc ?ins)
-  (code-emit l0 (set l2 l0))
-  (code-emit l0 (xor l0 l0))
-  (code-emit l0 (cmp l2 l1))
-  (code-emit l0 (?ins l0.8)))
-
-(code comp-binop-eq
-  (comp-emit-setcc sete)
-  (ret))
-
-(code comp-binop-neq
-  (comp-emit-setcc setne)
-  (ret))
-
-(code comp-binop-lt
-  (comp-emit-setcc setl)
-  (ret))
-
-(code comp-binop-lte
-  (comp-emit-setcc setle)
-  (ret))
-
-(code comp-binop-gt
-  (comp-emit-setcc setg)
-  (ret))
-
-(code comp-binop-gte
-  (comp-emit-setcc setge)
-  (ret))
-
-(code comp-binop-mod
-  (code-emit l0 (sign-extend))
-  (code-emit l0 (sdiv l1))
-  (code-emit l0 (set l0 l2))
-  (ret))
-
-(code comp-binop-flt
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (xor l0 l0))
-  (code-emit l0 (1 0x66 0x0F 0x2F 0xC8))      ; comisd %xmm0,%xmm1
-  (code-emit l0 (1 0x0F 0x97 0xC0))           ; seta %al
-  (ret))
-
-(code comp-binop-flte
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (xor l0 l0))
-  (code-emit l0 (1 0x66 0x0F 0x2F 0xC8))      ; comisd %xmm0,%xmm1
-  (code-emit l0 (1 0x0F 0x93 0xC0))           ; setae %al
-  (ret))
-
-(code comp-binop-fgt
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (xor l0 l0))
-  (code-emit l0 (1 0x66 0x0F 0x2F 0xC1))      ; comisd %xmm1,%xmm0
-  (code-emit l0 (1 0x0F 0x97 0xC0))           ; seta %al
-  (ret))
-
-(code comp-binop-fgte
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (xor l0 l0))
-  (code-emit l0 (1 0x66 0x0F 0x2F 0xC1))      ; comisd %xmm1,%xmm0
-  (code-emit l0 (1 0x0F 0x93 0xC0))           ; setae %al
-  (ret))
-
-(code comp-polop-table
-  (8 comp-polop-add)  ; 0
-  (8 comp-polop-sub)  ; 1
-  (8 comp-polop-mul)  ; 2
-  (8 comp-polop-div)  ; 3
-  (8 comp-polop-and)  ; 4
-  (8 comp-polop-or)   ; 5
-  (8 comp-polop-fadd) ; 6
-  (8 comp-polop-fsub) ; 6
-  (8 comp-polop-fmul) ; 6
-  (8 comp-polop-fdiv) ; 6
-  comp-polop-table-end)
-
-(def comp-polop-table-size (>> (- comp-polop-table-end comp-polop-table) 3))
-
-(code comp-polop
-  (push x0)
-  (push x1)
-  (parse-num l0 l1 comp-polop-table-size)
-  (set x0 comp-polop-table)
-  (set x0 (u64 x0 l1))
-  (call comp-exprs)
-  (set x1 l0)
-  (jmp .test)
-.loop
-  (call code-start)
-  (code-emit l0 (pop l1))
-  (call x0)
-  (sub x1 1)
-  (call code-end)
-.test
-  (cmp x1 1)
-  (jg .loop)
-  (pop x1)
-  (pop x0)
-  (ret))
-
-(code comp-polop-add
-  (code-emit l0 (add l0 l1))
-  (ret))
-
-(code comp-polop-sub
-  (code-emit l0 (sub l0 l1))
-  (ret))
-
-(code comp-polop-mul
-  (code-emit l0 (mul l0 l1))
-  (ret))
-
-(code comp-polop-div
-  (code-emit l0 (sign-extend))
-  (code-emit l0 (sdiv l1))
-  (ret))
-
-(code comp-polop-and
-  (code-emit l0 (and l0 l1))
-  (ret))
-
-(code comp-polop-or
-  (code-emit l0 (or l0 l1))
-  (ret))
-
-(code comp-polop-fadd
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (1 0xF2 0x0F 0x58 0xC1))      ; addsd %xmm1,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
-  (ret))
-
-(code comp-polop-fsub
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (1 0xF2 0x0F 0x5C 0xC1))      ; subsd %xmm1,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
-  (ret))
-
-(code comp-polop-fmul
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (1 0xF2 0x0F 0x59 0xC1))      ; mulsd %xmm1,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
-  (ret))
-
-(code comp-polop-fdiv
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
-  (code-emit l0 (1 0xF2 0x0F 0x5E 0xC1))      ; divsd %xmm1,%xmm0
-  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
-  (ret))
-
+Defining local variables, labels, etc needs to make sure that
+the name does not have a book prefix, and also needs to handle
+the special [code lang] book.
+@=
 (code locals-define
   ;; l0 - symbol
   ;; l1 - value
@@ -2586,6 +2875,750 @@
 .not-local-symbol-string
   (1 " not a local symbol\n" 0))
 
+@* Expression parsing
+
+Now we get to compiling stuff! Almost.
+
+Some convenience macros will come in handy when destructuring
+the expression objects. This is similar to the [code lang/syntax-parse]
+macro that does about the same job for Z1 macro definitions.
+@=
+(code syntax
+  (let l0 (u8 .syntax-error-string))
+  (jmp error)
+.syntax-error-string
+  (1 "\nsyntax error\n" 0))
+
+(def (parse-eol ?ptr)
+  (parse-eol ?ptr syntax))
+
+(def (parse-eol ?ptr ?error)
+  (cmp ?ptr 0)
+  (jne ?error))
+
+(def (parse-exp ?ptr ?res)
+  (parse-exp ?ptr ?res syntax))
+
+(def (parse-exp ?ptr ?res ?error)
+  (assert-type ?ptr exp-type-pair ?error)
+  (set ?res (exp-first ?ptr))
+  (set ?ptr (exp-rest ?ptr)))
+
+(def (parse-num ?ptr ?res ?max)
+  (parse-num ?ptr ?res ?max syntax))
+
+(def (parse-num ?ptr ?res ?max ?error)
+  (parse-exp ?ptr ?res ?error)
+  (assert-type ?res exp-type-number ?error)
+  (set ?res (exp-num-val ?res))
+  (cmp ?res ?max)
+  (jae ?error))
+
+(def (parse-symbol ?ptr ?res)
+  (parse-symbol ?ptr ?res  syntax))
+
+(def (parse-symbol ?ptr ?res ?error)
+  (parse-exp ?ptr ?res)
+  (assert-type ?res exp-type-symbol ?error))
+
+@* Macro expansion
+
+The first step when compiling an expression is to expand any macros
+in it.
+
+The [code comp-expand-form] function does the fundamental job
+of calling the transformer function. It is called by [code comp-expand]
+and [code comp-set], for ordinary macros and setter macros, respectively.
+
+@=
+(code comp-expand-form
+  ;; l0 - form
+  ;; l1 - symbol
+  ;; l2 - expander index
+  ;; l3 - extra arg
+  ;; ->
+  ;; l0 - form
+  ;; l1 - changed
+  (push l3)
+  (push l0)
+  (push l2)
+  (set l0 l1)
+  (call lookup)
+  (pop l2)
+  (cmp l0 def-type-macro)
+  (jne .not-macro)
+  (mul l2 8)
+  (add l1 l2)
+  (set l0 (u64 l1))
+  (cmp l0 0)
+  (je .not-macro)
+  (call l0)
+  (add sp 16)
+  (set l1 1)
+  (ret)
+.not-macro
+  (pop l0)
+  (pop l3)
+  (set l1 0)
+  (ret))
+
+(code comp-expand
+.again
+  (assert-type l0 exp-type-symbol .not-symbol)
+  (set l1 l0)
+  (set l2 1)
+  (jmp .expand)
+.not-symbol
+  (assert-type l0 exp-type-pair .not-call)
+  (set l1 (exp-first l0))
+  (assert-type l1 exp-type-symbol .not-call)
+  (set l2 0)
+.expand
+  (call comp-expand-form)
+  (cmp l1 0)
+  (jne .again)
+.not-call
+  (ret))
+
+@* Compiling expressions
+
+And now we finally come to the entry point of the actual compiler,
+the [code comp-expr] function. It does a case analysis of the
+expression object and emits the appropriate code.
+
+For example, when the input form is the number [emph N], [code
+comp-expr] directly emits a [code (set l0 [emph N])] instruction.
+
+The basic rule is that [code comp-expr] emits whatever code is
+needed to compute the given expression and put its value into
+the [code l0] register.
+
+Any intermeditae values will be temporarily pushed onto the stack.
+
+For example, [code (+ 1 2)] will be compiled into
+@c
+(set l0 2)
+(push l0)
+(set l0 1)
+(pop l1)
+(add l0 l1)
+@
+No optimizations are performed, such as putting the [code 2] directly
+into [code l1], or even computing the whole sum at compile time.
+
+Thus, the generated code is pretty bad, but good enough for a
+lot of programs.
+
+In order to make sense of all the generated code, you need to
+also look at other functions. For example, how local variables
+are stored is explained together with [code comp-var] and [code
+comp-fun], and you have to know that to understand why [code
+comp-expr] emits [code (set l0 (u64 x1 [emph offset]))] to retrieve
+their value.
+
+@=
+(code comp-expr
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-curexp l1))
+  (push l1)
+  (set l1 (ctxt-comp cp))
+  (set (cc-curexp l1) l0)
+  (call comp-expand)
+  (assert-type l0 exp-type-number .not-number)
+  (set l1 (exp-num-val l0))
+  (push l1)
+  (call code-start)
+  (pop l1)
+  (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l1)
+  (call code-end)
+  (jmp .return)
+.not-number
+  (assert-type l0 exp-type-symbol .not-symbol)
+  (call lookup)
+  (cmp l0 def-type-var)
+  (jne .not-var)
+  (neg l1)
+  (push l1)
+  (call code-start)
+  (pop l1)
+  (code-emit l0 (set l0 (u64 x1 0xFFFF)) l1)
+  (call code-end)
+  (jmp .return)
+.not-var
+  (cmp l0 def-type-mem)
+  (jne .not-mem)
+  (neg l1)
+  (push l1)
+  (call code-start)
+  (pop l1)
+  (code-emit l0 (let l0 (u8 x1 0xFFFF)) l1)
+  (call code-end)
+  (jmp .return)
+.not-mem
+  (cmp l0 def-type-macro)
+  (jne .not-macro)
+  (jmp syntax)
+.not-macro
+  ;; label or func
+  (push l1)
+  (call code-start)
+  (pop l1)
+  (code-emit l0 (set l0 0x1234567812345678) l1)
+  (call code-end)
+  (jmp .return)
+.not-symbol
+  (assert-type l0 exp-type-string .not-string)
+  (call comp-string-literal)
+  (jmp .return)
+.not-string
+  (parse-exp l0 l1)
+  (assert-type l1 exp-type-number .call)
+  (set l1 (exp-num-val l1))
+  (cmp l1 comp-expr-table-size)
+  (jae syntax)
+  (set l2 (ctxt-comp cp))
+  (cmp (cc-level l2) 0)
+  (ja .in-function)
+  (cmp l1 comp-first-local-only)
+  (jae syntax)
+.in-function
+  (set l2 comp-expr-table)
+  (mul l1 8)
+  (add l2 l1)
+  (set l2 (u64 l2))
+  (call l2)
+  (jmp .return)
+.call
+  (set l2 (ctxt-comp cp))
+  (cmp (cc-level l2) 0)
+  (je syntax)
+  (push x0)
+  (set x0 0)
+  (push l1)
+  (cmp l0 0)
+  (je .done)
+  (call comp-exprs)
+  (set x0 l0)
+  (call code-start)
+  (code-emit l0 (push l0)) ;; ???
+  (call code-end)
+.done
+  (pop l0)
+  (call comp-expr)
+  (call code-start)
+  (code-emit l0 (call l0))
+  (mul x0 8)
+  (code-emit l0 (add sp 0x1234) x0)
+  (call code-end)
+  (pop x0)
+.return
+  (pop l1)
+  (set l2 (ctxt-comp cp))
+  (set (cc-curexp l2) l1)
+  (ret))
+@
+The [code comp-expr] function handles everything except primitives.
+When a primitive is encountered, such as [code (10 foo)], it
+calls one of the functions from the following table. For [code
+(10 foo)], it would call [code comp-var], for example.
+
+@=
+(code comp-expr-table
+  (8 comp-begin)    ; 0
+  (8 comp-func)     ; 1
+  (8 comp-macro)    ; 2
+  (8 comp-data)     ; 3
+  (8 comp-label)    ; 4
+  (8 comp-goto)     ; 5
+  (8 comp-if)       ; 6
+  (8 comp-unop)     ; 7
+  (8 comp-binop)    ; 8
+  (8 comp-polop)    ; 9
+  (8 comp-var)      ; 10
+  (8 comp-set)      ; 11
+  (8 comp-loc)      ; 12
+  (8 comp-memref)   ; 13
+  (8 comp-memset)   ; 14
+  (8 comp-mem)      ; 15
+  (8 comp-ctxt)     ; 16
+  (8 comp-set-ctxt) ; 17
+  comp-expr-table-end)
+
+(def comp-first-local-only 4)
+(def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
+
+@
+Here is a helper function [code comp-exprs] that helps with pushing
+things to the stack.
+
+It is given a non-empty list of expressions, and emits code that
+evaluates the first expression in the list into [code l0], and
+the leaves the remaining ones on the stack, in such an order
+that the first [code pop] will get the value for the second expression
+in the list, the next [code pop] gets the third, and so on. The
+return value of [code comp-exprs] is the number of values on
+the stack.
+
+It is used by [code comp-expr] to push all arguments for a function
+call onto the stack, and also by [code comp-polop] to handle
+the multiple arguments for [code +] etc.
+
+@=
+(code comp-exprs
+  ;; l0 - list
+  ;; =>
+  ;; l0 - number of emited pushes
+  (cmp l0 0)
+  (je syntax)
+  (set l2 (exp-type l0))
+  (cmp l2 exp-type-pair)
+  (jne syntax)
+  (push l0)
+  (set l2 0)
+  (set l0 (exp-rest l0))
+  (cmp l0 0)
+  (je .done)
+  (call comp-exprs)
+  (push l0)
+  (call code-start)
+  (code-emit l0 (push l0))
+  (call code-end)
+  (pop l2)
+.done
+  (pop l0)
+  (set l0 (exp-first l0))
+  (push l2)
+  (call comp-expr)
+  (pop l0)
+  (add l0 1)
+  (ret))
+@
+And now we only have to implement all the primitives. The first
+one, [code begin], is easy.
+@=
+(code comp-begin
+  (push x0)
+  (set x0 l0)
+  (jmp .test)
+.loop
+  (parse-exp x0 l0)
+  (call comp-expr)
+.test
+  (cmp x0 0)
+  (jne .loop)
+  (pop x0)
+  (ret))
+@
+The second one, [code if], is already more interesting. For [code
+(if <cond> <then> <else>)], it emits code of this form:
+@c
+<cond>
+(cmp l0 0)
+(je .else)
+<then>
+(jmp .end)
+.else
+<else>
+.end
+@
+The values for the labels are only known at the end, so [code
+comp-if] has to go back and patch up the jump instructions.
+
+If you know how [code <] is implemented below, you can see what
+frankly horrible code will be generated for something simple
+like [code (if (and (< x 5) flag) ...)]. But we don't care too
+much.
+
+@=
+(code comp-if
+  (push x0)
+  (push x1)
+  (set x0 l0)
+  (parse-exp x0 l0)
+  (call comp-expr)
+  (call code-start)
+  (code-emit l0 (cmp l0 0))
+  (code-emit l0 (je 0x1234))
+  (set x1 l0)
+  (call code-end)
+  (parse-exp x0 l0)
+  (call comp-expr)
+  (call code-start)
+  (code-emit l0 (jmp 0x1234))
+  (set l1 l0)
+  (sub l1 x1)
+  (set (u32 x1 -4) l1)
+  (set x1 l0)
+  (call code-end)
+  (parse-exp x0 l0)
+  (parse-eol x0)
+  (call comp-expr)
+  (set l0 (ctxt-comp cp))
+  (set l0 (cc-code-ptr l0))
+  (sub l0 x1)
+  (set (u32 x1 -4) l0)
+  (pop x1)
+  (pop x0)
+  (ret))
+@
+In addition to [code if], the primitive version of Z1 only has
+[code goto] as a control flow construct.
+
+The target of a [code goto] is defined with a [code label] expression.
+It simple stores the current instruction pointer as the value
+of the label's symbol.
+
+A [code goto] can of course jump to a label that hasn't been defined
+yet, so we emit a generic [code jmp] instruction and register
+a fixup that will put in the correct value later.
+@=
+(code comp-label
+  (parse-symbol l0 l1)
+  (parse-eol l0)
+  (set l0 l1)
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-code-ptr l1))
+  (set l2 def-type-label)
+  (jmp locals-define))
+
+(code comp-goto
+  (push l0)
+  (call code-start)
+  (code-emit l0 (jmp 0x1234))
+  (push l0)
+  (call code-end)
+  (call fixup-alloc)
+  (set (fx-func l0) fixup-func-goto)
+  (pop l1)
+  (sub l1 4)
+  (set (fx-ptr l0) l1)
+  (pop l1)
+  (parse-symbol l1 l2)
+  (parse-eol l1)
+  (set (fx-val l0) l2)
+  (ret))
+
+(code fixup-func-goto
+  (set l1 (fx-val x0))
+  (set l0 (exp-sym-type l1))
+  (cmp l0 def-type-label)
+  (jne error-not-label-exp)
+  (set l0 (fx-ptr x0))
+  (set l2 (exp-sym-val l1))
+  (sub l2 l0)
+  (sub l2 4)
+  (set (u32 l0) l2)
+  (ret))
+@
+Here is the other use of fixups: string literals.
+@=
+(code comp-string-literal
+  (push l0)
+  (call code-start)
+  (code-emit l0 (let l0 (u8 0x1234)))
+  (call code-end)
+  (call fixup-alloc)
+  (set (fx-func l0) fixup-func-string-literal)
+  (set l1 (ctxt-comp cp))
+  (set l1 (cc-code-ptr l1))
+  (sub l1 4)
+  (set (fx-ptr l0) l1)
+  (pop l1)
+  (set (fx-val l0) l1)
+  (ret))
+
+(code fixup-func-string-literal
+  (set l0 (fx-val x0))
+  (add l0 (sizeof exp-string))
+  (call strlen)
+  (add l0 1)
+  (call code-alloc)
+  (set l2 (fx-ptr x0))
+  (set l1 l0)
+  (sub l1 l2)
+  (sub l1 4)
+  (set (u32 l2) l1)
+  (set l1 (fx-val x0))
+  (add l1 (sizeof exp-string))
+  (jmp strcpy))
+@
+Some primitives have a second table lookup, like the unary operators.
+The [code comp-unop] function will emit code that leaves the
+single argument in register [code l0], and then branches to a
+function that computes the desired operator with [code l0].
+
+The floating point stuff looks horrible since the x86-64 architecture
+can't do floating point operations in its general purpose registers.
+So we have to move things back and forth between [code l0] and
+the [code xmm0] register, and since the assembler in the [code
+asm] book doesn't implement any floating point instructions either,
+we have to write it all down in machine code here.
+@=
+(code comp-unop-table
+  (8 comp-unop-neg)   ; 0
+  (8 comp-unop-not)   ; 1
+  (8 comp-unop-float) ; 2
+  (8 comp-unop-fix)   ; 3
+  comp-unop-table-end)
+
+(def comp-unop-table-size (>> (- comp-unop-table-end comp-unop-table) 3))
+
+(code comp-unop
+  (parse-num l0 l1 comp-unop-table-size)
+  (parse-exp l0 l2)
+  (parse-eol l0)
+  (push l1)
+  (set l0 l2)
+  (call comp-expr)
+  (pop l1)
+  (set l0 comp-unop-table)
+  (mul l1 8)
+  (add l0 l1)
+  (set l0 (u64 l0))
+  (push l0)
+  (call code-start)
+  (pop l1)
+  (call l1)
+  (jmp code-end))
+
+(code comp-unop-neg
+  (code-emit l0 (neg l0))
+  (ret))
+
+(code comp-unop-not
+  (code-emit l0 (not l0))
+  (ret))
+
+(code comp-unop-float
+  (code-emit l0 (1 0x66 0x0F 0xEF 0xC0))      ; pxor %xmm0,%xmm0
+  (code-emit l0 (1 0xF2 0x48 0x0F 0x2A 0xC0)) ; cvtsi2sd %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-unop-fix
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0xF2 0x48 0x0F 0x2C 0xC0)) ; cvttsd2si %xmm0,%rax
+  (ret))
+@
+Binary operations are very similar. The [code comp-binop] function
+prepares the arguments in registers [code l0] and [code l1],
+and then calls a function to implement the desired operation.
+@=
+(code comp-binop-table
+  (8 comp-binop-eq)   ; 0
+  (8 comp-binop-neq)  ; 1
+  (8 comp-binop-lt)   ; 2
+  (8 comp-binop-lte)  ; 3
+  (8 comp-binop-gt)   ; 4
+  (8 comp-binop-gte)  ; 5
+  (8 comp-binop-mod)  ; 6
+  (8 comp-binop-flt)  ; 7
+  (8 comp-binop-flte) ; 8
+  (8 comp-binop-fgt)  ; 9
+  (8 comp-binop-fgte) ; 10
+  comp-binop-table-end)
+
+(def comp-binop-table-size (>> (- comp-binop-table-end comp-binop-table) 3))
+
+(code comp-binop
+  (parse-num l0 l1 comp-binop-table-size)
+  (parse-exp l0 l2)
+  (parse-exp l0 l3)
+  (parse-eol l0)
+  (push l1)
+  (push l2)
+  (set l0 l3)
+  (call comp-expr)
+  (call code-start)
+  (code-emit l0 (push l0))
+  (call code-end)
+  (pop l0)
+  (call comp-expr)
+  (call code-start)
+  (code-emit l0 (pop l1))
+  (pop l1)
+  (set l2 comp-binop-table)
+  (mul l1 8)
+  (add l2 l1)
+  (set l2 (u64 l2))
+  (call l2)
+  (jmp code-end))
+
+(def (comp-emit-setcc ?ins)
+  (code-emit l0 (set l2 l0))
+  (code-emit l0 (cmp l2 l1))
+  (code-emit l0 (?ins l0)))
+
+(code comp-binop-eq
+  (comp-emit-setcc sete)
+  (ret))
+
+(code comp-binop-neq
+  (comp-emit-setcc setne)
+  (ret))
+
+(code comp-binop-lt
+  (comp-emit-setcc setl)
+  (ret))
+
+(code comp-binop-lte
+  (comp-emit-setcc setle)
+  (ret))
+
+(code comp-binop-gt
+  (comp-emit-setcc setg)
+  (ret))
+
+(code comp-binop-gte
+  (comp-emit-setcc setge)
+  (ret))
+
+(code comp-binop-mod
+  (code-emit l0 (sign-extend l0))
+  (code-emit l0 (sdiv l1))
+  (code-emit l0 (set l0 l2))
+  (ret))
+
+(code comp-binop-flt
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC8))      ; comisd %xmm0,%xmm1
+  (code-emit l0 (1 0x0F 0x97 0xC0))           ; seta %al
+  (ret))
+
+(code comp-binop-flte
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC8))      ; comisd %xmm0,%xmm1
+  (code-emit l0 (1 0x0F 0x93 0xC0))           ; setae %al
+  (ret))
+
+(code comp-binop-fgt
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC1))      ; comisd %xmm1,%xmm0
+  (code-emit l0 (1 0x0F 0x97 0xC0))           ; seta %al
+  (ret))
+
+(code comp-binop-fgte
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (xor l0 l0))
+  (code-emit l0 (1 0x66 0x0F 0x2F 0xC1))      ; comisd %xmm1,%xmm0
+  (code-emit l0 (1 0x0F 0x93 0xC0))           ; setae %al
+  (ret))
+@
+Operations with an arbitrary number of arguments are implemented
+by first pushing all arguments onto the stack (with [code comp-exprs])
+and calling specific functions that emit the code to pop one
+value off the stack and combine it with [code l0] in the desired
+way.
+@=
+(code comp-polop-table
+  (8 comp-polop-add)  ; 0
+  (8 comp-polop-sub)  ; 1
+  (8 comp-polop-mul)  ; 2
+  (8 comp-polop-div)  ; 3
+  (8 comp-polop-and)  ; 4
+  (8 comp-polop-or)   ; 5
+  (8 comp-polop-fadd) ; 6
+  (8 comp-polop-fsub) ; 6
+  (8 comp-polop-fmul) ; 6
+  (8 comp-polop-fdiv) ; 6
+  comp-polop-table-end)
+
+(def comp-polop-table-size (>> (- comp-polop-table-end comp-polop-table) 3))
+
+(code comp-polop
+  (push x0)
+  (push x1)
+  (parse-num l0 l1 comp-polop-table-size)
+  (set x0 comp-polop-table)
+  (mul l1 8)
+  (add x0 l1)
+  (set x0 (u64 x0))
+  (call comp-exprs)
+  (set x1 l0)
+  (jmp .test)
+.loop
+  (call code-start)
+  (code-emit l0 (pop l1))
+  (call x0)
+  (sub x1 1)
+  (call code-end)
+.test
+  (cmp x1 1)
+  (jg .loop)
+  (pop x1)
+  (pop x0)
+  (ret))
+
+(code comp-polop-add
+  (code-emit l0 (add l0 l1))
+  (ret))
+
+(code comp-polop-sub
+  (code-emit l0 (sub l0 l1))
+  (ret))
+
+(code comp-polop-mul
+  (code-emit l0 (mul l0 l1))
+  (ret))
+
+(code comp-polop-div
+  (code-emit l0 (sign-extend l0))
+  (code-emit l0 (sdiv l1))
+  (ret))
+
+(code comp-polop-and
+  (code-emit l0 (and l0 l1))
+  (ret))
+
+(code comp-polop-or
+  (code-emit l0 (or l0 l1))
+  (ret))
+
+(code comp-polop-fadd
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x58 0xC1))      ; addsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-polop-fsub
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x5C 0xC1))      ; subsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-polop-fmul
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x59 0xC1))      ; mulsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+
+(code comp-polop-fdiv
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC0)) ; movq %rax,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x6E 0xC9)) ; movq %rcx,%xmm1
+  (code-emit l0 (1 0xF2 0x0F 0x5E 0xC1))      ; divsd %xmm1,%xmm0
+  (code-emit l0 (1 0x66 0x48 0x0F 0x7E 0xC0)) ; movq %xmm0,%rax
+  (ret))
+@
+Local variables are stored in the stack. When a function is entered,
+the first thing it'll do is to move the the stack pointer down
+to reserve space for all local variables in one go. How much
+space is needed is tracked in the [code cc-next-frame-offset]
+field in the compiler state.
+
+Each local variable is a 64 bit value, which needs 8 bytes. So
+to allocate a new local variable, we bump the frame offset by
+8 and put it into the symbol value slot.
+@=
 (code comp-var
   (parse-symbol l0 l1)
   (parse-eol l0)
@@ -2596,7 +3629,10 @@
   (set (cc-next-frame-offset l2) l1)
   (set l2 def-type-var)
   (jmp locals-define))
-
+@
+A [code mem] expression reserves an arbitrary amount of local
+space for a function call.
+@=
 (code comp-mem
   (parse-symbol l0 l1)
   (parse-num l0 l2 0x1000)
@@ -2608,7 +3644,11 @@
   (set (cc-next-frame-offset l3) l1)
   (set l2 def-type-mem)
   (jmp locals-define))
-
+@
+The only thing that can be assigned to directly is a local variable,
+but a lot of other work is done by expanding the macros inside
+a [code set] expression.
+@=
 (code comp-set
   (parse-exp l0 l1)
   (parse-exp l0 l2)
@@ -2649,7 +3689,84 @@
   (je syntax)
   (pop l3)
   (jmp comp-expr))
+@
+Here are two simple functions, to compile the primitive expressions
+that access the context pointer from Z1.
+@=
+(code comp-ctxt
+  (parse-eol l0)
+  (call code-start)
+  (code-emit l0 (set l0 cp))
+  (call code-end)
+  (ret))
 
+(code comp-set-ctxt
+  (parse-exp l0 l1)
+  (parse-eol l0)
+  (set l0 l1)
+  (call comp-expr)
+  (call code-start)
+  (code-emit l0 (set cp l0))
+  (call code-end)
+  (ret))
+@
+Reading memory is pretty straighforward, although there are a
+lot of variations.
+
+The [code comp-memref] function first emits the code that computes
+the memory address, and then branches out to emit a simple [code
+(set l0 (u8 l0))] instruction, for example.
+@=
+(code comp-memref-table
+  (8 comp-memref-u8)   ; 0
+  (8 comp-memref-u16)  ; 1
+  (8 comp-memref-u32)  ; 2
+  (8 comp-memref-u64)  ; 3
+  (8 comp-memref-s8)   ; 4
+  (8 comp-memref-s16)  ; 5
+  (8 comp-memref-s32)  ; 6
+  (8 comp-memref-s64)  ; 7
+  comp-memref-table-end)
+
+(def comp-memref-table-size (>> (- comp-memref-table-end comp-memref-table) 3))
+
+(code comp-memref
+  (parse-num l0 l1 comp-memref-table-size)
+  (parse-exp l0 l2)
+  (parse-eol l0)
+  (push l1)
+  (set l0 l2)
+  (call comp-expr)
+  (call code-start)
+  (set l2 comp-memref-table)
+  (pop l1)
+  (mul l1 8)
+  (add l2 l1)
+  (set l2 (u64 l2))
+  (call l2)
+  (jmp code-end))
+
+(def (def-comp-memref ?name ?type)
+  (code ?name
+     (code-emit l0 (set l0 (?type l0)))
+     (ret)))
+
+(def-comp-memref comp-memref-u8   u8)
+(def-comp-memref comp-memref-u16 u16)
+(def-comp-memref comp-memref-u32 u32)
+(def-comp-memref comp-memref-u64 u64)
+(def-comp-memref comp-memref-s8   s8)
+(def-comp-memref comp-memref-s16 s16)
+(def-comp-memref comp-memref-s32 s32)
+(def-comp-memref comp-memref-s64 s64)
+@
+And here is the function to compile the [code loc] primitive.
+It will evaluate either to the address of a local variable, or
+to the address used in a memory accessor.
+
+For example, [code (loc (u8 (+ ptr 10)))] is the same as [code
+(+ ptr 10)].
+@=
 (code comp-loc
   (parse-exp l0 l1)
   (parse-eol l0)
@@ -2677,65 +3794,12 @@
   (jmp comp-expr)
 .newline
   (1 "\n" 0))
-
-(code comp-ctxt
-  (parse-eol l0)
-  (call code-start)
-  (code-emit l0 (set l0 cp))
-  (call code-end)
-  (ret))
-
-(code comp-set-ctxt
-  (parse-exp l0 l1)
-  (parse-eol l0)
-  (set l0 l1)
-  (call comp-expr)
-  (call code-start)
-  (code-emit l0 (set cp l0))
-  (call code-end)
-  (ret))
-
-(code comp-memref-table
-  (8 comp-memref-u8)   ; 0
-  (8 comp-memref-u16)  ; 1
-  (8 comp-memref-u32)  ; 2
-  (8 comp-memref-u64)  ; 3
-  (8 comp-memref-s8)   ; 4
-  (8 comp-memref-s16)  ; 5
-  (8 comp-memref-s32)  ; 6
-  (8 comp-memref-s64)  ; 7
-  comp-memref-table-end)
-
-(def comp-memref-table-size (>> (- comp-memref-table-end comp-memref-table) 3))
-
-(code comp-memref
-  (parse-num l0 l1 comp-memref-table-size)
-  (parse-exp l0 l2)
-  (parse-eol l0)
-  (push l1)
-  (set l0 l2)
-  (call comp-expr)
-  (call code-start)
-  (set l2 comp-memref-table)
-  (pop l1)
-  (set l2 (u64 l2 l1))
-  (call l2)
-  (jmp code-end))
-
-(def (def-comp-memref ?name ?type)
-  (code ?name
-     (code-emit l0 (set l0 (?type l0)))
-     (ret)))
-
-(def-comp-memref comp-memref-u8   u8)
-(def-comp-memref comp-memref-u16 u16)
-(def-comp-memref comp-memref-u32 u32)
-(def-comp-memref comp-memref-u64 u64)
-(def-comp-memref comp-memref-s8   s8)
-(def-comp-memref comp-memref-s16 s16)
-(def-comp-memref comp-memref-s32 s32)
-(def-comp-memref comp-memref-s64 s64)
-
+@
+Writing into memory locations is also pretty straightforward.
+The address ends up in [code l1] and the value in [code l0],
+and then we only need to emit the right variant of [code (set
+(u8 l1) 0)].
+@=
 (code comp-memset-table
   (8 comp-memset-u8)   ; 0
   (8 comp-memset-u16)  ; 1
@@ -2767,7 +3831,9 @@
   (code-emit l0 (pop l1))
   (set l2 comp-memset-table)
   (pop l1)
-  (set l2 (u64 l2 l1))
+  (mul l1 8)
+  (add l2 l1)
+  (set l2 (u64 l2))
   (call l2)
   (jmp code-end))
 
@@ -2785,6 +3851,23 @@
 (def-comp-memset comp-memset-s32 s32)
 (def-comp-memset comp-memset-s64 s64)
 
+@* Compiling functions
+
+And now the function to compile a function definition.
+
+The outline of a function looks like this:
+@c
+(push x1)
+(set x1 sp)
+(sub sp <space for local variables>)
+<body>
+(set sp x1)
+(pop x1)
+(ret)
+@
+Local variables (and function arguments) are accessed via [code x1].
+
+@=
 (code comp-func
   (set l1 (ctxt-comp cp))
   (cmp (cc-level l1) 0)
@@ -2794,7 +3877,10 @@
   (set l2 (- EXP-HASH-SIZE 1))
   (jmp .clear-locals-test)
 .clear-locals-loop
-  (set l3 (u64 l1 l2))
+  (set l3 l2)
+  (mul l3 8)
+  (add l3 l1)
+  (set l3 (u64 l3))
   (jmp .clear-locals-chain-test)
 .clear-locals-chain-loop
   (set (exp-sym-type l3) def-type-undef)
@@ -2869,7 +3955,78 @@
   (set l1 (ctxt-comp cp))
   (set (cc-level l1) 0)
   (ret))
+@
+When defining a macro, one just has to record the transformation
+function in the book. The only complication is that there are
+four variants, so the value of the definition is actually a array
+of four pointers to functions.
+@=
+(code comp-macro
+  (set l1 (ctxt-comp cp))
+  (cmp (cc-level l1) 0)
+  (jne syntax)
+  (push x0)
+  (push x1)
+  (push x2)
+  (parse-symbol l0 x0)
+  (parse-num    l0 x1 4)
+  (parse-symbol l0 x2)
+  (parse-eol    l0)
+  (let l0 (u8 x0 (sizeof exp-symbol)))
+  (call book-check-current)
+  (push l1)
+  (call book-search)
+  (cmp l0 0)
+  (jne .already-def)
+  (pop l0)
+  (call globals-define)
+  (set (glb-type l0) def-type-macro)
+  (push l0)
+  (set l0 (* 4 (sizeof u64)))
+  (call code-alloc)
+  (pop l1)
+  (set (glb-val l1) l0)
+  (set (u64 l0 0) 0)
+  (set (u64 l0 8) 0)
+  (set (u64 l0 16) 0)
+  (set (u64 l0 24) 0)
+  (set l0 l1)
+  (jmp .define)
+.already-def
+  (pop l1)
+  (cmp (glb-type l0) def-type-macro)
+  (jne error-redef-global)
+  (set l2 (glb-val l0))
+  (set l3 x1)
+  (mul l3 8)
+  (add l3 l2)
+  (set l2 (u64 l3))
+  (cmp l2 0)
+  (jne error-redef-global)
+.define
+  (push l0)
+  (set l0 x2)
+  (call lookup)
+  (cmp l0 def-type-func)
+  (jne syntax)
+  (pop l0)
+  (set l0 (glb-val l0))
+  (mul x1 8)
+  (add l0 x1)
+  (set (u64 l0) l1)
+  (pop x2)
+  (pop x1)
+  (pop x0)
+  (ret))
+@
+And now we come already to the last primitive, [code data]. This
+has been added as a bit of an afterthought, and isn't as easy
+to use as it could be. But it does it's job of putting arbitrary
+data into the a book.
 
+Note how it doesn't even have it's own definition type and makes
+the defined thing look like a function.
+@=
 (code comp-data
   (push x0)
   (set l1 (ctxt-comp cp))
@@ -2918,7 +4075,9 @@
   (set x0 l0)
   (parse-num x0 l1 comp-data-size-table-size)
   (set l0 comp-data-size-table)
-  (set x1 (u64 l0 l1))
+  (mul l1 8)
+  (add l1 l0)
+  (set x1 (u64 l1))
   (set x2 0)
 .next
   (cmp x0 0)
@@ -2966,7 +4125,9 @@
   (set x0 l0)
   (parse-num x0 l1 comp-data-table-size)
   (set l0 comp-data-table)
-  (set x1 (u64 l0 l1))
+  (mul l1 8)
+  (add l1 l0)
+  (set x1 (u64 l1))
 .next
   (cmp x0 0)
   (je .done)
@@ -3030,346 +4191,324 @@
   (call code-end)
   (ret))
 
-(code comp-macro
-  (set l1 (ctxt-comp cp))
-  (cmp (cc-level l1) 0)
-  (jne syntax)
-  (push x0)
-  (push x1)
-  (push x2)
-  (parse-symbol l0 x0)
-  (parse-num    l0 x1 4)
-  (parse-symbol l0 x2)
-  (parse-eol    l0)
-  (let l0 (u8 x0 (sizeof exp-symbol)))
-  (call book-check-current)
-  (push l1)
-  (call book-search)
-  (cmp l0 0)
-  (jne .already-def)
-  (pop l0)
-  (call globals-define)
-  (set (glb-type l0) def-type-macro)
-  (push l0)
-  (set l0 (* 4 (sizeof u64)))
-  (call code-alloc)
-  (pop l1)
-  (set (glb-val l1) l0)
-  (set (u64 l0 0) 0)
-  (set (u64 l0 8) 0)
-  (set (u64 l0 16) 0)
-  (set (u64 l0 24) 0)
-  (set l0 l1)
-  (jmp .define)
-.already-def
-  (pop l1)
-  (cmp (glb-type l0) def-type-macro)
-  (jne error-redef-global)
-  (set l2 (glb-val l0))
-  (set l2 (u64 l2 x1))
-  (cmp l2 0)
-  (jne error-redef-global)
-.define
-  (push l0)
-  (set l0 x2)
-  (call lookup)
-  (cmp l0 def-type-func)
-  (jne syntax)
-  (pop l0)
-  (set l0 (glb-val l0))
-  (set (u64 l0 x1) l1)
-  (pop x2)
-  (pop x1)
-  (pop x0)
+@* Exported "exp" functions
+
+If you have read the [code lang] book, you know about the [code
+exp] API that is used to work with the expression objects that
+this compiler here understands. Functions like [code exp/first],
+[code exp/make-number], [code exp/gensym], etc.
+
+Theses functions are defined here, in assembler language. During
+boot, a [code book] named "exp" is created and definitions for
+them are added to it.
+
+The [code exp] functions can only be called while there is a valid
+compiler context, since they allocate new objects in the mempool
+of that context, and they also abort the compilation when they
+run into errors.
+@=
+(code comp-type
+  (set l0 (u64 sp 8))
+  (set l0 (exp-type l0))
   (ret))
 
-(code comp-label
-  (parse-symbol l0 l1)
-  (parse-eol l0)
-  (set l0 l1)
-  (set l1 (ctxt-comp cp))
-  (set l1 (cc-code-ptr l1))
-  (set l2 def-type-label)
-  (jmp locals-define))
-
-(code comp-goto
-  (push l0)
-  (call code-start)
-  (code-emit l0 (jmp 0x1234))
-  (push l0)
-  (call code-end)
-  (call fixup-alloc)
-  (set (fx-func l0) fixup-func-goto)
-  (pop l1)
-  (sub l1 4)
-  (set (fx-ptr l0) l1)
-  (pop l1)
-  (parse-symbol l1 l2)
-  (parse-eol l1)
-  (set (fx-val l0) l2)
+(code comp-first
+  (set l0 (u64 sp 8))
+  (assert-type l0 exp-type-pair syntax)
+  (set l0 (exp-first l0))
   (ret))
 
-(code fixup-func-goto
-  (set l1 (fx-val x0))
-  (set l0 (exp-sym-type l1))
-  (cmp l0 def-type-label)
-  (jne error-not-label-exp)
-  (set l0 (fx-ptr x0))
-  (set l2 (exp-sym-val l1))
-  (sub l2 l0)
-  (sub l2 4)
-  (set (u32 l0) l2)
+(code comp-rest
+  (set l0 (u64 sp 8))
+  (assert-type l0 exp-type-pair syntax)
+  (set l0 (exp-rest l0))
   (ret))
 
-(code comp-expr-table
-  (8 comp-begin)    ; 0
-  (8 comp-func)     ; 1
-  (8 comp-macro)    ; 2
-  (8 comp-data)     ; 3
-  (8 comp-label)    ; 4
-  (8 comp-goto)     ; 5
-  (8 comp-if)       ; 6
-  (8 comp-unop)     ; 7
-  (8 comp-binop)    ; 8
-  (8 comp-polop)    ; 9
-  (8 comp-var)      ; 10
-  (8 comp-set)      ; 11
-  (8 comp-loc)      ; 12
-  (8 comp-memref)   ; 13
-  (8 comp-memset)   ; 14
-  (8 comp-mem)      ; 15
-  (8 comp-ctxt)     ; 16
-  (8 comp-set-ctxt) ; 17
-  comp-expr-table-end)
-
-(def comp-first-local-only 4)
-
-(def comp-expr-table-size (>> (- comp-expr-table-end comp-expr-table) 3))
-
-(code comp-string-literal
-  (push l0)
-  (call code-start)
-  (code-emit l0 (let l0 (u8 0x1234)))
-  (call code-end)
-  (call fixup-alloc)
-  (set (fx-func l0) fixup-func-string-literal)
-  (set l1 (ctxt-comp cp))
-  (set l1 (cc-code-ptr l1))
-  (sub l1 4)
-  (set (fx-ptr l0) l1)
-  (pop l1)
-  (set (fx-val l0) l1)
+(code comp-number-value
+  (set l0 (u64 sp 8))
+  (assert-type l0 exp-type-number syntax)
+  (set l0 (exp-num-val l0))
   (ret))
 
-(code fixup-func-string-literal
-  (set l0 (fx-val x0))
-  (add l0 (sizeof exp-string))
-  (call strlen)
-  (add l0 1)
-  (call code-alloc)
-  (set l2 (fx-ptr x0))
-  (set l1 l0)
-  (sub l1 l2)
-  (sub l1 4)
-  (set (u32 l2) l1)
-  (set l1 (fx-val x0))
-  (add l1 (sizeof exp-string))
-  (jmp strcpy))
-
-(code comp-expr
-  (set l1 (ctxt-comp cp))
-  (set l1 (cc-curexp l1))
-  (push l1)
-  (set l1 (ctxt-comp cp))
-  (set (cc-curexp l1) l0)
-  (call comp-expand)
-  (assert-type l0 exp-type-number .not-number)
-  (set l1 (exp-num-val l0))
-  (push l1)
-  (call code-start)
-  (pop l1)
-  (code-emit l0 (set l0 0xFFFFFFFFFFFFFFFF) l1)
-  (call code-end)
-  (jmp .return)
-.not-number
-  (assert-type l0 exp-type-symbol .not-symbol)
-  (call lookup)
-  (cmp l0 def-type-var)
-  (jne .not-var)
-  (neg l1)
-  (push l1)
-  (call code-start)
-  (pop l1)
-  (code-emit l0 (set l0 (u64 x1 0xFFFF)) l1)
-  (call code-end)
-  (jmp .return)
-.not-var
-  (cmp l0 def-type-mem)
-  (jne .not-mem)
-  (neg l1)
-  (push l1)
-  (call code-start)
-  (pop l1)
-  (code-emit l0 (let l0 (u8 x1 0xFFFF)) l1)
-  (call code-end)
-  (jmp .return)
-.not-mem
-  (cmp l0 def-type-macro)
-  (jne .not-macro)
-  (jmp syntax)
-.not-macro
-  ;; label or func
-  (push l1)
-  (call code-start)
-  (pop l1)
-  (code-emit l0 (set l0 0x1234567812345678) l1)
-  (call code-end)
-  (jmp .return)
-.not-symbol
-  (assert-type l0 exp-type-string .not-string)
-  (call comp-string-literal)
-  (jmp .return)
-.not-string
-  (parse-exp l0 l1)
-  (assert-type l1 exp-type-number .call)
-  (set l1 (exp-num-val l1))
-  (cmp l1 comp-expr-table-size)
-  (jae syntax)
-  (set l2 (ctxt-comp cp))
-  (cmp (cc-level l2) 0)
-  (ja .in-function)
-  (cmp l1 comp-first-local-only)
-  (jae syntax)
-.in-function
-  (set l2 comp-expr-table)
-  (set l2 (u64 l2 l1))
-  (call l2)
-  (jmp .return)
-.call
-  (set l2 (ctxt-comp cp))
-  (cmp (cc-level l2) 0)
-  (je syntax)
-  (push x0)
-  (set x0 0)
-  (push l1)
-  (cmp l0 0)
-  (je .done)
-  (call comp-exprs)
-  (set x0 l0)
-  (call code-start)
-  (code-emit l0 (push l0))
-  (call code-end)
-.done
-  (pop l0)
-  (call comp-expr)
-  (call code-start)
-  (code-emit l0 (call l0))
-  (mul x0 8)
-  (code-emit l0 (add sp 0x1234) x0)
-  (call code-end)
-  (pop x0)
-.return
-  (pop l1)
-  (set l2 (ctxt-comp cp))
-  (set (cc-curexp l2) l1)
+(code comp-symbol-name
+  (set l0 (u64 sp 8))
+  (assert-type l0 exp-type-symbol syntax)
+  (add l0 (sizeof exp-symbol))
   (ret))
 
-(data
-  fbuf (sizeof file-buffer))
+(code comp-make-pair
+  (set l0 (u64 sp 8))
+  (set l1 (u64 sp 16))
+  (call exp-make-pair)
+  (ret))
 
-(code compiler-panic
-  (set l0 .msg)
-  (jmp panic)
-.msg
-  (1 "Boot failed\n" 0))
+(code comp-make-number
+  (set l0 (u64 sp 8))
+  (call exp-make-number)
+  (ret))
 
-(code compile-book-from-filebuffer
-  ;; l0 - book name
-  ;; l1 - file-buffer
-  (push x0)
-  (push x1)
-  (push x2)
-  (push x3)
-  (push x4)
-  (set x0 l1)
-  (set l2 (ctxt-comp cp))
-  (set (cc-abort-sp l2) sp)
-  (call compiler-init)
-  (call compiler-lang-init)
-  (set l0 (ctxt-comp cp))
-  (set l0 (cc-book l0))
-  (set l1 (fb-node x0))
-  (set l1 (dm-time l1))
-  (set (bk-time l0) l1)
-  (set l0 x0)
-  (call exp-read-all)
-  (set x0 l0)
+(code comp-make-string
+  (set l0 (u64 sp 8))
+  (call exp-make-string)
+  (ret))
+
+(code comp-intern
+  (set l0 (u64 sp 8))
+  (call exp-intern)
+  (ret))
+
+(data strbuf 30)
+
+(code strint
+  ;; l0: n
+  (set l1 (+ strbuf 29))
+  (set l2 0)
+  (set l3 10)
+  (set (u8 l1) l2)
 .loop
-  (call fixup-init)
-  (cmp x0 0)
-  (je .done)
-  (set l0 (exp-first x0))
-  (set x0 (exp-rest x0))
-  (call comp-expr)
-  (call fixup-run)
-  (jmp .loop)
-.done
-  (call compiler-fini)
-  (pop x4)
-  (pop x3)
-  (pop x2)
-  (pop x1)
-  (pop x0)
+  (sub l1 1)
+  (sign-extend l0)
+  (udiv l3)
+  (add l2 :0)
+  (set (u8 l1) l2)
+  (cmp l0 0)
+  (jne .loop)
+  (set l0 l1)
+  (ret))
+
+(code comp-gensym
   (set l1 (ctxt-comp cp))
-  (set l0 (cc-book l1))
-  (set l2 (cc-code-pages l1))
-  (set (bk-pages l0) l2)
+  (set l0 (cc-gensym l1))
+  (add l0 1)
+  (set (cc-gensym l1) l0)
+  (call strint)
+  (sub l0 1)
+  (set (u8 l0) :$)
+  ;; add another '$' for the "lang" book so that its global gensyms
+  ;; don't conflict with other books gensyms
+  (set l1 (ctxt-comp cp))
+  (set l2 (cc-book l1))
+  (set l1 (cc-lang-book l1))
+  (cmp l1 l2)
+  (jne .not-lang-book)
+  (sub l0 1)
+  (set (u8 l0) :$)
+.not-lang-book
+  (call exp-intern)
   (ret))
 
-(code compiler-abort
-  ;; l0 - message or null
-  (cmp l0 0)
-  (je .no-print)
-  (call cc-print)
-.no-print
-  (call code-abort)
-  (set l0 (ctxt-comp cp))
-  (set sp (cc-abort-sp l0))
-  (pop x4)
-  (pop x3)
+(code comp-global
+  (set l0 (u64 sp 8))
+  (push x0)
+  (push x1)
+  (push x2)
+  (let x0 (u8 l0 (sizeof exp-symbol)))
+  (set x1 (ctxt-comp cp))
+  (set x1 (cc-book x1))
+  (set x1 (bk-name x1))
+  (set l0 x1)
+  (call strlen)
+  (push l0)
+  (set l0 x0)
+  (call strlen)
+  (pop l1)
+  (add l0 l1)
+  (add l0 2)
+  (set x2 sp)
+  (sub sp l0)
+  (and sp -8)
+  (set l0 sp)
+  (set l1 x1)
+  (call strcpy)
+  (set (u8 l0) :/)
+  (add l0 1)
+  (set l1 x0)
+  (call strcpy)
+  (set l0 sp)
+  (call exp-intern)
+  (set sp x2)
   (pop x2)
   (pop x1)
   (pop x0)
-  (set l0 0)
   (ret))
 
-(code compile-book-from-file
-  ;; l0 - book name
-  (sub sp (sizeof file-buffer))
-  (set l1 l0)
-  (set l0 sp)
-  (push l1)
-  (call find-file)
+(code comp-expand-exported
+  (set l0 (u64 sp 8))
+  (jmp comp-expand))
+
+(code comp-reverse
+  (set l0 (u64 sp 8))
+  (jmp exp-list-reverse))
+
+(code comp-syntax
+  (jmp syntax))
+
+(code comp-show
+  (set l0 (u64 sp 8))
+  (push l0)
+  (call exp-write)
+  (set l0 .newline)
+  (call cc-print)
+  (pop l0)
+  (ret)
+.newline
+  (1 "\n" 0))
+@
+Here is the table that lists all of them. It is used with the
+[code export-globals] function.
+@=
+(code comp-export-table
+  (8 comp-type .comp-type-name)
+  (8 comp-first .comp-first-name)
+  (8 comp-rest .comp-rest-name)
+  (8 comp-number-value .comp-number-value-name)
+  (8 comp-symbol-name .comp-symbol-name-name)
+  (8 comp-make-pair .comp-make-pair-name)
+  (8 comp-make-number .comp-make-number-name)
+  (8 comp-make-string .comp-make-string-name)
+  (8 comp-intern .comp-intern-name)
+  (8 comp-gensym .comp-gensym-name)
+  (8 comp-global .comp-global-name)
+  (8 comp-expand-exported .comp-expand-name)
+  (8 comp-reverse .comp-reverse-name)
+  (8 comp-syntax .comp-syntax-name)
+  (8 comp-show .comp-show-name)
+  (8 0 0)
+.comp-type-name
+  (1 "type" 0)
+.comp-first-name
+  (1 "first" 0)
+.comp-rest-name
+  (1 "rest" 0)
+.comp-number-value-name
+  (1 "number-value" 0)
+.comp-symbol-name-name
+  (1 "symbol-name" 0)
+.comp-make-pair-name
+  (1 "make-pair" 0)
+.comp-make-number-name
+  (1 "make-number" 0)
+.comp-make-string-name
+  (1 "make-string" 0)
+.comp-intern-name
+  (1 "intern" 0)
+.comp-gensym-name
+  (1 "gensym" 0)
+.comp-global-name
+  (1 "global" 0)
+.comp-expand-name
+  (1 "expand" 0)
+.comp-reverse-name
+  (1 "reverse" 0)
+.comp-syntax-name
+  (1 "syntax" 0)
+.comp-show-name
+  (1 "show" 0))
+
+(code export-globals
+  (push x1)
+  (set x1 l0)
+  (jmp .test)
+.loop
+  (call globals-define)
+  (set l1 (u64 x1))
+  (set (glb-type l0) def-type-func)
+  (set (glb-val l0) l1)
+  (add x1 16)
+.test
+  (set l0 (u64 x1 8))
   (cmp l0 0)
-  (jne .found)
-  (pop l0)
-  (call cc-print)
-  (let l0 (u8 .not-found-message))
-  (call cc-print)
-  (set l0 0)
-  (jmp .out)
-.not-found-message
-  (1 ": no such book\n" 0)
-.found
-  (set l1 l0)
-  (pop l0)
-  (call compile-book-from-filebuffer)
-.out
-  (add sp (sizeof file-buffer))
+  (jne .loop)
+  (pop x1)
   (ret))
 
-;; Main
+@* Exported "sys" functions
 
+Here is another set of exported functions, this time in the "sys"
+book. This one has the "book-get" function for example, the entry
+point to the compiler.
+
+Unlike the [code exp] book, however, this book is actually called
+".sys" (with a dot), and you are not supposed to use it directly.
+Instead, the [code book] book will define [code book/get] as
+the compiler entry point.
+
+@=
+(code sys-call
+  ;; syscall args: l4,  l3,  l2,  l7,  l5, l6, number to l0.
+  (set l0 (u64 sp (* 1 8)))
+  (set l4 (u64 sp (* 2 8)))
+  (set l3 (u64 sp (* 3 8)))
+  (set l2 (u64 sp (* 4 8)))
+  (set l7 (u64 sp (* 5 8)))
+  (set l5 (u64 sp (* 6 8)))
+  (set l6 (u64 sp (* 7 8)))
+  (syscall)
+  (ret))
+
+(code sys-page-get
+  (jmp page-get))
+
+(code sys-page-put
+  (set l0 (u64 sp 8))
+  (jmp page-put))
+
+(code sys-book-get
+  (set l0 (u64 sp 8))   ;; name
+  (set l1 (u64 sp 16))  ;; print-hook
+  (set l2 (u64 sp 24))  ;; print-hook-data
+  (call book-get)
+  (ret))
+
+(code sys-book-search-fun
+  (set l0 (u64 sp 8))
+  (set l1 (u64 sp 16))
+  (jmp book-search-fun))
+
+(code sys-book-ref
+  (set l0 (u64 sp 8))
+  (jmp book-ref))
+
+(code sys-book-unref
+  (set l0 (u64 sp 8))
+  (jmp book-unref))
+
+(code sys-export-table
+  (8 sys-call .sys-call-name)
+  (8 sys-page-get .sys-page-get-name)
+  (8 sys-page-put .sys-page-put-name)
+  (8 sys-book-get .sys-book-get-name)
+  (8 sys-book-search-fun .sys-book-search-fun-name)
+  (8 sys-book-ref .sys-book-ref-name)
+  (8 sys-book-unref .sys-book-unref-name)
+  (8 0 0)
+.sys-call-name
+  (1 "call" 0)
+.sys-page-get-name
+  (1 "page-get" 0)
+.sys-page-put-name
+  (1 "page-put" 0)
+.sys-book-get-name
+  (1 "book-get" 0)
+.sys-book-search-fun-name
+  (1 "book-search-fun" 0)
+.sys-book-ref-name
+  (1 "book-ref" 0)
+.sys-book-unref-name
+  (1 "book-unref" 0))
+
+@* Main
+
+And finally, [code main]! This is the first function that runs
+when Zollern is started.
+
+It initializes things a bit, opens the disk image, creates the
+artifical "exp" and ".sys" books and then calls [code book-get]
+to retrieve the "boot" book. This will kick off the bootstrap
+compilation of everything up to the shell, since the [code boot]
+book depends on it.
+
+@=
 (data
   cc (sizeof compiler-context)
   ctxt context)
@@ -3429,3 +4568,32 @@ run
   (jmp panic)
 .start-undefined-message
   (1 "start undefined (or not a function)\n" 0))
+
+@* Ideas for improvements
+
+Line numbers in errors messages.
+
+Explicit exports. Instead of making all definitions in a book
+visible, we could have a way to distinguish exported definitions
+from non-exported ones. This only really matters for the [code
+lang] book: we don't want all its internal definitions clutter
+up the precious keyword name space.
+
+Selectable "lang". Instead of hard coding the "lang" name, a book
+could overwrite that.
+
+Tail call optimization.
+
+Safer gotos. Gotos should be able to jump to labels that only
+require popping things off the stack, but nowhere else.
+
+Annotations. There could be away to hang arbitrary stuff onto
+arguments, local variables, and expressions. This should be available
+to macros. This could be used to implement a primitive type system.
+
+Stack maps. Whan calling a function, it could get passed a hidden
+argument to a stack map structure. This structure would describe
+the stack layout in the function that did the call. It would
+include number of arguments passed in the current call, and where
+the parent stack map is. Also, annotations can contribute the
+stack map. This could be used for a precise GC.

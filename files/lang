@@ -1,9 +1,10 @@
 @** Programming, level one
 
 This book defines the Zollern programming language on level one,
-called [emph Z1]. Half of the compiler for this language is written
-in the level 0 bootstrap assembler language [emph Z0]. The other
-half is contained in this book.
+called [emph Z1]. Two thirds of the compiler for this language
+are written in the level 0 bootstrap assembler language [emph
+Z0], see the [code asm] and [code comp] books. The remaining
+third is contained in this book.
 
 The following text will first briefly describe the elements of
 Z1, and then proceed to implement them with all necessary detail.
@@ -145,7 +146,7 @@ or deep within a nested expression in a nested loop. For example:
 @
 Assigning a new value to a variable is done with [code set], as
 already seen above. The value of a [code set] expression is the
-same value that has been stored into the variable.
+value that has been stored into the variable.
 
 @* Control flow
 
@@ -181,7 +182,7 @@ If you want a "do-while" loop, which evaluates the body at least
 once and tests the condition after each iteration, you can combine
 [code while] and [code begin]:
 @c
-(while (beging
+(while (begin
          expr-1
          ...
          expr-n
@@ -238,10 +239,10 @@ but maybe Z1 will one day be improved to have a value passing
 
 One has to be careful where to place [code goto] and [code label]
 expressions. Although they are syntactically valid anywhere where
-a expression is allowed, one has to be careful not jump to a
-different level of expression nesting. That would leave the stack
-in shambles. Z1 could be improved here as well, to allow jumps
-out of nested expressions.
+a expression is allowed, one can not jump to a different level
+of expression nesting. That would leave the stack in shambles.
+Z1 could be improved here as well, to allow jumps out of nested
+expressions.
 
 @* Memory access and data structures
 
@@ -311,7 +312,7 @@ of a structure:
 
 (set (my/bar ptr) 1234) ;; same as (set (u16 (+ ptr 4)) 1234)
 @
-The [code struct] macro will also define [code book/structure]
+The [code struct] macro will also define [code my/structure]
 to evaluate to the size of the whole thing:
 @c
 (mem/alloc my/structure) ;; same as (mem/alloc 6)
@@ -344,12 +345,12 @@ like types, modules, closures, etc. But it has macros, and in
 fact, macros are used to implement the constructs explained above.
 
 Macros are a way to transform one expression to another, at compile
-time. For example, we might want to introduce a [code until]
+time. For example, we might want to introduce a [code my/until]
 loop, which is like a [code while] loop but stops when the condition
 becomes true instead of false. We already have [code while] and
 [code not], so we can express [code until] in terms of it.
 @c
-(until cond ...)
+(my/until cond ...)
 @
 should be compiled like
 @c
@@ -357,12 +358,12 @@ should be compiled like
 @
 In Z1, this can be written like this:
 @c
-(def (book/until ?cond . ?body)
+(def (my/until ?cond . ?body)
   (while (not ?cond) . ?body))
 @
-The [code ?] question mark character here is special and denotes
-a pattern matching variable. The [code .] dot character together
-with the next symbol denotes "the rest of the list".
+The "?" question mark character here is special and denotes a
+pattern matching variable. The "." dot character together with
+the next symbol denotes "the rest of the list".
 
 So a macro definition consists of a "head" that is matched with
 the original expression, and a "body" that is substituted for
@@ -370,18 +371,18 @@ that expression, after the variables have been replaced with
 the corresponding pieces of the original expression.
 
 Z1 macros are not hygienic, they don't rename variables to avoid
-conflicts. For example, if you would use the [code until] macro
-in a function that has a local variable called [code not], confusion
-would arise:
+conflicts. For example, if you would use the [code my/until]
+macro in a function that has a local variable called [code not],
+confusion would arise:
 @c
 (fun (my/func)
   (var not 12)
-  (until (> not 14)
+  (my/until (> not 14)
     (set not (+ not 1))))
 @
-Now the [code not] in the expansion of [code until] would no longer
-refer to the boolean negation operator [code lang/not], but to
-the local variable [code not].
+Now the [code not] in the expansion of [code my/until] would no
+longer refer to the boolean negation operator [code lang/not],
+but to the local variable [code not].
 
 Z1 solves this by not allowing any kind of shadowing. The declaration
 of [code not] in [code my/func] above would be rejected by the
@@ -434,24 +435,24 @@ Check out the implementations of [code syntax-parse] and [code
 syntax-expand] below to learn all the details. Macro-defining
 macros are especially interesting!
 
-@* The lower half of the Z1 compiler
+@* The lower two thirds of the Z1 compiler
 
 As mentioned many times above, the advertised syntax of Z1 like
 [code while] is implemented as macros. These macros ultimately
 expand into a number of [emph primitives] that are actually understood
-by the lower half of the compiler.
+by the lower parts of the compiler.
 
 Primitives are expressions where the operator is a literal integer.
 For example, [code (9 0 x y)] is a primitive expression that
 will add [code x] and [code y]. Another example would be [code
-(10 z)], which declared a local variable called [code z], but
-can not initialize it.
+(10 z)], which declares a local variable called [code z], but
+does not initialize it.
 
 There is a long list of these primitives further down below, so
 we will not describe them all here.
 
-In addition to understanding these primitives, the lower half
-of the compiler also provides a API to construct expressions
+In addition to understanding these primitives, the lower parts
+of the compiler also provides an API to construct expressions
 at run time. For example, the function call [code (exp/intern
 "while")] will return a pointer to a (opaque) data structure
 that represents the symbol with name "while", and [code (exp/make-pair
@@ -463,7 +464,10 @@ We would like to define some macros, but we have only primitives
 at this point. How do we get started?
 
 The first thing is to give names to primitives, so that we can
-write [code (prim-var z)] instead of [code (10 z)].
+write [code (prim-var z)] instead of [code (10 z)]. Then we can
+define [code syntax-expand] and [code syntax-parse], the two
+basic pieces of [code def]. Once we have [code def], we can define
+[code while], [code if], etc.
 
 @* Names for primitives
 
@@ -656,7 +660,7 @@ is going to produce. It will expand into many many calls to [code
 exp/make-this] and [code exp/make-that] that will, when executed
 during compilation, create the desired expression data structure.
 
-For example, [code (syntax-expand (foo ?a)] will produce
+For example, [code (syntax-expand (foo ?a))] will produce
 @c
 (exp/make-pair (exp/intern "foo") (exp/make-pair a 0))
 @
@@ -919,7 +923,7 @@ and [code exp/rest] with [code syntax-parse]:
 @
 A [code syntax-parse] invocation does not in fact expand directly
 into calls to [code exp/first] and [code exp/rest], but into
-a number of utility macros. Let's look at them first, and the
+a number of utility macros. Let's look at them first, and then
 it will all become clear very quickly.
 
 The simplest is [code parse-skip], which just advances over one
@@ -961,7 +965,7 @@ The real implementation has to be done without [code def]:
 (prim-mac lang/parse-exp 0 lang/$parse-exp)
 @
 The next one is [code parse-opt], which does the same job as [code
-parse-exp] but also allows for case that there is no current
+parse-exp] but also allows for the case that there is no current
 element anymore.
 @c
 (def (lang/parse-opt ?ptr ?var)

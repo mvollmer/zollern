@@ -743,6 +743,7 @@ write_exp (FILE *f, exp *e)
 }
 
 FILE *in_file;
+bool at_bol;
 
 void
 read_open (const char *name)
@@ -752,6 +753,7 @@ read_open (const char *name)
   lineno = 1;
   if (in_file == NULL)
     exitf (1, "%s: %m", in_name);
+  at_bol = true;
 }
 
 void
@@ -793,7 +795,38 @@ read_token ()
   while (isspace (c = fgetc (in_file)))
     {
       if (c == '\n')
-        lineno++;
+        {
+          lineno++;
+          at_bol = true;
+        }
+      else
+        at_bol = false;
+    }
+
+  if (c == '@' && at_bol)
+    {
+    again_section:
+      c = fgetc (in_file);
+      at_bol = false;
+      if (c == '=')
+        goto again;
+
+      while (!(c== '@' && at_bol))
+        {
+          if (c == '\n')
+            {
+              lineno++;
+              at_bol = true;
+            }
+          else
+            at_bol = false;
+          c = fgetc (in_file);
+          if (c == EOF)
+            break;
+        }
+
+      if (c != EOF)
+        goto again_section;
     }
 
   if (c == ';')

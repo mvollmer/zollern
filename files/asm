@@ -1,0 +1,916 @@
+@** Z1 assembler
+
+This is the lower third of the compiler for the Z1 language, the
+definition of the assembler language. The middle third of the
+compiler is written in this assembler language (see the [code
+comp] book), and uses the instructions defined here when emitting
+machine code. (The upper third of the compiler is the [code lang]
+book, and is written in the primitive version of Z1 understood
+by the [code comp] book.)
+
+This asssembler here is written in the input language of the [emph
+Z0] binary macro processor. Z0 is a program running outside of
+Zollern that can generate a binary file from a couple of input
+files that are written in its Z0 macro language.
+
+During each boot of Zollern, the Z0 program reads this [code asm]
+book followed by the [code comp] book and produces a binary output
+file.
+
+That binary file can be directly executed by the OS that hosts
+Zollern. More specifically, it is a file in the ELF format that
+the Linux [emph exec] syscall recognizes. Such a ELF file instructs
+the Linux kernel to make certain parts of it visible in the memory
+of the current process in certain ways, and then to start executing
+machine instructions from a certain address in one of those parts.
+
+The instructions at that certain address are defined here in this
+book, see the [code start] label at the very end.
+
+Those instructions will jump to the [code main] function in the
+[code comp] book, which in turn will compile the [code boot]
+book, which is written in Z1. Then the [code boot/start] function
+is called. If you want to know how the story continues, you have
+to read the [code boot] book, of course.
+
+But, the Z0 macro processor can not do much: It can put arbitrary
+bytes into the memory of the process with the [code code] directives.
+It does not know anything about machine instructions.
+
+For example,
+@c
+(code
+  (1 0x12 0x34))
+@
+instructs Z0 to produce a ELF file that will make two bytes visible
+in a process, [code 0x12] and [code 0x34] and start executing
+them as machine instructions.
+
+Unfortunately, [code 0x12 0x34] are not valid as machine instructions
+and the process will crash.
+
+We need to provide bytes that are valid x86-64 instructions, and
+Z0 will not help us. We need to read thousands of pages of CPU
+manuals and figure out how instructions are encoded, or investigate
+what kind of assembly output a C compiler produces.
+
+The result of some careful study might be this:
+@c
+(code
+  (1 0x48 0xC7 0xC7) (4 12)
+  (1 0x48 0xC7 0xC0) (4 60)
+  (1 0x0F 0x05))
+@
+These are machine instructions that put the right values into
+the right registers and then trigger a system call so that the
+process exits cleanly with a code of 12.
+
+You can spot this 12 in the number salad above. The 60 is the
+number for the [emph exit] syscall, which we got from careful
+study of the Linux kernel documentation.
+
+Zollern is about fun, and writing program this way is not fun.
+
+But it can be fun to abstract this all away and invent a nice
+assembly language and implement it with a few macros.
+
+We do not worry about completeness or efficiency: We only implement
+enough instructions to write the middle third of the Z1 compiler,
+and we don't care about finding the most compact encoding of
+things.
+
+The result will not feel very much like the usual x86-64 assembly
+language, and it even seems feasible to invent some [emph portable]
+assembly language here that can be encoded for a number of different
+real hardware architectures. We could try to restrict us to the
+least common denominator of x86-64, ARM, and RISC-V, say.
+
+This idea is behind some of the choices below. For example, we
+pretend that x86-64 is a load-store architecture, and we would
+pretend that RISC-V has only 16 general purpose registers.
+
+But this hasn't been carried out to completion. For example, we
+still have instructions that can store immediates directly into
+memory, and instructions for comparing memory to registers, just
+because they are convenient. RISC-V doesn't have those, I think.
+
+This could be resolved by encoding such a convenience instruction
+into two or more RISC-V instructions. It has 16 more registers
+than used by our assembly language, so we can use some of them
+behind the scenes.
+
+But that's thinking way into the future. For now, we only deal
+with x86-64.
+
+In the end, we will be able to write the earlier example like
+this:
+@c
+(code
+  (set l4 12)
+  (set l0 60)
+  (syscall))
+@
+Here, [code set] and [code syscall] are symbolic names for instructions
+and [code l4] and [code l0] are symbolic names of registers.
+There are official names for x86-64 instructions and registers,
+but we don't care about them. We make up our own.
+
+@* Z0 Macros
+
+Let's first have a closer look at how Z0 macros work. They of
+course transform expressions consisting of lists, symbols, and
+numbers into other expressions. These transformations are specified
+via patterns and substitutions for them.
+
+For example,
+@c
+(def (syscall)
+  (1 0x0F 0x05))
+@
+will replace every occurance of a list with a single symbol named
+"syscall" in it with [code (1 0x0F 0x05)].
+
+Unlike the Z1 macros implemented in the [code comp] book, patterns
+do not only match on the first element of a list (the "operator"
+position), they must match everywhere. For example,
+@c
+(def (syscall exit)
+  (set l0 60)
+  (syscall))
+@
+will match expressions that are exactly [code (syscall exit)],
+a list of two symbols where the first is named "syscall" and
+the second "exit".
+
+The output has two expressions, and it is not clear how one would
+replace a single input expressions with two output expressions.
+Z0 handles this by automatically wrapping macro outputs with
+multiple expressions with [code begin].
+
+A pattern can have variables in it, indicated by symbol with a
+leading "?" character. Any expression in the input program will
+match such a variable, and whatever has matched can be substituted
+in the output by writing the same variable. For example,
+@c
+(def (syscall (exit ?code))
+  (set l4 ?code)
+  (syscall exit))
+@
+will match the input expressions [code (syscall (exit 12))] and
+transform it into this:
+@c
+(begin (set l4 12) (syscall exit))
+@
+
+Z0 will remember the three definitions above and will select the
+one that matches. It does this by searching through all of them
+one by one, and uses the first that matches. However, it starts
+at the [b end], at the most recently defined one and goes backwards.
+
+@* Registers
+
+Let's start the assembly language definition by giving names to
+registers. Eventually, we need to encode registers into instructions
+by using numbers. For example, some big document says that there
+is a register called "rcx" that can be referred to from machine
+instructions with number one.
+
+We want to use the name [code l1] for this register, so we could
+just do
+@c
+(def l1 1)
+@
+and writing [code (set l1 4)] would turn into [code (set 1 4)]
+and then we can have a definition like
+@c
+(def (set ?dst ?val)
+  (1 0x48 0xC7 (+ 0xC0 ?dst))
+  (4 ?val))
+@
+since [code ?dst] is just a number that we can compute with. (Note:
+the above definition for [code set] is not correct, but it's
+close.)
+
+Unfortunately, this doesn't work well when we also want to support
+things like [code (set l1 l4)] in the input, which should mean
+"copy register l4 into register l1". Our macro above would expand
+this into [code (set 1 4)] which looks exactly like setting register
+l1 to the literal value 4.
+
+The trick is to define [code l1] to expand into a "tagged expression"
+that other macros can match against in their patterns:
+@c
+(def l1 (reg 1))
+
+(def (set (reg ?dst) ?val)
+  (1 ...))
+@
+With this, [code (set l1 l4)] turns into
+@c
+(set (reg 1) (reg 4))
+@
+and we can write a definition that matches a [code set] with two
+registers:
+@c
+(def (set (reg ?dst) (reg ?src))
+  (1 ...))
+@
+We will never define [code (reg ...)] as a macro itself. It is
+only used to make it possible to control the matching in other
+macros.
+
+One thing is worth noting: The [code ?val] pattern also matches
+[code (reg 1)] because a pattern variable matches any expression.
+We don't want that, obviously. Thus, we must take care that Z0
+looks at the "two register" pattern of the [code set] macro first,
+so that it will never even try matching [code (reg 1)] against
+[code ?val].
+
+This is done by writing the "two register" variant last. In general,
+it is quite important in which order macro definitions are written.
+
+Ok, here then are all the 16 register names:
+@=
+(def l0 (reg  0))
+(def l1 (reg  1))
+(def l2 (reg  2))
+(def x0 (reg  3))
+(def sp (reg  4))
+(def cp (reg  5))
+(def l3 (reg  6))
+(def l4 (reg  7))
+(def l5 (reg  8))
+(def l6 (reg  9))
+(def l7 (reg 10))
+(def l8 (reg 11))
+(def x1 (reg 12))
+(def x2 (reg 13))
+(def x3 (reg 14))
+(def x4 (reg 15))
+@
+The registers starting with "l" and "x" are for generic use by
+functions, "sp" is the stack pointer, and "cp" is the global
+"context" pointer. The [code comp] book explains the conventions
+for using them.
+
+@* Instruction encoding
+
+The encoding x86-64 instructions is clever and the result of
+a lot of history, but it is not fun. We don't want to understand
+or explain it here, just get it over with.
+
+A lot of bits have to go into a lot of intricate places, and the
+Z0 macro language has a number of [emph builtin] operators that
+we can use for that. We will use [code \|] (bit-wise or), [code
+&] (bit-wise and) [code <<] (shift left), and [code >>] (shift
+right).
+
+First we make a macro for a field of bits in a byte:
+@=
+(def (bf ?size ?pos ?val)
+  (<< (& ?val (- (<< 1 ?size) 1)) ?pos))
+@
+This truncates "val" to not have any bits set outside of the field,
+and then shifts it into place.
+
+By [code or]ing multiple bit fields together, we can create some
+typical pieces of x86-64 encodings:
+@=
+(def (rex ?w ?r ?x ?b)
+  (| (bf 4 4 4)
+     (bf 1 3 ?w)
+     (bf 1 2 ?r)
+     (bf 1 1 ?x)
+     (bf 1 0 ?b)))
+
+(def (mod/rm ?mod ?r ?m)
+  (| (bf 2 6 ?mod)
+     (bf 3 3 ?r)
+     (bf 3 0 ?m)))
+
+(def (sib ?s ?i ?b)
+  (| (bf 2 6 ?s)
+     (bf 3 3 ?i)
+     (bf 3 0 ?b)))
+@
+The [code rex] macro produces a prefix instruction that will contribute
+4 individual bits to the next real instruction. The [code mod/rm]
+macro produces a byte that contains a two-bit modifier (or mode?)
+and two three bit fields used for instruction operands. The [code
+sib] macro is for advanced address computations.
+
+If you know x86-64 instruction encoding, these macros make sense
+to you. The rest of us just has to believe that they will do
+the job.
+
+The [code rex] prefix brings some more complications. If all four
+of its bit contributions are zero, we want to omit the prefix
+all together, except sometimes. Some instructions actually change
+their behavior depending on whether a [code rex] prefix is present
+or not, even when it contributes nothing else.
+
+Still other instructions want a [code 0x66] prefix, but that prefix
+must go before [code rex]. The following macro [code insert-rex]
+sorts this all out. Note how multi-byte operation codes are written
+using [code begin].
+@=
+(def (insert-rex ?rex ?op)
+  (begin ?rex ?op))
+
+(def (insert-rex ?rex (begin 0x40 . ?ops))
+  (begin ?rex . ?ops))
+
+(def (insert-rex ?rex (begin 0x66 . ?ops))
+  (begin 0x66 ?rex . ?ops))
+
+(def (insert-rex 0x40 ?op)
+  ?op)
+@
+With these we can define the first macro for encoding instructions.
+@=
+(def (inst-0 ?op ?w ?x ?mod ?a ?b)
+  (1
+   (insert-rex (rex ?w (>> ?a 3) ?x (>> ?b 3))
+               ?op)
+   (mod/rm ?mod ?a ?b)))
+@
+It takes a byte to specify the operation, the "w" and "x" bits
+for the prefix, the "mod" bits for the second byte, and two 4
+bit values to specify the operands or other aspects. These two
+4 bit values are spread out over the prefix and the [code mod/rm]
+byte.
+
+Many of the instructions that we are going to define below have
+the same values for "w", "x", and "mod", namely 1, 0, and 3.
+We define an abbreviation for these cases:
+@=
+(def (inst-1 ?op ?a ?b)
+  (inst-0 ?op 1 0 3 ?a ?b))
+@
+
+Some instructions operate with constants, such as the example
+[code (set l1 4)] from above. These constants are stored in bytes
+that follow the instruction. We have a macro for those as well:
+@=
+(def (inst-1i (?op8 ?op32) ?a ?b ?val)
+  (sel (&& (<= -0x80 ?val) (<= ?val 0x7F))
+       (begin
+         (inst-1 ?op8 ?a ?b)
+         (1 ?val))
+       (begin
+         (inst-1 ?op32 ?a ?b)
+         (4 ?val))))
+@
+Note how we have a separate case for small constants. This is
+an optimization that we allow ourselves, although it probably
+doesn't make any practical difference.
+
+Instructions that access memory use "mod" values different from
+3, and encode a destination or source register, plus a base register,
+plus some offset. However, the value 4 is special when used where
+the base register normally goes in the [code mod/rm] byte. To
+use registers 4 and 12 as a base, one needs a extra [code sib]
+byte.
+
+This is dealt with by the [code mod/rm2] macro.
+@=
+(def (mod/rm2 ?mod ?r ?m)
+  (sel (&& (!= ?mod 3) (== (& ?m 7) 4))
+       (begin
+         (mod/rm ?mod ?r 4)
+         (sib 0 4 ?m))
+       (begin
+         (mod/rm ?mod ?r ?m))))
+@
+When encoding a memory accessing instruction, there is another
+special case: "mod" equal to 0 and "m" equal to 5. We can avoid
+this by using the "mod" value 1 instead with an all-zero offset.
+@=
+(def (inst-2 ?op ?w ?reg ?base ?offset)
+  (1 (insert-rex (rex ?w (>> ?reg 3) 0 (>> ?base 3))
+                 ?op))
+  (sel (&& (== ?offset 0) (!= (& ?base 7) 5))
+       (begin
+         (1 (mod/rm2 0 ?reg ?base)))
+       (&& (<= -0x80 ?offset) (<= ?offset 0x7F))
+       (begin
+         (1 (mod/rm2 1 ?reg ?base)
+            ?offset))
+       (&& (<= -0x80000000 ?offset) (<= ?offset 0x7FFFFFFF))
+       (begin
+         (1 (mod/rm2 2 ?reg ?base))
+         (4 ?offset))))
+@
+The special case "mod" 0 and "m" 5 actually means to use program
+counter realitive addressing. We use that for instructions that
+access global variables:
+@=
+(def (inst-3 ?op ?w ?reg ?address)
+  (inst-0 ?op ?w 0 0 ?reg 5)
+  (-4 ?address))
+@
+The -4 in [code (-4 ?address)] instructs Z0 to subtract the current
+address from the value (and then to output it as four bytes).
+This is of course meant to allow implementing the program counter
+relative addressing that we want here.
+
+Sometimes, there is no [code mod/rm] byte and a single register
+is encoded right in the lower 3 bits of the operation byte. This
+is pretty straightforward, if we wouldn't have to deal with multi-byte
+operation codes. In that case, we want to modify the last byte
+of a expression like [code (begin 0x12 0x34 0x50)].
+@=
+(def (op-with-reg ?op ?reg)
+  (+ ?op (& ?reg 7)))
+
+(def (op-with-reg (begin ?first . ?rest) ?reg)
+  (begin ?first (op-with-reg (begin . ?rest) ?reg)))
+
+(def (op-with-reg (begin ?op) ?reg)
+  (op-with-reg ?op ?reg))
+@
+The [code inst-4] macro does the rest, forming and inserting the
+[code rex] prefix.
+@=
+(def (inst-4 ?op ?w ?reg)
+  (1 (insert-rex (rex ?w 0 0 (>> ?reg 3))
+                 (op-with-reg ?op ?reg))))
+@
+
+Ok, now we can encode instructions. Let's do that then.
+
+@* Arithmetic
+
+Addition and substraction are pretty straightforward. As mentioned
+above, we pretend that x86-64 is a load-store architecture and
+that most instructions can't access memory. Thus we only need
+to define arithmetic between registers here, and arithmetic with
+constants.
+
+@=
+(def (add (reg ?dst) ?val)
+  (inst-1i (0x83 0x81) 0 ?dst ?val))
+
+(def (add (reg ?dst) (reg ?src))
+  (inst-1 0x01 ?src ?dst))
+
+(def (sub (reg ?dst) ?val)
+  (inst-1i (0x83 0x81) 5 ?dst ?val))
+
+(def (sub (reg ?dst) (reg ?src))
+  (inst-1 0x29 ?src ?dst))
+@
+
+Multiplication is a bit weird. With two registers, the source
+and destination are swapped, and with immediates, the destination
+needs to be repeated. There are probably good reasons for this,
+but like all the other instructions defined here, this encoding
+has been figured out by letting GCC compile a small C program
+and inspecting its output.
+
+@=
+(def (mul (reg ?dst) ?val)
+  (inst-1i (0x6B 0x69) ?dst ?dst ?val))
+
+(def (mul (reg ?dst) (reg ?src))
+  (inst-1 (begin 0x0F 0xAF) ?dst ?src))
+
+(def (neg (reg ?dst))
+  (inst-1 0xF7 3 ?dst))
+@
+
+Division is different since it works with fixed registers. XXX
+- explain this.
+
+@=
+(def (sign-extend (reg 0))
+  (1 (rex 1 0 0 0) 0x99))
+
+(def (udiv (reg ?dst))
+  (inst-1 0xF7 6 ?dst))
+
+(def (sdiv (reg ?dst))
+  (inst-1 0xF7 7 ?dst))
+@
+
+Bit twiddling is straightforward again.
+
+@=
+(def (and (reg ?dst) ?val)
+  (inst-1i (0x83 0x81) 4 ?dst ?val))
+
+(def (and (reg ?dst) (reg ?src))
+  (inst-1 0x21 ?src ?dst))
+
+(def (or (reg ?dst) ?val)
+  (inst-1i (0x83 0x81) 1 ?dst ?val))
+
+(def (or (reg ?dst) (reg ?src))
+  (inst-1 0x09 ?src ?dst))
+
+(def (xor (reg ?dst) ?val)
+  (inst-1i (0x83 0x81) 6 ?dst ?val))
+
+(def (xor (reg ?dst) (reg ?src))
+  (inst-1 0x31 ?src ?dst))
+
+(def (not (reg ?dst))
+  (inst-1 0xF7 2 ?dst))
+@
+And here is our first [code set] instruction variant, for setting
+a register to a constant. This one can handle 64 bits and is
+sufficiently different that we can't use [code inst-1i], unfortunately.
+@=
+(def (set (reg ?dst) ?val)
+  (sel (&& (<= -0x80000000 ?val) (<= ?val 0x7FFFFFFF))
+       (begin
+         (inst-1 0xC7 0 ?dst)
+         (4 ?val))
+       (begin
+         (inst-4 0xB8 1 ?dst)
+         (8 ?val))))
+@
+
+@* Memory access
+
+Memory locations are written like [code (u8 l3 10)] in our assembly
+language. This expressions refers to the byte at the address
+resulting from adding the constant 10 to the value in register
+[code l3]. To load this byte into register [code l4], we would
+write
+@c
+(set l4 (u8 l3 10))
+@
+Conversely, storing into this address looks like this:
+@c
+(set (u8 l3 10) l4)
+@
+One can also use addresses directly, maybe from a label in a [code
+data] section:
+@c
+(data 4 foo)
+(code
+  (set (u32 foo) l4))
+@
+
+A x86-64 instructions can also compute the memory address in more
+advanced ways: In addition to a base register plus constant offset,
+you can also add in another register multiplied by a small power
+of two.
+
+We ignore this, to avoid more encoding complexity, and to keep
+closer to our idea of the least common denominator ISA.
+
+Let us first define the [code inst-l] macro. It decodes the address
+formats explained above and uses either [code inst-2] or [code inst-3]
+for the actual encoding.
+@=
+(def (inst-l ?op ?w ?reg (?address))
+  (inst-3 ?op ?w ?reg ?address))
+
+(def (inst-l ?op ?w ?reg ((reg ?base) ?offset))
+  (inst-2 ?op ?w ?reg ?base ?offset))
+
+(def (inst-l ?op ?w ?reg ((reg ?base)))
+  (inst-2 ?op ?w ?reg ?base 0))
+@
+And now the long list of [code set] instructions for loading and
+storing the various types. Pretty boring.
+@=
+(def (set (reg ?dst) (u8 . ?loc))
+  (inst-l (begin 0x0F 0xB6) 0 ?dst ?loc))
+
+(def (set (reg ?dst) (u16 . ?loc))
+  (inst-l (begin 0x0F 0xB7) 0 ?dst ?loc))
+
+(def (set (reg ?dst) (u32 . ?loc))
+  (inst-l 0x8B 0 ?dst ?loc))
+
+(def (set (reg ?dst) (u64 . ?loc))
+  (inst-l 0x8B 1 ?dst ?loc))
+
+(def (set (reg ?dst) (s8 . ?loc))
+  (inst-l (begin 0x0F 0xBE) 1 ?dst ?loc))
+
+(def (set (reg ?dst) (s16 . ?loc))
+  (inst-l (begin 0x0F 0xBF) 1 ?dst ?loc))
+
+(def (set (reg ?dst) (s32 . ?loc))
+  (inst-l 0x63 1 ?dst ?loc))
+
+(def (set (reg ?dst) (s64 . ?loc))
+  (inst-l 0x8B 1 ?dst ?loc))
+
+(def (set (u8 . ?loc) ?val)
+  (inst-l 0xC6 0 0 ?loc)
+  (1 ?val))
+
+(def (set (u8 . ?loc) (reg ?src))
+  (inst-l (begin 0x40 0x88) 0 ?src ?loc))
+
+(def (set (u16 . ?loc) (reg ?src))
+  (inst-l (begin 0x66 0x89) 0 ?src ?loc))
+
+(def (set (u32 . ?loc) ?val)
+  (inst-l 0xC7 0 0 ?loc)
+  (4 ?val))
+
+(def (set (u32 . ?loc) (reg ?src))
+  (inst-l 0x89 0 ?src ?loc))
+
+(def (set (u64 . ?loc) ?val)
+  (inst-l 0xC7 1 0 ?loc)
+  (4 ?val))
+
+(def (set (u64 . ?loc) (reg ?src))
+  (inst-l 0x89 1 ?src ?loc))
+
+(def (set (s8 . ?loc) ?val)
+  (inst-l 0xC6 0 0 ?loc)
+  (1 ?val))
+
+(def (set (s8 . ?loc) (reg ?src))
+  (inst-l (begin 0x40 0x88) 0 ?src ?loc))
+
+(def (set (s16 . ?loc) (reg ?src))
+  (inst-l (begin 0x66 0x89) 0 ?src ?loc))
+
+(def (set (s32 . ?loc) ?val)
+  (inst-l 0xC7 0 0 ?loc)
+  (4 ?val))
+
+(def (set (s32 . ?loc) (reg ?src))
+  (inst-l 0x89 0 ?src ?loc))
+
+(def (set (s64 . ?loc) ?val)
+  (inst-l 0xC7 1 0 ?loc)
+  (4 ?val))
+
+(def (set (s64 . ?loc) (reg ?src))
+  (inst-l 0x89 1 ?src ?loc))
+@
+Uff. One more, maybe the most common one: setting a register to
+the content of another register. We had to wait until now to
+define it since it needs to come after the instructions with
+immediates above.
+@=
+(def (set (reg ?dst) (reg ?src))
+  (inst-1 0x89 ?src ?dst))
+@
+But there is still one more: A instruction for loading the address
+of something into a register instead of the content at that address.
+@=
+(def (let (reg ?dst) (?type . ?loc))
+  (inst-l 0x8D 1 ?dst ?loc))
+@
+
+@* Structures
+
+It is common to group multiple values together in memory to form
+a record or [emph structure]. If we, for example, want to store
+a [code u32] value called "width" followed immediately by a [code
+u16] value called "height", we might want to access them like
+this:
+@c
+(set l1 (width l0))
+(set l2 (height l0))
+(mul l2 l1)
+@
+We can of course achieve this with some easy macros:
+@c
+(def (width ?ptr)
+  (u32 ?ptr 0))
+(def (height ?ptr)
+  (u16 ?ptr 4))
+@
+The 4 in the [code height] macro is the offset of this field in
+the structure: the sum of the sizes of all fields that come before
+it. In this case it is 4 since a [code u32] uses four bytes.
+This computation gets tedious for structures with many fields,
+and we know how do solve this: with a [code defstruct] macro
+that defines macros.
+
+With it, we can define the two field accessors like this:
+@c
+(defstruct rect
+  (u32 width)
+  (u16 height))
+@
+Here is the definition of [code defstruct].
+@=
+(def (defstruct-at ?name ?off)
+  (def (sizeof ?name) ?off))
+
+(def (defstruct-at ?name ?off (?type ?field) . ?rest)
+  (defstruct-at ?name ?off (?type ?field 1) . ?rest))
+
+(def (defstruct-at ?name ?off (?type ?field ?length) . ?rest)
+  (begin
+    (def (?field ??ptr) (?type ??ptr ?off))
+    (defstruct-at ?name (+ ?off (* (sizeof ?type) ?length)) . ?rest)))
+
+(def (defstruct ?name . ?rest)
+  (defstruct-at ?name 0 . ?rest))
+@
+The [code defstruct] macro needs [code (sizeof [emph type])] to
+compute the field offsets.
+@=
+(def (sizeof u8)  1)
+(def (sizeof u16) 2)
+(def (sizeof u32) 4)
+(def (sizeof u64) 8)
+
+(def (sizeof s8)  1)
+(def (sizeof s16) 2)
+(def (sizeof s32) 4)
+(def (sizeof s64) 8)
+@
+
+@* The stack
+
+There is a special region of memory called the [emph stack]. It
+is meant to be used for temporary storage when running out of
+registers. There is a dedicated register [code sp] that points
+at the [emph top] of the stack, and whenever you need some memory
+you can subtract the amount of bytes you need from [code sp]
+and then freely use the memory between the new value of [code
+sp] and the previous one. When done, just add the number of bytes
+back to [code sp] so that it gets its original value back.
+
+Because we subtract from[code sp] when we want to allocate memory,
+the stack actually grows downward in memory.
+
+For this scheme to work, allocating and returning memory must
+be done in a very disciplined way, of course. All memory must
+be returned in the reverse order in which it was allocated. This
+works well for memory used locally during a function call, but
+not for memory used for some global data structure.
+
+For example, when preserving a register around a function call,
+you could do this:
+@c
+(sub sp 8)
+(set (u64 sp) l4)
+@
+
+But there is a instruction for this common operation, called [code
+push]:
+@=
+(def (push (reg ?reg))
+  (inst-4 0x50 0 ?reg))
+@
+The reverse is [code pop]:
+@=
+(def (pop (reg ?reg))
+  (inst-4 0x58 0 ?reg))
+@
+
+Calling functions also uses the stack. The [code call] instructions
+pushes the return address onto it, and the Z1 compiler also passes
+arguments to functions via the stack. The [code ret] instruction
+pops a return address from the stack and jumps there.
+@=
+(def (call ?address)
+  (1 0xE8)
+  (-4 ?address))
+
+(def (call (reg ?reg))
+  (inst-4 (begin 0xFF 0xD0) 0 ?reg))
+
+(def (ret)
+  (1 0xC3))
+@
+
+@* Conditional branches
+
+Instead of [code if], and [code while] and other structured programming
+constructs, machine code can jump from one place to another.
+Such a jump can be conditioned on what the previous instruction
+has computed.
+
+If the previous instruction has not computed anything useful for
+basing the jump-or-not decision on, one can explicitly use the
+[code cmp] instruction to compare two registers. (Or a register
+with a constant, or the contents of a memory location with a
+constant. We are spoiling ourselves here.)
+
+Often, it is easier to just chuck in an explicit [code cmp] instruction
+instead of having to remember how the previous instruction behaves
+exactly with regard to conditional jumps. We are not looking
+for ultimate performance here.
+
+Let's first define the [code cmp] instruction.
+@=
+(def (cmp (u8 . ?loc) ?val)
+  (inst-l 0x80 0 7 ?loc)
+  (1 ?val))
+
+(def (cmp (u32 . ?loc) ?val)
+  (inst-l 0x81 0 7 ?loc)
+  (4 ?val))
+
+(def (cmp (u64 . ?loc) ?val)
+  (inst-l 0x81 1 7 ?loc)
+  (4 ?val))
+
+(def (cmp (s8 . ?loc) ?val)
+  (inst-l 0x80 0 7 ?loc)
+  (1 ?val))
+
+(def (cmp (s32 . ?loc) ?val)
+  (inst-l 0x81 0 7 ?loc)
+  (4 ?val))
+
+(def (cmp (s64 . ?loc) ?val)
+  (inst-l 0x81 1 7 ?loc)
+  (4 ?val))
+
+(def (cmp (reg ?a) ?val)
+  (inst-1i (0x83 0x81) 7 ?a ?val))
+
+(def (cmp (reg ?a) (reg ?b))
+  (inst-1 0x39 ?b ?a))
+@
+And now the conditional jumps. For a change, we use the official
+x86-64 names. Also, we make a macro for defining them, since
+they are all so similar.
+@=
+(def (defj ?inst ?op)
+  (def (?inst ??address)
+    (1 ?op)
+    (-4 ??address)))
+
+(defj je  (begin 0x0F 0x84))
+(defj jne (begin 0x0F 0x85))
+(defj jl  (begin 0x0F 0x8C))
+(defj jle (begin 0x0F 0x8E))
+(defj jg  (begin 0x0F 0x8F))
+(defj jge (begin 0x0F 0x8D))
+(defj ja  (begin 0x0F 0x87))
+(defj jae (begin 0x0F 0x83))
+(defj jb  (begin 0x0F 0x82))
+(defj jbe (begin 0x0F 0x86))
+@
+In case it isn't obvious, here are the meanings of the abbreviated
+conditions: "e" - equal, "n" - not, "l" - less than, "g" - greater
+than, "a" - above, "b" - below. Less and greater are for signed
+numbers, above and below are for unsigned ones.
+
+In addition to conditionally jumping somehwere, we might also
+want to set a register to one or zero depending on a condition.
+
+The x86-64 instruction that does this only affects the lower 8
+bits of the register, so we make sure we first clear it completely
+(without affecting the condition codes) so that we get full 64-bit
+zeroes and ones.
+@=
+(def (defsetcc ?name ?op)
+  (def (?name (reg ??dst))
+       (set (reg ??dst) 0)
+       (inst-4 (begin 0x0F ?op 0xC0) 0 ??dst)))
+
+(defsetcc sete  0x94)
+(defsetcc setne 0x95)
+(defsetcc setl  0x9C)
+(defsetcc setle 0x9E)
+(defsetcc setg  0x9F)
+(defsetcc setge 0x9D)
+@
+
+And here is the unconditional jump instruction:
+@=
+(def (jmp ?address)
+  (1 0xE9)
+  (-4 ?address))
+
+(def (jmp (reg ?reg))
+  (inst-4 (begin 0xFF 0xE0) 0 ?reg))
+@
+
+And that's already all instructions!
+
+Here is a list of them, just to show that there actually aren't
+that many.
+
+@c
+add, sub, mul, neg, sign-extend, udiv, sdiv,
+and, or, xor, not,
+set, let,
+push, pop, call, ret,
+cmp, jmp,
+je, jne, jl, jle, jg, jge, jq, jae, jb, jbe,
+sete, setne, setl, setle, setg, setge
+@
+
+Execution of the program starts with the first instruction in
+the first [code code] expression, but we want to be able to place
+the entrypoint of the compiler where we want.
+
+Thus, we define the first [code code] block here, and make it
+jump to the [code main] label. It will be defined at the end
+of the [code comp] book.
+
+@=
+(code start
+  (jmp main))
+@
