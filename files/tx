@@ -402,6 +402,7 @@ Data structures, this is deliberately a stress test for malloc/free.
   ink-dy
   ink-setfont-sans
   ink-setfont-sans-b
+  ink-setfont-sans-o
   ink-setfont-sans-l
   ink-setfont-mono
   ink-setcolor
@@ -476,6 +477,8 @@ Data structures, this is deliberately a stress test for malloc/free.
             (tx/emit-byte ctxt tx/ink-setfont-sans-l))
            ((== font fonts/sans-b)
             (tx/emit-byte ctxt tx/ink-setfont-sans-b))
+           ((== font fonts/sans-o)
+            (tx/emit-byte ctxt tx/ink-setfont-sans-o))
            ((== font fonts/mono)
             (tx/emit-byte ctxt tx/ink-setfont-mono)))
        (set (tx/c-ink-font ctxt) font)))
@@ -599,6 +602,8 @@ Data structures, this is deliberately a stress test for malloc/free.
          (set font fonts/sans-l))
         ((== op tx/ink-setfont-sans-b)
          (set font fonts/sans-b))
+        ((== op tx/ink-setfont-sans-o)
+         (set font fonts/sans-o))
         ((== op tx/ink-setfont-mono)
          (set font fonts/mono))
         ((== op tx/ink-setcolor)
@@ -1052,6 +1057,11 @@ Data structures, this is deliberately a stress test for malloc/free.
   (if ((str/eq cmd "b")
        (var old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-b)
+       (tx/parse-text)
+       (set (tx/c-font c) old-font))
+      ((str/eq cmd "emph")
+       (set old-font (tx/c-font c))
+       (set (tx/c-font c) fonts/sans-o)
        (tx/parse-text)
        (set (tx/c-font c) old-font))
       ((str/eq cmd "large")

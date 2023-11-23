@@ -1,8 +1,8 @@
 @** Programming, level one
 
 This book defines the Zollern programming language on level one,
-called [b Z1]. Half of the compiler for this language is written
-in the level 0 bootstrap assembler language [b Z0]. The other
+called [emph Z1]. Half of the compiler for this language is written
+in the level 0 bootstrap assembler language [emph Z0]. The other
 half is contained in this book.
 
 The following text will first briefly describe the elements of
@@ -438,7 +438,7 @@ macros are especially interesting!
 
 As mentioned many times above, the advertised syntax of Z1 like
 [code while] is implemented as macros. These macros ultimately
-expand into a number of [b primitives] that are actually understood
+expand into a number of [emph primitives] that are actually understood
 by the lower half of the compiler.
 
 Primitives are expressions where the operator is a literal integer.
