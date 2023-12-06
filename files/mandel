@@ -9,7 +9,9 @@ exposes the infinite complexities hidden in a very simple formula.
 
 @* The mathematics
 
-XXX - explain it all.
+XXX - explain it all
+
+[emph x[sub i+1] = x[supsub 2|i] + c]
 
 Zollern doesn't have complex numbers, so we have to write out
 the computation in terms of the real and imaginary parts. (For
@@ -37,13 +39,13 @@ some time, it didn't have floats either...)
 (var x_im_2 (f* x_im x_im))
 
 @
-The magnitude of a complex number is [code (sqrt (+ (* re re)
-(* im im)))] and if we want to compare it to some other value,
-it is more efficient to square both quatities and compare the
-results, instead of taking a square root. (At least back in the
-days. It might not make any difference here.) So to test whether
-the magnitude of x is greater than 2, we check whether [code
-(+ (* re re) (* im im))] is greater than 4.
+The magnitude of a complex number is [emph sqrt(re[sup 2] + im[sup
+2])] and if we want to compare it to some other value, it is
+more efficient to square both quatities and compare the results,
+instead of taking a square root. (At least back in the days.
+It might not make any difference here.) So to test whether the
+magnitude of x is greater than 2, we check whether [emph re[sup
+2] + im[sup 2]] is greater than 4.
 
 This is why we have computed the squares of the real and imaginary
 parts earlier on. If the language would have native complex numbers,

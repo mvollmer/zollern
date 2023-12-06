@@ -17,6 +17,7 @@ files/fonts: zttf z
 	./zttf /usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf 18 fonts/sans-l >>files/fonts
 	./zttf /usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf 14 fonts/sans-b >>files/fonts
 	./zttf /usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Oblique.ttf 14 fonts/sans-o >>files/fonts
+	./zttf /usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Oblique.ttf 12 fonts/sans-o-s >>files/fonts
 
 zfb: zfb.c
 	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt
