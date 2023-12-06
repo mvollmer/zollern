@@ -9,14 +9,59 @@ exposes the infinite complexities hidden in a very simple formula.
 
 @* The mathematics
 
-XXX - explain it all
+The set is defined to be those numbers [emph c] for which the
+following iterated computation does not cause [emph x[sub n]]
+to escape to infinity as [emph n] gets bigger and bigger.
+@d
+[emph x[sub 0] = 0]
 
-[emph x[sub i+1] = x[supsub 2|i] + c]
+[emph x[sub n+1] = x[supsub 2|n] + c]
+@
+The numbers involved in that computation are [emph complex numbers].
 
-Zollern doesn't have complex numbers, so we have to write out
-the computation in terms of the real and imaginary parts. (For
-some time, it didn't have floats either...)
+A complex number [emph c] can be expressed with two real numbers
+[emph c[sub r]] and [emph c[sub i]]:
+@d
+[emph c = c[sub r] + i c[sub i]]
+@
+The [emph i] in this equation is a special number that is not
+real. It is defined via [emph i[sup 2]] = -1. It is a [emph imaginary]
+number.
 
+Zollern doesn't have complex numbers, only (an approximation to)
+real numbers, so we have to write out the computation in terms
+of the real and imaginary parts. (For some time, it didn't have
+floats either...)
+
+Computation with complex numbers follows the usual arithmetic
+rules:
+@d
+[emph c + d = c[sub r] + d[sub r] + i (c[sub i] + d[sub i] )]
+@
+@d
+[emph c d = (c[sub r] + i c[sub i] ) (d[sub r] + i d[sub i ])]
+
+[emph [hide c d] = c[sub r] d[sub r] + i (c[sub i] d[sub r] + c[sub r] d[sub i ]) + i[sup 2] c[sub i] d[sub i]]
+
+[emph [hide c d] = c[sub r] d[sub r] - c[sub i] d[sub i] + i (c[sub i] d[sub r] + c[sub r] d[sub i ]) ]
+@
+Computing a square then follows easily:
+@d
+[emph x[sup 2] = x x]
+
+[emph [hide x[sup 2]] = x[sub r] x[sub r] - x[sub i] x[sub i] + i (x[sub i] x[sub r] + x[sub r] x[sub i] )]
+
+[emph [hide x[sup 2]] = x[supsub 2|r] -x[supsub 2|i] + i 2x[sub i] x[sub r]]
+@
+
+XXX - explain the escape thing
+
+Now we can implement the iteration that defines the Mandelbrot
+set. But we can't let [emph n] go all the way to infinity, of
+course, so we stop after [code max] iterations. If the value
+hasn't gone past 2 until then, the point is considered to be
+part of the set. If it has escaped, we use the number of iterations
+it took to color the outside of the set.
 @=
 (fun (mandel/iter c_re c_im max)
   (var i 0)
@@ -39,8 +84,8 @@ some time, it didn't have floats either...)
 (var x_im_2 (f* x_im x_im))
 
 @
-The magnitude of a complex number is [emph sqrt(re[sup 2] + im[sup
-2])] and if we want to compare it to some other value, it is
+The magnitude of a complex number is [emph (re[sup 2] + im[sup
+2])[sup 0.5]] and if we want to compare it to some other value, it is
 more efficient to square both quatities and compare the results,
 instead of taking a square root. (At least back in the days.
 It might not make any difference here.) So to test whether the
