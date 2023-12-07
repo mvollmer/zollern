@@ -54,14 +54,16 @@ Computing a square then follows easily:
 [emph [hide x[sup 2]] = x[supsub 2|r] -x[supsub 2|i] + i 2x[sub i] x[sub r]]
 @
 
-XXX - explain the escape thing
-
 Now we can implement the iteration that defines the Mandelbrot
 set. But we can't let [emph n] go all the way to infinity, of
-course, so we stop after [code max] iterations. If the value
-hasn't gone past 2 until then, the point is considered to be
-part of the set. If it has escaped, we use the number of iterations
-it took to color the outside of the set.
+course, so we stop after [code max] iterations or when the magnitude
+of [emph x] is big enough. For reasons that I can't really explain,
+"big enough" means larger than 2 in our case.
+
+Thus, if the value hasn't gone past magnitude 2 within [code max]
+iterations, the point is considered to be part of the set. If
+it has escaped, we use the number of iterations it took to color
+the outside of the set.
 @=
 (fun (mandel/iter c_re c_im max)
   (var i 0)
@@ -107,8 +109,8 @@ for us.
 @* Plotting
 
 Now that we have a function that tells us whether a complex number
-belongs to the Mandelbrot set, we only need to compute for each
-pixel of the screen.
+belongs to the Mandelbrot set, we only need to compute it for
+each pixel of the screen.
 
 The Mandelbrot set has infnite detail and we want to zoom in to
 see as much as we can. And also zoom out again, of course.
