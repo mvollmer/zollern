@@ -39,6 +39,9 @@ Data structures, this is deliberately a stress test for malloc/free.
   c-line-width
   c-line-skip
   c-par-skip
+  c-left-skip
+  c-right-skip
+  c-need-par-skip
   c-prev-depth)
 
 (struct tx/box-context
@@ -349,7 +352,6 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var line-start c)
   (var break-point 0)
   (var next)
-  (set (tx/c-prev-depth (ctxt/tx context)) -1)
   (while c
     (if ((tx/is-glue c)
          (set w (+ w (tx/g-off c))))
@@ -657,9 +659,12 @@ Data structures, this is deliberately a stress test for malloc/free.
   (set (tx/c-font c) fonts/sans)
   (set (tx/c-color c) (gfx/color 0 0 0))
   (set (tx/c-line-width c) 700)
-  (set (tx/c-line-skip c) 20)
-  (set (tx/c-par-skip c) 13)
-  (set (tx/c-prev-depth c) -1)
+  (set (tx/c-line-skip c) 16)
+  (set (tx/c-par-skip c) 11)
+  (set (tx/c-left-skip c) 0)
+  (set (tx/c-right-skip c) 0)
+  (set (tx/c-need-par-skip c) 0)
+  (set (tx/c-prev-depth c) 0)
   (set (tx/c-verbatim c) 0)
   (set (ctxt/tx context) c))
 
@@ -697,12 +702,12 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var bc (tx/c-box-context c))
   (tx/set-node node)
   (var extra-skip 0)
-  (if ((and (> skip 0) (tx/is-box node))
-       (if ((>= (tx/c-prev-depth c) 0)       
+  (if ((tx/is-box node)
+       (if ((> skip 0)
             (set extra-skip (- skip (+ (tx/c-prev-depth c) (tx/b-height node))))))
-       (set (tx/c-prev-depth c) (tx/b-depth node))))
-  (if ((> extra-skip 0)
-       (dbg/int "extra" extra-skip)))
+       (set (tx/c-prev-depth c) (tx/b-depth node)))
+      (else
+       (set (tx/c-prev-depth c) 0)))
   (if (bc
        (if ((> extra-skip 0)
             (var n (mem/alloc tx/glue))
@@ -774,15 +779,15 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var n (tx/get-context))
   (set (tx/vb-height n) height))
 
-(fun (tx/begin-pbox width line-skip)
+(fun (tx/begin-pbox width line-skip left-skip right-skip)
   (var n (mem/alloc tx/pbox))
   (tx/push-context n)
   (set (tx/n-type n) tx/nt-pbox)
   (set (tx/pb-width n) width)
   (set (tx/pb-line-skip n) line-skip)
-  (set (tx/pb-left-off n) 0)
+  (set (tx/pb-left-off n) left-skip)
   (set (tx/pb-left-plus n) 0)
-  (set (tx/pb-right-off n) 0)
+  (set (tx/pb-right-off n) right-skip)
   (set (tx/pb-right-plus n) 0))
 
 (fun (tx/set-pbox-left-skip off plus)
@@ -808,18 +813,33 @@ Data structures, this is deliberately a stress test for malloc/free.
 
 ;; Markup parsing
 
+(fun (tx/maybe-par-skip)
+  (var c (ctxt/tx context))
+  (if ((tx/c-need-par-skip c)
+       (tx/skip (- (tx/c-par-skip c) (tx/c-prev-depth c)) 0 0)
+       (set (tx/c-need-par-skip c) 0))))
+
+(fun (tx/no-par-skip)
+  (var c (ctxt/tx context))
+  (set (tx/c-need-par-skip c) 0))
+
+(fun (tx/need-par-skip)
+  (var c (ctxt/tx context))
+  (set (tx/c-need-par-skip c) 1))
+  
 (fun (tx/ensure-hmode)
   (var c (ctxt/tx context))
   (var b (tx/get-context))
   (if ((or (not b) (== (tx/n-type b) tx/nt-vbox))
-       (tx/skip (tx/c-par-skip c) 0 0) ;; XXX - only when needed
-       (tx/begin-pbox (tx/c-line-width c) (tx/c-line-skip c)))))
+       (tx/maybe-par-skip)
+       (tx/begin-pbox (tx/c-line-width c) (tx/c-line-skip c) (tx/c-left-skip c) (tx/c-right-skip c)))))
 
 (fun (tx/par)
   (var b (tx/get-context))
   (if ((and b (== (tx/n-type b) tx/nt-pbox))
        (tx/skip 0 (tx/fill 1 1) 0)
-       (tx/end))))
+       (tx/end)
+       (tx/need-par-skip))))
 
 (fun (tx/get-char)
   (var r (tx/c-rbuf (ctxt/tx context)))
@@ -990,7 +1010,6 @@ Data structures, this is deliberately a stress test for malloc/free.
 (fun (tx/parse-code-block-section)
   (var c (ctxt/tx context))
   (var t (tx/c-cur-token c))
-  (tx/skip 10 0 0)
   ;; skip header line
   (while (not (str/eq t "]"))
     (tx/next-token))
@@ -999,6 +1018,7 @@ Data structures, this is deliberately a stress test for malloc/free.
   (set (tx/c-font c) fonts/mono)
   (tx/next-token)
   (var need-empty-line 0)
+  (tx/maybe-par-skip)
   (while (and (u8 t) (not (== (u8 t) ch/ht)))
     (if ((== (u8 t 0) ch/nl)
          (set need-empty-line 1))
@@ -1011,7 +1031,7 @@ Data structures, this is deliberately a stress test for malloc/free.
          (tx/text t)
          (tx/end)))
     (tx/next-token))
-  (tx/skip (- 15 (tx/c-par-skip c)) 0 0))
+  (tx/need-par-skip))
 
 (fun (tx/parse-block-section)
   (var c (ctxt/tx context))
@@ -1020,16 +1040,11 @@ Data structures, this is deliberately a stress test for malloc/free.
   (while (not (str/eq t "]"))
     (tx/next-token))
   (tx/next-token)
-  (set (tx/c-line-width c) (- (tx/c-line-width c) 30))
   ;; parse body
-  (tx/begin-hbox)
-  (tx/skip 30 0 0)
-  (tx/begin-vbox)
+  (set (tx/c-line-width c) (- (tx/c-line-width c) 30))
+  (set (tx/c-left-skip c) 30)
   (tx/parse-text)
-  (tx/par)
-  (tx/end)
-  (tx/end)
-  (tx/skip (tx/c-par-skip c) 0 0)
+  (set (tx/c-left-skip c) 0)
   (set (tx/c-line-width c) (+ (tx/c-line-width c) 30)))
   
 (fun (tx/cmd-title)
