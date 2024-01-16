@@ -871,14 +871,29 @@ Data structures, this is deliberately a stress test for malloc/free.
        (not (== c ch/bar))))
 
 (fun (tx/next-word t c n)
-  (while (and (tx/is-word-char c)
+  (var esc 0)
+  (while (and (or (tx/is-word-char c) esc)
               (< n 255))
     (set (u8 t n) c)
+    (set esc (and (not esc) (== c ch/bsl)))
     (set c (tx/get-char))
     (set n (+ n 1)))
   (tx/unget-char c)
   (set (u8 t n) 0))
   
+(fun (tx/unescape t)
+  (var tt t)
+  (var esc 0)
+  (while (u8 t)
+    (if ((and (not esc) (== (u8 t) ch/bsl))
+         (set esc 1))
+        (else
+         (set esc 0)
+         (set (u8 tt) (u8 t))
+         (set tt (+ tt 1))))
+    (set t (+ t 1)))
+  (set (u8 tt) 0))
+         
 (fun (tx/next-token)
   (var c (tx/get-char))
   (var t (tx/c-cur-token (ctxt/tx context)))
@@ -962,6 +977,7 @@ Data structures, this is deliberately a stress test for malloc/free.
         (else
          (tx/ensure-hmode)
          ;; (dbg/str "text" t)
+         (tx/unescape t)
          (tx/text t)
          (tx/next-token)))))
 
