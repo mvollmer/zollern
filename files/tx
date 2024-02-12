@@ -826,7 +826,7 @@ Data structures, this is deliberately a stress test for malloc/free.
 (fun (tx/need-par-skip)
   (var c (ctxt/tx context))
   (set (tx/c-need-par-skip c) 1))
-  
+
 (fun (tx/ensure-hmode)
   (var c (ctxt/tx context))
   (var b (tx/get-context))
@@ -880,7 +880,7 @@ Data structures, this is deliberately a stress test for malloc/free.
     (set n (+ n 1)))
   (tx/unget-char c)
   (set (u8 t n) 0))
-  
+
 (fun (tx/unescape t)
   (var tt t)
   (var esc 0)
@@ -893,7 +893,7 @@ Data structures, this is deliberately a stress test for malloc/free.
          (set tt (+ tt 1))))
     (set t (+ t 1)))
   (set (u8 tt) 0))
-         
+
 (fun (tx/next-token)
   (var c (tx/get-char))
   (var t (tx/c-cur-token (ctxt/tx context)))
@@ -952,7 +952,7 @@ Data structures, this is deliberately a stress test for malloc/free.
     (tx/next-token))
   ((tx/c-execute-command (ctxt/tx context)) cmd)
   (if ((== (u8 t) 0)
-       (dbg/out "EOF INSIDE COMMAND\n"))      
+       (dbg/out "EOF INSIDE COMMAND\n"))
       (else
        (while (not (== (u8 t) ch/]))
          (tx/next-token))
@@ -1022,7 +1022,7 @@ Data structures, this is deliberately a stress test for malloc/free.
          (tx/end)))
     (tx/next-token))
   (tx/skip (- 15 (tx/c-par-skip c)) 0 0))
-  
+
 (fun (tx/parse-code-block-section)
   (var c (ctxt/tx context))
   (var t (tx/c-cur-token c))
@@ -1062,7 +1062,7 @@ Data structures, this is deliberately a stress test for malloc/free.
   (tx/parse-text)
   (set (tx/c-left-skip c) 0)
   (set (tx/c-line-width c) (+ (tx/c-line-width c) 30)))
-  
+
 (fun (tx/cmd-title)
   (var c (ctxt/tx context))
   (tx/par)
@@ -1090,7 +1090,7 @@ Data structures, this is deliberately a stress test for malloc/free.
   (tx/skip 0 (tx/fill 1 1) 0)
   (tx/end)
   (set (tx/c-font c) old-font))
-  
+
 (fun (tx/parse-text-section cmd)
   (var t (tx/c-cur-token (ctxt/tx context)))
   (set (tx/c-font (ctxt/tx context)) fonts/sans)
@@ -1165,7 +1165,7 @@ Data structures, this is deliberately a stress test for malloc/free.
        (var old-color (tx/c-color c))
        (set (tx/c-color c) (gfx/color 255 255 255))
        (tx/parse-text)
-       (set (tx/c-color c) old-color))       
+       (set (tx/c-color c) old-color))
       ((str/eq cmd "sub")
        (set old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-o-s)
@@ -1240,24 +1240,32 @@ Data structures, this is deliberately a stress test for malloc/free.
 ;; Main
 
 (struct tx/instance
+  (base app/instance)
   inst-ink
   inst-y-off
   inst-y-max)
 
-(fun (tx/quit inst)
-  (gfx/quit inst)
-  (tx/free-ink (tx/inst-ink inst))
-  (mem/free inst))
+(fun (tx/init inst name offset)
+  (set (tx/inst-y-off inst) offset)
+  (tx/start)
+  (tx/process-file name)
+  (set (tx/inst-ink inst) (tx/stop))
+  (set (tx/inst-y-max inst) (tx/c-ink-y (ctxt/tx context))))
 
-(fun (tx/paint inst x y w h)
+(fun (tx/cleanup inst)
+  (tx/free-ink (tx/inst-ink inst)))
+
+(fun (tx/paint inst)
+  (var x 0)
+  (var y 0)
+  (var w (app/app-width inst))
+  (var h (app/app-height inst))
   (gfx/draw-init x y w h)
-  (tx/draw-ink (tx/inst-ink inst) (+ x 10) (- y (tx/inst-y-off inst)) (+ x w) (+ y h))
-  (gfx/show))
+  (tx/draw-ink (tx/inst-ink inst) (+ x 10) (- y (tx/inst-y-off inst)) (+ x w) (+ y h)))
 
 (fun (tx/input inst state input x y)
-  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
-       (tx/quit inst))
-      ((== input gfx/ev-key-down)
+  (var old-off (tx/inst-y-off inst))
+  (if ((== input gfx/ev-key-down)
        (set (tx/inst-y-off inst) (+ (tx/inst-y-off inst) 20)))
       ((== input gfx/ev-scroll-down)
        (set (tx/inst-y-off inst) (+ (tx/inst-y-off inst) 100)))
@@ -1272,22 +1280,19 @@ Data structures, this is deliberately a stress test for malloc/free.
   (if ((< (tx/inst-y-off inst) 0)
        (set (tx/inst-y-off inst) 0)))
   (if ((> (tx/inst-y-off inst) (tx/inst-y-max inst))
-       (set (tx/inst-y-off inst) (tx/inst-y-max inst)))))
+       (set (tx/inst-y-off inst) (tx/inst-y-max inst))))
+  (if ((!= old-off (tx/inst-y-off inst))
+       (app/paint-needed inst))))
 
-(book/funtab tx/efuns
+(app/functions tx/funcs
+  tx/init
+  tx/cleanup
   tx/paint
   tx/input)
 
 (fun (tx/launch name)
-  (var old-app (gfx/find name "tx"))
-  (var inst (mem/alloc tx/instance))
+  (var offset 0)
+  (var old-app (app/find name "tx"))
   (if (old-app
-       (set (tx/inst-y-off inst) (tx/inst-y-off (gfx/app-instance old-app))))
-      (else
-       (set (tx/inst-y-off inst) 0)))
-  (tx/start)
-  (tx/process-file name)
-  (set (tx/inst-ink inst) (tx/stop))
-  (set (tx/inst-y-max inst) (tx/c-ink-y (ctxt/tx context)))
-  (gfx/send-quit name "tx")
-  (gfx/launch inst name "tx" tx/efuns))
+       (set offset (tx/inst-y-off old-app))))
+  (app/launch tx/instance name "tx" tx/funcs name offset))

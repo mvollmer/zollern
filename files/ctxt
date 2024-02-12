@@ -1,3 +1,9 @@
+@** The global context
+
+Zollern books can only contain read-only code and data. If a book
+needs some global mutable state, it can use a field...
+
+@=
 (struct ctxt/contexts
   disk
   books
@@ -5,4 +11,5 @@
   mem
   fs
   gfx
+  app
   tx)

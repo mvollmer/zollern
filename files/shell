@@ -1,6 +1,7 @@
 @=
 
 (struct shell/instance
+  (base app/instance)
   cur
   cur-name
   max
@@ -12,15 +13,6 @@
 (fun (shell/capture-output str inst)
   (str/cpy (shell/output-ptr inst) str)
   (set (shell/output-ptr inst) (+ (shell/output-ptr inst) (str/len str))))
-
-(fun (shell/run inst)
-  (if ((and (u8 (shell/cur-name inst))
-            (not (gfx/switch (shell/cur-name inst) "main")))
-       (gfx/launch-book (shell/cur-name inst)))))
-
-(fun (shell/rerun inst)
-  (if ((u8 (shell/cur-name inst))
-       (gfx/launch-book (shell/cur-name inst)))))
 
 (fun (shell/start-create inst)
   (var name (ed/textbuf-new))
@@ -43,67 +35,63 @@
   (ed/textbuf-free name)
   (set (shell/create-textbuf inst) 0))
 
-(struct shell/ed-data
+(struct shell/ed-app
+  (ed-base app/instance)
   ed-name
   ed-text
   ed-ed)
+
+(fun (shell/ed-init inst name rbuf)
+  (set (shell/ed-name inst) (str/dup name))
+  (set (shell/ed-text inst) (ed/textbuf-new))
+  (set (shell/ed-ed inst) (ed/new (shell/ed-name inst) (shell/ed-text inst)))
+  (ed/textbuf-read-file (shell/ed-text inst) rbuf)
+  (ed/highlight (shell/ed-ed inst)))
 
 (fun (shell/ed-write inst)
   (mem wbuf fs/wbuf)
   (fs/create wbuf)
   (ed/textbuf-write-file (shell/ed-text inst) wbuf)
   (fs/commit wbuf (shell/ed-name inst))
-  (set (ed/dirty (shell/ed-ed inst)) 0))
+  (set (ed/dirty (shell/ed-ed inst)) 0)
+  (app/paint-needed inst))
 
-(fun (shell/ed-run inst)
-  (gfx/launch-book (shell/ed-name inst)))
+(fun (shell/ed-save inst)
+  (if ((ed/dirty (shell/ed-ed inst))
+       (shell/ed-write inst))))
 
-(fun (shell/ed-quit inst)
-  (gfx/quit inst)
+(fun (shell/ed-cleanup inst)
+  (if ((ed/dirty (shell/ed-ed inst))
+       (shell/ed-write inst)))
   (ed/free (shell/ed-ed inst))
   (ed/textbuf-free (shell/ed-text inst))
-  (mem/free (shell/ed-name inst))
-  (mem/free inst))
+  (mem/free (shell/ed-name inst)))
 
-(fun (shell/ed-paint inst x y w h)
-  (ed/paint-with-border (shell/ed-ed inst) x y w h))
+(fun (shell/ed-paint inst)
+  (ed/paint-with-border (shell/ed-ed inst) 0 0 (app/app-width inst) (app/app-height inst)))
 
 (fun (shell/ed-input inst state input)
   (set (ed/title (shell/ed-ed inst)) (shell/ed-name inst))
-  (if ((and (== state gfx/ev-state-c-x) (== input ch/s))
-       (if ((ed/dirty (shell/ed-ed inst))
-            (shell/ed-write inst))))
-      ((and (== state gfx/ev-state-c-x) (== input ch/q))
-       (if ((ed/dirty (shell/ed-ed inst))
-            (shell/ed-write inst)))
-       (shell/ed-quit inst))
-      ((and (== state gfx/ev-state-c-x) (== input ch/r))
-       (shell/ed-write inst)
-       (shell/ed-run inst))
-      (else
-       (ed/input (shell/ed-ed inst) state input))))
+  (app/paint-needed inst)
+  (ed/input (shell/ed-ed inst) state input))
 
-(book/funtab shell/ed-efuns
+(app/functions shell/ed-funcs
+  shell/ed-init
+  shell/ed-cleanup
   shell/ed-paint
   shell/ed-input)
 
 (fun (shell/launch-ed name)
   (mem rbuf fs/rbuf)
-  (if ((gfx/switch name "ed")
+  (if ((app/switch name "ed")
        (begin))
       ((fs/open rbuf name)
-       (var ed-inst (mem/alloc shell/ed-data))
-       (set (shell/ed-name ed-inst) (str/dup name))
-       (set (shell/ed-text ed-inst) (ed/textbuf-new))
-       (set (shell/ed-ed ed-inst) (ed/new (shell/ed-name ed-inst) (shell/ed-text ed-inst)))
-       (ed/textbuf-read-file (shell/ed-text ed-inst) rbuf)
-       (ed/highlight (shell/ed-ed ed-inst))
-       (gfx/launch ed-inst name "ed" shell/ed-efuns))))
+       (app/launch shell/ed-app name "ed" shell/ed-funcs name rbuf))))
 
 (fun (shell/save name)
-  (var app (gfx/find name "ed"))
-  (if (app
-       (shell/ed-write (gfx/app-instance app)))))
+  (var inst (app/find name "ed"))
+  (if (inst
+       (shell/ed-save inst))))
 
 (fun (shell/remove inst)
   (if ((u8 (shell/cur-name inst))
@@ -114,26 +102,33 @@
   (set (shell/output-ptr inst) (shell/output inst))
   (shell/capture-output "Shell keys:\n  RET - switch to app\n    e - edit source\n    r - restart\n    X - delete\n\nGlobal keys:\nC-x b - switch to shell\nC-x r - restart\nC-x e - edit source\nC-x q - quit\n\n  M-< - previous app\n  M-> - next app" inst))
 
-(fun (shell/quit inst)
-  (gfx/quit inst)
+(fun (shell/init inst)
+  (set (shell/cur inst) 0)
+  (set (shell/cur-name inst) (mem/alloc 512))
+  (set (u8 (shell/cur-name inst)) 0)
+  (set (shell/output inst) (mem/alloc 2048))
+  (set (u8 (shell/output inst)) 0)
+  (set (shell/create-textbuf inst) 0)
+  (set (shell/create-ed inst) 0))
+
+(fun (shell/cleanup inst)
   (mem/free (shell/output inst))
-  (mem/free (shell/cur-name inst))
-  (mem/free inst))
+  (mem/free (shell/cur-name inst)))
 
 (fun (shell/compute-flags node buf)
   (var name (fs/node-name node))
-  (var app (gfx/find name "main"))
-  (var ed-app (gfx/find name "ed"))
+  (var app (app/find name "main"))
+  (var ed-app (app/find name "ed"))
   (var bk (book/find name))
   (set (u8 buf 0) (if ((and ed-app
-                            (ed/dirty (shell/ed-ed (gfx/app-instance ed-app))))
+                            (ed/dirty (shell/ed-ed ed-app)))
                        ch/*)
                       (else ch/spc)))
   (set (u8 buf 1) (if ((and bk (book/is-out-of-date bk))
                        ch/@)
                       (else ch/spc)))
   (set (u8 buf 2) (if ((and app bk
-                            (!= (gfx/efun-book (gfx/app-functions app)) bk))
+                            (!= (app/ft-book (app/-app-functions app)) bk))
                        ch/#)
                       (else ch/spc)))
   (set (u8 buf 3) 0))
@@ -171,7 +166,11 @@
   (set (u64 nodes i) node)
   (set (u64 nodes (+ i 1)) 0))
 
-(fun (shell/paint inst x y w h)
+(fun (shell/paint inst)
+  (var x 0)
+  (var y 0)
+  (var w (app/app-width inst))
+  (var h (app/app-height inst))
   (mem nodes (* 128 u64))
   (set (u64 nodes 0) 0)
   (book/reset-out-of-date)
@@ -207,14 +206,95 @@
   (gfx/newline)
   (gfx/draw-string (shell/output inst)))
 
+(struct shell/text-app
+  (ta-base app/instance)
+  ta-text)
+
+(fun (shell/text-init inst output)
+  (set (shell/ta-text inst) output))
+
+(fun (shell/text-cleanup inst)
+  (sys/page-put (shell/ta-text inst)))
+
+(fun (shell/text-paint inst)
+  (var x 4)
+  (var y 4)
+  (var w (app/app-width inst))
+  (var h (app/app-height inst))
+  (var str (shell/ta-text inst))
+  (gfx/rect 0 0 w h (gfx/color 255 255 255))
+  (while (and (u8 str)
+              (< y (- h 16)))
+    (if ((== (u8 str) ch/nl)
+         (set x 4)
+         (set y (+ y 16)))
+        (else
+         (set x (+ x (gfx/glyph fonts/mono x y (u8 str))))))
+    (if ((> x (- w 14))
+         (set x 4)
+         (set y (+ y 16))))
+    (set str (+ str 1))))
+
+(fun (shell/text-input inst state input))
+
+(app/functions shell/text-funcs
+  shell/text-init
+  shell/text-cleanup
+  shell/text-paint
+  shell/text-input)
+
+(fun (shell/text-capture-output str buf)
+  (str/cpy (+ buf (str/len buf)) str))
+
+(fun (shell/launch-book name)
+  (var output (sys/page-get))
+  (set (u8 output) 0)
+  (shell/text-capture-output "Launching " output)
+  (shell/text-capture-output name output)
+  (shell/text-capture-output ":\n" output)
+  (var fail 1)
+  (if ((var book (book/get name shell/text-capture-output output))
+       (if ((var main (book/search-fun book "main"))
+            (set fail 0)
+            (main))
+           (else
+            (shell/text-capture-output "no main function\n" output)))
+       (book/unref book)))
+  (if (fail
+       (app/launch shell/text-app "compile" "log" shell/text-funcs output))
+      (else
+       (sys/page-put output))))
+
+(fun (shell/switch-to-or-run inst)
+  (if ((and (u8 (shell/cur-name inst))
+            (not (app/switch (shell/cur-name inst) "main")))
+       (shell/launch-book (shell/cur-name inst)))))
+
+(fun (shell/global-input inst state input)
+  (if ((== state 0)
+       (if ((== input ch/b)
+            (app/switch "shell" "main"))
+           ((== input ch/e)
+            (shell/launch-ed (app/app-name inst)))
+           ((== input ch/v)
+            (tx/launch (app/app-name inst)))
+           ((== input ch/r)
+            (shell/launch-book (app/app-name inst)))
+           ((== input ch/s)
+            (if ((str/eq (app/app-mode inst) "ed")
+                 (shell/ed-save inst))))
+           ((== input ch/q)
+            (app/quit inst))))))
+
 (fun (shell/input inst state input)
+  (app/paint-needed inst)
   (var ed (shell/create-ed inst))
   (if ((== state 0)
        (if ((== input gfx/ev-key-return)
             (if (ed
                  (shell/end-create inst))
                 ((u8 (shell/cur-name inst))
-                 (shell/run inst))
+                 (shell/switch-to-or-run inst))
                 (else
                  (shell/start-create inst))))
            (ed
@@ -227,33 +307,26 @@
                  (set (shell/cur inst) (+ (shell/cur inst) 1)))))
            ((== input ch/e)
             (if ((shell/cur-name inst)
-                 (shell/launch-ed (shell/cur-name  inst)))))
+                 (shell/launch-ed (shell/cur-name inst)))))
            ((== input ch/v)
             (if ((shell/cur-name inst)
-                 (tx/launch (shell/cur-name  inst)))))
+                 (tx/launch (shell/cur-name inst)))))
            ((== input ch/s)
             (if ((shell/cur-name inst)
-                 (shell/save (shell/cur-name  inst)))))
+                 (shell/save (shell/cur-name inst)))))
            ((== input ch/r)
-            (shell/rerun inst))
+            (if ((shell/cur-name inst)
+                 (shell/launch-book (shell/cur-name inst)))))
            ((== input ch/X)
             (shell/remove inst))
            ((== input ch/h)
-            (shell/help inst))))
-      ((and (== state gfx/ev-state-c-x) (== input ch/q))
-       (shell/quit inst))))
+            (shell/help inst))))))
 
-(book/funtab shell/efuns
+(app/functions shell/funcs
+  shell/init
+  shell/cleanup
   shell/paint
   shell/input)
 
 (fun (shell/main)
-  (var inst (mem/alloc shell/instance))
-  (set (shell/cur inst) 0)
-  (set (shell/cur-name inst) (mem/alloc 512))
-  (set (u8 (shell/cur-name inst)) 0)
-  (set (shell/output inst) (mem/alloc 2048))
-  (set (u8 (shell/output inst)) 0)
-  (set (shell/create-textbuf inst) 0)
-  (set (shell/create-ed inst) 0)
-  (gfx/launch inst "shell" "main" shell/efuns))
+  (app/launch shell/instance "shell" "main" shell/funcs))

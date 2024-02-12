@@ -121,58 +121,38 @@ should plot, and the [code input] function modifies them to achieve
 the zooming.
 
 @=
-(struct mandel/data
+(struct mandel/instance
+  (base app/instance)
   cur-re-min cur-re-max
-  cur-im-min cur-im-max
-  x-size y-size
-  need-render)
-
-@
-The [code x-size] and [code y-size] fields are needed to work
-around some shortcomings of the [code gfx] book: The [code input]
-function needs to know how big the screen is to compute new bounds
-during zooming, but only the [code paint] function is told that
-size.
-
-Similarily, [code need-render] is used to avoid the expensive
-Mandelbrot computations when possible. The [code gfx] book
-assumes that [code paint] needs to be called after every input
-event, but most input events do not actually change how the screen
-should look.
-
-This will be fixed in the [code gfx] book pretty soon, promise!
+  cur-im-min cur-im-max)
 
 @=
 <define the [code mandel/render] function>
 
-(fun (mandel/paint inst x y w h)
-  (if ((mandel/need-render inst)
-       (set (mandel/x-size inst) w)
-       (set (mandel/y-size inst) h)
-       (mandel/render inst)))
-  (set (mandel/need-render inst) 1))
+(fun (mandel/init inst)
+  <init zoom>)
+
+(fun (mandel/cleanup inst))
+
+(fun (mandel/paint inst)
+  (mandel/render inst))
 
 (fun (mandel/input inst state input event-x event-y)
-  (set (mandel/need-render inst) 0)
-  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
-       (gfx/quit inst)
-       (mem/free inst))
-      ((== input gfx/ev-key-backspace)
+  (if ((== input gfx/ev-key-backspace)
        <zoom out>
-       (set (mandel/need-render inst) 1))
+       (app/paint-needed inst))
       ((== input gfx/ev-button-1-press)
        <zoom in>
-       (set (mandel/need-render inst) 1))))
+       (app/paint-needed inst))))
   
-(book/funtab mandel/efuns
+(app/functions mandel/funcs
+  mandel/init
+  mandel/cleanup
   mandel/paint
   mandel/input)
 
 (fun (mandel/main)
-  (var inst (mem/alloc mandel/data))
-  <init zoom>
-  (set (mandel/need-render inst) 1)
-  (gfx/launch inst "mandel" "main" mandel/efuns))
+  (app/launch mandel/instance "mandel" "main" mandel/funcs))
 
 @
 Zooming is pretty straightforward. It just looks like a lot of
@@ -191,8 +171,8 @@ of [code (mandel/cur-re-min inst)].
 @= <zoom in>
 (var re-len (f- (mandel/cur-re-max inst) (mandel/cur-re-min inst)))
 (var im-len (f- (mandel/cur-im-max inst) (mandel/cur-im-min inst)))
-(var x (f+ (mandel/cur-re-min inst) (f/ (f* (i->f event-x) re-len) (i->f (mandel/x-size inst)))))
-(var y (f+ (mandel/cur-im-min inst) (f/ (f* (i->f event-y) im-len) (i->f (mandel/y-size inst)))))
+(var x (f+ (mandel/cur-re-min inst) (f/ (f* (i->f event-x) re-len) (i->f (app/app-width inst)))))
+(var y (f+ (mandel/cur-im-min inst) (f/ (f* (i->f event-y) im-len) (i->f (app/app-height inst)))))
 (var dx2 (f/ re-len (i->f 4)))
 (var dy2 (f/ im-len (i->f 4)))
 (set (mandel/cur-re-min inst) (f- x dx2))
@@ -229,8 +209,8 @@ math and structure accesses.
   (var re-max (mandel/cur-re-max inst))
   (var im-min (mandel/cur-im-min inst))
   (var im-max (mandel/cur-im-max inst))
-  (var re (f+ re-min (f* (i->f x) (f/ (f- re-max re-min) (i->f (mandel/x-size inst))))))
-  (var im (f+ im-min (f* (i->f y) (f/ (f- im-max im-min) (i->f (mandel/y-size inst))))))
+  (var re (f+ re-min (f* (i->f x) (f/ (f- re-max re-min) (i->f (app/app-width inst))))))
+  (var im (f+ im-min (f* (i->f y) (f/ (f- im-max im-min) (i->f (app/app-height inst))))))
   (var c (- 255 (mandel/iter re im 255)))
   (gfx/put-pixel x y (gfx/color (* c 15) (* c 1) (* c 32))))
 
@@ -355,8 +335,7 @@ to get it all started, we need to render one explicitly.
   (mandel/fill-rect inst x1 x2 y1 y2))
 
 (fun (mandel/render inst)
-  (mandel/render-rect inst 0 (- (mandel/x-size inst) 1) 0 (- (mandel/y-size inst) 1))
-  (gfx/show))
+  (mandel/render-rect inst 0 (- (app/app-width inst) 1) 0 (- (app/app-height inst) 1)))
 
 @
 And that's the whole story.

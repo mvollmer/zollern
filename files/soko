@@ -63,7 +63,8 @@ N steps, etc.
   tile-box-on-target
   tile-target-reaching)
 
-(struct soko/data
+(struct soko/instance
+  (base app/instance)
   dozer-dir
   dozer-x
   dozer-y
@@ -355,14 +356,23 @@ N steps, etc.
   (set (soko/path-len inst) 0)
   (soko/find-target-reaching inst))
 
-(fun (soko/paint inst x y w h)
+(fun (soko/init inst levels)
+  (set (soko/move-history inst) (sys/page-get))
+  (set (soko/levels inst) levels)
+  (set (soko/cur-level inst) 0)
+  (soko/init-level inst))
+
+(fun (soko/cleanup inst)
+  (sys/page-put (soko/move-history inst)))
+
+(fun (soko/paint inst)
   (soko/paint-level inst))
 
 (fun (soko/input inst state input x y)
+  (app/paint-needed inst)
   (if ((== state 0)
        (if ((== input ch/q)
-            (gfx/quit inst)
-            (mem/free inst))
+            (app/quit inst))
            ((== input ch/r)
             (soko/init-level inst))
            ((== input gfx/ev-key-left)
@@ -391,22 +401,16 @@ N steps, etc.
            ((== input gfx/ev-key-page-down)
             (if ((u64 (soko/levels inst) (+ (soko/cur-level inst) 1))
                  (set (soko/cur-level inst) (+ (soko/cur-level inst) 1))
-                 (soko/init-level inst))))))
-      ((and (== state gfx/ev-state-c-x) (== input ch/q))
-       (gfx/quit inst)
-       (mem/free inst))))
+                 (soko/init-level inst))))))))
 
-(book/funtab soko/efuns
+(app/functions soko/funcs
+  soko/init
+  soko/cleanup
   soko/paint
   soko/input)
 
 (fun (soko/launch levels)
-  (var inst (mem/alloc soko/data))
-  (set (soko/move-history inst) (sys/page-get))
-  (set (soko/levels inst) levels)
-  (set (soko/cur-level inst) 0)
-  (soko/init-level inst)
-  (gfx/launch inst "soko" "main" soko/efuns))
+  (app/launch soko/instance "soko" "main" soko/funcs levels))
 
 (data soko/level_0
   (0

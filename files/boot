@@ -8,13 +8,15 @@ than to restart Zollern completely.
 
 @* Entry point
 
-The bootstrap compiler will transfer control to [code boot/start].
+The bootstrap compiler in the "comp" book will transfer control
+to [code boot/start].
 
 @=
 (fun (boot/start)
   (mem/init)
   (fs/init)
   (gfx/init)
+  (app/init)
   (shell/main)
-  (gfx/loop)
+  (app/loop)
   (dbg/out "HALT\n"))

@@ -1,0 +1,335 @@
+@** Applications
+
+Applications are, like everything else, very simple in Zollern:
+They are purely event-driven, and can draw into a single rectangular
+area of the screen. There is no multi-threading, and no background
+processing. There is just a global event loop. If an application
+takes a long time to process an event (like computing the Mandelbrot
+set), this will block everything else and there is no way to
+interrupt that. If you code an infinite loop by accident, your
+only way out is to restart all of Zollern from the outside.
+
+This is not great, obviously, but sufficient for now.
+
+An application is defined by a set of functions; one for painting,
+one for processing events, and a couple more. These functions
+are called at approprate times by the global event loop.
+
+The state of an application is stored in its [emph instance] structure,
+which is passed to the application functions on every call.
+
+Applications have a [emph name] and a [emph mode]. The name is
+usually the name of a book, and the mode is usually one of "main",
+"ed", or "tx".
+
+For example, editing the "lang" book will be done with an application
+named "lang" in mode "ed". The functions of that application
+are from the [code ed] book. Conversely, when playing the Soko
+game, there will be an application named "soko" in mode "main",
+and its functions will be from the [code soko] book.
+
+@* Application instances
+
+Application instances use a simple form of [emph object orientation].
+Each instance structure should be derived from [code app/instance]
+and needs to provide implementations of the application methods
+in a table created by [code app/functions].
+
+Deriving from [code app/instance] is done by simply defining a
+new structure type that has [code app/instance] as its first
+element. Then a pointer to such an instance is also a pointer
+to a [code app/instance] and can be used with the functions in
+this book.
+
+For example:
+@c
+(struct my/instance
+  (base app/instance)
+  my-data)
+@
+We also need to define the following functions for our new application,
+and collect them in a table.
+@c
+(fun (my/init inst)
+  (set (my/my-data inst) (mem/alloc 100)))
+
+(fun (my/cleanup inst)
+  (mem/free (my/my-data inst)))
+
+(fun (my/paint inst)
+  (gfx/rect 10 10 10 10 (gfx/color 255 0 0)))
+
+(fun (my/input inst state input)
+  ...)
+
+(app/functions my/funcs
+  my/init
+  my/cleanup
+  my/paint
+  my/input)
+@
+
+With these, we can launch our application by calling [code app/launch].
+@c
+(fun (my/main)
+  (app/launch my/instance "my" "main" my/funcs))
+@
+This will allocate [code my/instance] bytes of memory and initialize
+them to become the instance structure of the new application.
+As part of the initialization, [code my/init] will be called.
+
+Then, whenever this application needs to be shown, the [code my/paint]
+function will be called with the instance structure as its argument.
+The paint function can retrieve from the instance structure whatever
+state is needed to draw the application. It can also treat its
+argument as a [code app/instance] structure and access a couple
+of [emph its] fields.
+
+Let's look at the actual definition of [code app/instance]:
+
+@=
+(struct app/instance
+  -app-link
+  -app-functions
+  -app-needs-paint
+
+  app-name
+  app-mode
+  app-width
+  app-height)
+@
+
+The fields starting with "-" are meant to be private to this book.
+You will see below how they are used. But application functions
+are expected to look at the remaining fields. The [code app/name]
+and [code app/mode] fields are maybe not so interesting, but
+[code app/width] and [code app/height] contain the size of the
+drawing area that the application is supposed to draw itself
+into.
+
+Here is how painting works: Each application has a flag that says
+whether or not the screen is up-to-date with respect to the state
+of the application. If not, the event loop will call the paint
+function of that application. The paint function in turn then
+uses functions from the [code gfx] book to draw whatever it
+wants in the rectangle bounded by (0, 0) and ([emph w, h]), where
+[emph w] and [emph h] are the values of the [code app/width]
+and [code app/height] fields.
+
+The "painting needed" flag is maintained by some of the functions
+in this book. For example, [code app/launch] will initialize
+it to true, and switching to an application will also automatically
+cause that application to be painted. But if an application needs
+to be painted after an input event, its input function needs
+to explicitly set that flag.
+
+This is done with the [code app/paint-needed] function:
+@=
+(fun (app/paint-needed inst)
+  (set (app/-app-needs-paint inst) 1))
+
+@* Application functions
+
+The functions of an application are collected with [code book/funtab].
+This allows us to maintain the reference count of the book that
+the functions are defined in.
+
+Imagine what would otherwise happen when a book is recompiled.
+Say that a application is running that has been launched by the
+"my" book. When the "my" book is changed and recompiled, the
+new book instance will replace the old one in the global lists
+of books. Ordinarily this will remove the old instance from memory.
+But the running application still uses the functions in the old
+instance of the book, and any request to paint it, or even to
+quit it, will result in a crash.
+
+We could be careful when compiling a book and make sure to first
+quit any application that uses its code. But its hard to figure
+that out for books that are used as indirect dependencies of
+other books. So instead, an application calls [code book/ref]
+for the book that launches it, and prevents that book from being
+prematurely removed from memory.
+
+The [code book/funtab] macro makes it easy to collect a bunch
+of functions together with a pointer to the book instance that
+they are defined in.
+
+But instead of telling applications to use [code book/funtab]
+directly, we wrap it up in our own [code app/functions] macro.
+This allows us to give names to the individual functions, and
+also causes compilation to fail if an application forgets one.
+
+@=
+(struct app/functab
+  ft-book
+  ft-init
+  ft-cleanup
+  ft-paint
+  ft-input)
+
+(def (app/functions ?name ?init ?cleanup ?paint ?input)
+  (book/funtab ?name ?init ?cleanup ?paint ?input))
+
+@* Launching and quitting applications
+
+All applications are maintained via a linked list in the [code
+ctxt/app] part of the global context. The first entry in that
+list receives (almost) all input events.
+
+@=
+(struct app/context
+  ac-apps)
+
+(fun (app/init)
+  (var c (mem/alloc app/context))
+  (set (ctxt/app context) c)
+  (set (app/ac-apps c) 0))
+@
+Here is a simple function to find an application by name and mode.
+@=
+(fun (app/find name mode)
+  (var c (ctxt/app context))
+  (var inst (app/ac-apps c))
+  (while inst
+    (if ((and (== (str/cmp (app/app-name inst) name) 0)
+              (== (str/cmp (app/app-mode inst) mode) 0))
+         (goto done)))
+    (set inst (app/-app-link inst)))
+  (label done)
+  inst)
+@
+We start with the implementation of quitting an application, because
+launching a new application will first quit an existing application
+with the same name and mode.
+
+The [code app/quit] function has to walk the list, but it also
+has to modify it when removing the instance structure. It does
+that by maintaining a pointer to the pointer of the current instance.
+@=
+(fun (app/quit inst)
+  (var c (ctxt/app context))
+  (var ptr (loc (app/ac-apps c)))
+  (while (u64 ptr)
+    (if ((== (u64 ptr) inst)
+         (set (u64 ptr) (app/-app-link inst))
+         ((app/ft-cleanup (app/-app-functions inst)) inst)
+         (book/funtab-unref (app/-app-functions inst))
+         (mem/free (app/app-name inst))
+         (mem/free (app/app-mode inst))
+         (mem/free inst))
+        (else
+         (set ptr (loc (app/-app-link (u64 ptr)))))))
+  (app/paint-needed (app/ac-apps c)))
+@
+
+Launching has to allocate the new instance structure, initialize
+it, and link it into the list.
+
+Often, the initialization function needs some arguments, and we
+make that possible by passing five generic ones from the call
+to [code app/launch] to the [code app/ft-init] function. Because
+Z1 doesn't check anything, you can just pass as many as you need
+to [code app/launch] and define your init function to expect
+the same amount (up to a maximum of five). No type checker will
+yell at you.
+
+@=
+(fun (app/launch size name mode functions arg1 arg2 arg3 arg4 arg5)
+  (var old (app/find name mode))
+  (if (old
+       (app/quit old)))
+  (var inst (mem/alloc size))
+  (set (app/app-name inst) (str/dup name))
+  (set (app/app-mode inst) (str/dup mode))
+  (set (app/-app-functions inst) functions)
+  (book/funtab-ref functions)
+  (var gfx (ctxt/gfx context))
+  (set (app/app-width inst) (gfx/gfx-screen-height gfx))
+  (set (app/app-height inst) (gfx/gfx-screen-height gfx))
+  (app/paint-needed inst)
+  ((app/ft-init functions) inst arg1 arg2 arg3 arg4 arg5)
+  (set (app/-app-link inst) (app/ac-apps (ctxt/app context)))
+  (set (app/ac-apps (ctxt/app context)) inst))
+@
+To switch to an application, its instance is simply moved to the
+front of the list.
+@=
+(fun (app/switch name mode)
+  (var c (ctxt/app context))
+  (var ptr (loc (app/ac-apps c)))
+  (var found 0)
+  (while (u64 ptr)
+    (var app (u64 ptr))
+    (if ((and (== (str/cmp (app/app-name app) name) 0)
+              (== (str/cmp (app/app-mode app) mode) 0))
+         (set (u64 ptr) (app/-app-link app))
+         (set (app/-app-link app) (app/ac-apps c))
+         (set (app/ac-apps c) app)
+         (app/paint-needed app)
+         (set found 1)
+         (goto done))
+        (else
+         (set ptr (loc (app/-app-link app))))))
+  (label done)
+  found)
+
+@* Event loop
+
+The event loop is a literal loop that reads an event with [code
+gfx/read-event], dispatches it to the current foreground application,
+and repeats. It only stops when there are no applications left.
+
+Most events are input events that are passed on directly to the
+current application, but some are [emph global input events].
+The event loop intercepts the [code C-x] key itself and passes
+the next input event to the shell. For example, typing [code
+C-x e] will cause the event for [code e] to be passed to the
+[code shell/global-input] function. That function will then open
+the editor for the source code of the current application.
+
+We could just directly call [code shell/global-input] here, but
+that would make the "shell" book a dependency of this "app" book.
+This would be a problem since the event loop can not be restarted
+without restarting all of Zollern.
+
+Thus, we look up the current "shell" book on each global input
+event so that we always pick up its newest version, and one can
+actually change what the global keys do by simply recompiling
+the shell.
+
+@=
+(fun (app/global-input inst state input)
+  (if ((var book (book/find "shell"))
+       (if ((var func (book/search-fun book "global-input"))
+            (func inst state input)))
+       (book/unref book))))
+@
+
+And now the loop itself. Before reading the next event, it paints
+the current application if necessary.
+
+@=
+(fun (app/loop)
+  (var c (ctxt/app context))
+  (var c-x-prefix 0)
+  (while (app/ac-apps c)
+    (var inst (app/ac-apps c))
+    (if ((app/-app-needs-paint inst)
+         ((app/ft-paint (app/-app-functions inst)) inst)
+         (gfx/show)
+         (set (app/-app-needs-paint inst) 0)))
+    (mem event gfx/event)
+    (gfx/read-event event)
+    (if ((== (gfx/ev-type event) 1)
+         (sys/exit 0))
+        ((== (gfx/ev-type event) 3)
+         (gfx/resize (gfx/ev-x event) (gfx/ev-y event)))
+        ((== (gfx/ev-type event) 2)
+         (var state (gfx/ev-state event))
+         (var input (gfx/ev-input event))
+         (if ((and (not c-x-prefix) (== state gfx/ev-state-control) (== input ch/x))
+              (set c-x-prefix 1))
+             (else
+              (var func (if (c-x-prefix app/global-input) (else (app/ft-input (app/-app-functions inst)))))
+              (func inst state input (gfx/ev-x event) (gfx/ev-y event))
+              (set c-x-prefix 0)))))))

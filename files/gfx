@@ -4,7 +4,6 @@
   gfx-screen-width
   gfx-screen-height
   gfx-pixels
-  gfx-apps
 
   gfx-x
   gfx-y
@@ -22,7 +21,6 @@
 (def gfx/ev-state-shift    8)
 (def gfx/ev-state-control 16)
 (def gfx/ev-state-meta    32)
-(def gfx/ev-state-c-x     64)
 
 (def gfx/ev-button-1-press   -1)
 (def gfx/ev-button-1-release -2)
@@ -96,7 +94,6 @@
 (fun (gfx/init)
   (set (ctxt/gfx context) (mem/alloc gfx/context))
   (set (gfx/gfx-pixels (ctxt/gfx context)) 0)
-  (set (gfx/gfx-apps (ctxt/gfx context)) 0)
   (mem event gfx/event)
   (while (begin
            (gfx/read-event event)
@@ -338,203 +335,3 @@
             (> x (gfx/gfx-x g)))
        (gfx/invert-rect (gfx/gfx-x g) (gfx/gfx-y g) (- x (gfx/gfx-x g)) (gfx/get-line-height))))
   (set (gfx/gfx-x g) x))
-
-;; Event loop
-
-(struct gfx/event-funtab
-  efun-book
-  efun-paint
-  efun-input)
-
-(fun (gfx/paint instance functions)
-  ((gfx/efun-paint functions) instance 0 0 (gfx/width) (gfx/height))
-  (gfx/show))
-
-(struct gfx/app
-  app-link
-  app-name
-  app-mode
-  app-instance
-  app-functions)
-
-(fun (gfx/launch instance name mode functions)
-  (var app (mem/alloc gfx/app))
-  (set (gfx/app-instance app) instance)
-  (set (gfx/app-name app) (str/dup name))
-  (set (gfx/app-mode app) (str/dup mode))
-  (set (gfx/app-functions app) functions)
-  (book/funtab-ref functions)
-  (set (gfx/app-link app) (gfx/gfx-apps (ctxt/gfx context)))
-  (set (gfx/gfx-apps (ctxt/gfx context)) app))
-
-(fun (gfx/quit instance)
-  (var gfx (ctxt/gfx context))
-  (var ptr (loc (gfx/gfx-apps gfx)))
-  (while (u64 ptr)
-    (var app (u64 ptr))
-    (if ((== (gfx/app-instance app) instance)
-         (set (u64 ptr) (gfx/app-link app))
-         (book/funtab-unref (gfx/app-functions app))
-         (mem/free (gfx/app-name app))
-         (mem/free (gfx/app-mode app))
-         (mem/free app))
-        (else
-         (set ptr (loc (gfx/app-link app)))))))
-
-(fun (gfx/next)
-  (var gfx (ctxt/gfx context))
-  (if ((and (var cur (gfx/gfx-apps gfx))
-            (var next (gfx/app-link cur)))
-       (set (gfx/gfx-apps gfx) next)
-       (while (gfx/app-link next)
-         (set next (gfx/app-link next)))
-       (set (gfx/app-link next) cur)
-       (set (gfx/app-link cur) 0))))
-
-(fun (gfx/prev)
-  (var gfx (ctxt/gfx context))
-  (if ((and (var last (gfx/gfx-apps gfx))
-            (var prev (gfx/gfx-apps gfx)))
-       (while (gfx/app-link prev)
-         (set last prev)
-         (set prev (gfx/app-link prev)))
-       (set (gfx/app-link last) 0)
-       (set (gfx/app-link prev) (gfx/gfx-apps gfx))
-       (set (gfx/gfx-apps gfx) prev))))
-
-(fun (gfx/switch name mode)
-  (var gfx (ctxt/gfx context))
-  (var ptr (loc (gfx/gfx-apps gfx)))
-  (var found 0)
-  (while (u64 ptr)
-    (var app (u64 ptr))
-    (if ((and (== (str/cmp (gfx/app-name app) name) 0)
-              (== (str/cmp (gfx/app-mode app) mode) 0))
-         (set (u64 ptr) (gfx/app-link app))
-         (set (gfx/app-link app) (gfx/gfx-apps gfx))
-         (set (gfx/gfx-apps gfx) app)
-         (set found 1)
-         (goto done))
-        (else
-         (set ptr (loc (gfx/app-link app))))))
-  (label done)
-  found)
-
-(fun (gfx/find name mode)
-  (var gfx (ctxt/gfx context))
-  (var app (gfx/gfx-apps gfx))
-  (while app
-    (if ((and (== (str/cmp (gfx/app-name app) name) 0)
-              (== (str/cmp (gfx/app-mode app) mode) 0))
-         (goto done)))
-    (set app (gfx/app-link app)))
-  (label done)
-  app)
-
-(fun (gfx/send-quit name mode)
-  (var app (gfx/find name mode))
-  (if (app
-       ((gfx/efun-input (gfx/app-functions app))
-        (gfx/app-instance app) gfx/ev-state-c-x ch/q 0 0))))
-
-(fun (gfx/text-paint inst ox oy w h)
-  (var x (+ ox 4))
-  (var y (+ oy 4))
-  (var str inst)
-  (gfx/rect ox oy w h (gfx/color 255 255 255))
-  (while (and (u8 str)
-              (< y (- h 16)))
-    (if ((== (u8 str) ch/nl)
-         (set x (+ ox 4))
-         (set y (+ y 16)))
-        (else
-         (set x (+ x (gfx/glyph fonts/mono x y (u8 str))))))
-    (if ((> x (- w 14))
-         (set x (+ ox 4))
-         (set y (+ y 16))))
-    (set str (+ str 1)))
-  (gfx/show))
-
-(fun (gfx/text-input inst state input)
-  (if ((and (== state gfx/ev-state-c-x) (== input ch/q))
-       (gfx/quit inst)
-       (sys/page-put inst))))
-
-(book/funtab gfx/text-efuns
-  gfx/text-paint
-  gfx/text-input)
-
-(fun (gfx/capture-output str buf)
-  (str/cpy (+ buf (str/len buf)) str))
-
-(fun (gfx/launch-book name)
-  (var output (sys/page-get))
-  (set (u8 output) 0)
-  (gfx/capture-output "Launching " output)
-  (gfx/capture-output name output)
-  (gfx/capture-output ":\n" output)
-  (var fail 1)
-  (if ((var book (book/get name gfx/capture-output output))
-       (if ((var main (book/search-fun book "main"))
-            (set fail 0)
-            (gfx/send-quit name "main")
-            (main))
-           (else
-            (gfx/capture-output "no main function\n" output)))
-       (book/unref book)))
-  (if (fail
-       (gfx/send-quit "compile" "log")
-       (gfx/launch output "compile" "log" gfx/text-efuns))
-      (else
-       (sys/page-put output))))
-
-(fun (gfx/launch-ed name)
-  (if ((var book (book/find "shell"))
-       (if ((var func (book/search-fun book "launch-ed"))
-            (func name)))
-       (book/unref book))))
-
-(fun (gfx/launch-tx name)
-  (if ((var book (book/find "tx"))
-       (if ((var func (book/search-fun book "launch"))
-            (func name)))
-       (book/unref book))))
-
-(fun (gfx/loop)
-  (var gfx (ctxt/gfx context))
-  (var extra-state 0)
-  (while (gfx/gfx-apps gfx)
-    (var app (gfx/gfx-apps gfx))
-    (gfx/paint (gfx/app-instance app) (gfx/app-functions app))
-    (mem event gfx/event)
-    (gfx/read-event event)
-    (if ((== (gfx/ev-type event) 1)
-         (sys/exit 0))
-        ((== (gfx/ev-type event) 3)
-         (gfx/resize (gfx/ev-x event) (gfx/ev-y event)))
-        ((== (gfx/ev-type event) 2)
-         (var state (bit-or (gfx/ev-state event) extra-state))
-         (var input (gfx/ev-input event))
-         (if ((and (== state gfx/ev-state-control) (== input ch/x))
-              (set extra-state gfx/ev-state-c-x))
-             (else
-              (if ((and (== state gfx/ev-state-c-x) (== input ch/b))
-                   (gfx/switch "shell" "main"))
-                  ((and (== state gfx/ev-state-c-x) (== input ch/r))
-                   (var name (str/dup (gfx/app-name app)))
-                   (gfx/launch-book name)
-                   (mem/free name))
-                  ((and (== state gfx/ev-state-c-x) (== input ch/e))
-                   (gfx/launch-ed (gfx/app-name app)))
-                  ((and (== state gfx/ev-state-c-x) (== input ch/v))
-                   (gfx/launch-tx (gfx/app-name app)))
-                  ((and (== state gfx/ev-state-meta) (== input ch/<))
-                   (gfx/next))
-                  ((and (== state gfx/ev-state-meta) (== input ch/>))
-                   (gfx/prev))
-                  (else
-                   ((gfx/efun-input (gfx/app-functions app))
-                    (gfx/app-instance app)
-                    state input
-                    (gfx/ev-x event) (gfx/ev-y event))))
-              (set extra-state 0)))))))
