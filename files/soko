@@ -410,7 +410,7 @@ N steps, etc.
   soko/input)
 
 (fun (soko/launch levels)
-  (app/launch soko/instance "soko" "main" soko/funcs levels))
+  (app/launch (app/new soko/instance soko/funcs levels)  "soko" "main"))
 
 (data soko/level_0
   (0

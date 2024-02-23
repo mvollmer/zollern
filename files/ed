@@ -200,7 +200,7 @@ file can be larger than one page...
             (- (ed/rgt ed) (ed/lft ed)) (- (ed/bot ed) (ed/top ed))
             (gfx/color 255 255 255)))
 
-(fun (ed/paint-lines ed pos start-row n-rows)
+(fun (ed/paint-lines ed pos start-row n-rows focus)
   (var w (ed/col-width ed))
   (var h (ed/row-height ed))
   (var end (ed/len ed))
@@ -215,7 +215,7 @@ file can be larger than one page...
     (while (> n-cols 0)
       (set c (if ((>= pos end) ch/nl) (else (ed/char ed pos))))
       (set x (+ x (if ((== c ch/nl) w) (else (gfx/glyph-noclip-nocompose fonts/mono x y c)))))
-      (if ((== pos (ed/point ed))
+      (if ((and (== pos (ed/point ed)) focus)
            (gfx/invert-rect (- x w) y w h)))
       (if ((and (!= c ch/nl)
                 (>= (ed/mark ed) 0)
@@ -292,16 +292,16 @@ file can be larger than one page...
        (set (ed/rows ed) (- (ed/rows ed) 1))))
   (set (ed/cols ed) (/ w (ed/col-width ed))))
 
-(fun (ed/paint ed x y w h)
+(fun (ed/paint ed x y w h focus)
   (ed/resize ed x y w h)
   (ed/frame ed)
   (ed/clear ed)
-  (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed))
+  (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed) focus)
   (if ((ed/title ed)
        (ed/paint-status-line ed))))
 
-(fun (ed/paint-with-border ed x y w h)
-  (ed/paint ed (+ x 4) (+ y 4) (- w 8) (- h 8)))
+(fun (ed/paint-with-border ed x y w h focus)
+  (ed/paint ed (+ x 4) (+ y 4) (- w 8) (- h 8) focus))
 
 @* Cursor movement
 @=

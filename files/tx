@@ -1288,4 +1288,4 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var old-app (app/find name "tx"))
   (if (old-app
        (set offset (tx/inst-y-off old-app))))
-  (app/launch tx/instance name "tx" tx/funcs name offset))
+  (app/launch (app/new tx/instance tx/funcs name offset) name "tx"))

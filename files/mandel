@@ -152,7 +152,7 @@ the zooming.
   mandel/input)
 
 (fun (mandel/main)
-  (app/launch mandel/instance "mandel" "main" mandel/funcs))
+  (app/launch (app/new mandel/instance mandel/funcs) "mandel" "main"))
 
 @
 Zooming is pretty straightforward. It just looks like a lot of

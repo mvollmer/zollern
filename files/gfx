@@ -320,7 +320,6 @@
            (< (+ y h) 0) (>= y (gfx/gfx-win-h gfx)))
        (gfx/glyph-advance glyph))
       (else
-       (gfx/win-to-screen gfx x y)
        (var src-p (+ glyph gfx/glyph-header))
        (var i)
        (var j)
