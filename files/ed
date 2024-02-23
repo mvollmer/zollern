@@ -214,7 +214,7 @@ file can be larger than one page...
     (set x (ed/lft ed))
     (while (> n-cols 0)
       (set c (if ((>= pos end) ch/nl) (else (ed/char ed pos))))
-      (set x (+ x (if ((== c ch/nl) w) (else (gfx/glyph fonts/mono x y c)))))
+      (set x (+ x (if ((== c ch/nl) w) (else (gfx/glyph-noclip-nocompose fonts/mono x y c)))))
       (if ((== pos (ed/point ed))
            (gfx/invert-rect (- x w) y w h)))
       (if ((and (!= c ch/nl)

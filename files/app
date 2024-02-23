@@ -315,6 +315,7 @@ the current application if necessary.
   (while (app/ac-apps c)
     (var inst (app/ac-apps c))
     (if ((app/-app-needs-paint inst)
+         (gfx/set-window 0 0 (app/app-width inst) (app/app-height inst))
          ((app/ft-paint (app/-app-functions inst)) inst)
          (gfx/show)
          (set (app/-app-needs-paint inst) 0)))

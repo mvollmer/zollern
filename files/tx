@@ -621,11 +621,7 @@ Data structures, this is deliberately a stress test for malloc/free.
          (var r (tx/get-u8 d))
          (var g (tx/get-u8 d))
          (var b (tx/get-u8 d))
-         (if ((and (> (+ x-start save-x) 0)
-                   (> (+ y-start save-y) 0)
-                   (< (+ x-start x) x-end)
-                   (< (+ y-start y) y-end))
-              (gfx/tint-rect (+ x-start save-x) (+ y-start save-y) (- x save-x) (- y save-y) r g b))))
+         (gfx/tint-rect (+ x-start save-x) (+ y-start save-y) (- x save-x) (- y save-y) r g b))
         ((== op tx/ink-glyphs)
          ;(dbg/str "T" (tx/di-ptr d))
          ;(dbg/int "x" x)
@@ -634,14 +630,11 @@ Data structures, this is deliberately a stress test for malloc/free.
          (var xx (+ x-start x))
          (var yy (+ y-start y))
          (while (set c (tx/get-u8 d))
-           ;; XXX - maintain x also for skipped glyphs
-           (if ((and (>= xx 0) (< xx (- x-end 15))
-                     (>= yy 0) (< yy (- y-end 20)))
-                (var w (gfx/glyph font xx yy c))
-                (if ((not color-is-black)
-                     (var h (- (gfx/font-ascent font) (gfx/font-descent font)))
-                     (gfx/tint-rect-2 xx yy w h color-r color-g color-b 255 255 255)))
-                (set xx (+ xx w)))))))))
+           (var w (gfx/glyph font xx yy c))
+           (if ((not color-is-black)
+                (var h (- (gfx/font-ascent font) (gfx/font-descent font)))
+                (gfx/tint-rect-2 xx yy w h color-r color-g color-b 255 255 255)))
+           (set xx (+ xx w)))))))
 
 ;; Constructing
 

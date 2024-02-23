@@ -5,6 +5,11 @@
   gfx-screen-height
   gfx-pixels
 
+  gfx-win-x
+  gfx-win-y
+  gfx-win-w
+  gfx-win-h
+
   gfx-x
   gfx-y
   gfx-left
@@ -91,14 +96,22 @@
        (sys/mmap 0 bytes (+ sys/prot-read sys/prot-write) sys/map-shared 3 0))
   (gfx/cmd 1 w h))
 
+(fun (gfx/reset-win c)
+  (set (gfx/gfx-win-x c) 0)
+  (set (gfx/gfx-win-y c) 0)
+  (set (gfx/gfx-win-w c) (gfx/gfx-screen-width c))
+  (set (gfx/gfx-win-h c) (gfx/gfx-screen-height c)))
+
 (fun (gfx/init)
-  (set (ctxt/gfx context) (mem/alloc gfx/context))
-  (set (gfx/gfx-pixels (ctxt/gfx context)) 0)
+  (var c (mem/alloc gfx/context))
+  (set (ctxt/gfx context) c)
+  (set (gfx/gfx-pixels c) 0)
   (mem event gfx/event)
   (while (begin
            (gfx/read-event event)
            (!= (gfx/ev-type event) 3)))
-  (gfx/resize (gfx/ev-x event) (gfx/ev-y event)))
+  (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
+  (gfx/reset-win c))
 
 (fun (gfx/color r g b)
   (+ (* (+ (* r 256) g) 256) b))
@@ -112,10 +125,41 @@
 (fun (gfx/color-b c)
   (bit-and c 255))
 
+(def (gfx/win-to-screen ?gfx ?x ?y)
+  (begin
+    (set ?x (+ ?x (gfx/gfx-win-x ?gfx)))
+    (set ?y (+ ?y (gfx/gfx-win-y ?gfx)))))
+
+(def (gfx/clip-rect ?gfx ?x ?y ?w ?h)
+  (begin
+    (if ((< ?x 0)
+         (set ?w (+ ?w ?x))
+         (set ?x 0)))
+    (if ((< ?y 0)
+         (set ?h (+ ?h ?y))
+         (set ?y 0)))
+    (var clip-max-w (- (gfx/gfx-win-w ?gfx) ?x))
+    (if ((> ?w clip-max-w)
+         (set ?w clip-max-w)))
+    (var clip-max-h (- (gfx/gfx-win-h ?gfx) ?y))
+    (if ((> ?h clip-max-h)
+         (set ?h clip-max-h)))))
+
+(fun (gfx/set-window x y w h)
+  (var gfx (ctxt/gfx context))
+  (gfx/reset-win gfx)
+  (gfx/clip-rect gfx x y w h)
+  (set (gfx/gfx-win-x gfx) x)
+  (set (gfx/gfx-win-y gfx) y)
+  (set (gfx/gfx-win-w gfx) w)
+  (set (gfx/gfx-win-h gfx) h))
+
 (fun (gfx/rect x y w h c)
   (var gfx (ctxt/gfx context))
+  (gfx/clip-rect gfx x y w h)
+  (gfx/win-to-screen gfx x y)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
-  (var skip (* (- (gfx/width) w) u32))
+  (var skip (* (- (gfx/gfx-screen-width gfx) w) u32))
   (var i)
   (var j)
   (set j 0)
@@ -130,6 +174,8 @@
 
 (fun (gfx/invert-rect x y w h)
   (var gfx (ctxt/gfx context))
+  (gfx/clip-rect gfx x y w h)
+  (gfx/win-to-screen gfx x y)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/width) w) u32))
   (var white (gfx/color 255 255 255))
@@ -147,6 +193,8 @@
 
 (fun (gfx/tint-rect x y w h r g b)
   (var gfx (ctxt/gfx context))
+  (gfx/clip-rect gfx x y w h)
+  (gfx/win-to-screen gfx x y)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/width) w) u32))
   (var i)
@@ -165,6 +213,8 @@
 
 (fun (gfx/tint-rect-2 x y w h fg-r fg-g fg-b bg-r bg-g bg-b)
   (var gfx (ctxt/gfx context))
+  (gfx/clip-rect gfx x y w h)
+  (gfx/win-to-screen gfx x y)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/width) w) u32))
   (var i)
@@ -179,25 +229,6 @@
       (set pixels (+ pixels u32))
       (set i (+ i 1)))
     (set pixels (+ pixels skip))
-    (set j (+ j 1))))
-
-(fun (gfx/copy-rect-up x1 y1 w h x2 y2)
-  (var gfx (ctxt/gfx context))
-  (var src (+ (gfx/gfx-pixels gfx) (* (+ x1 (* y1 (gfx/width))) u32)))
-  (var dst (+ (gfx/gfx-pixels gfx) (* (+ x2 (* y2 (gfx/width))) u32)))
-  (var skip (* (- (gfx/width) w) u32))
-  (var i)
-  (var j)
-  (set j 0)
-  (while (< j h)
-    (set i 0)
-    (while (< i w)
-      (set (u32 dst) (u32 src))
-      (set src (+ src u32))
-      (set dst (+ dst u32))
-      (set i (+ i 1)))
-    (set src (+ src skip))
-    (set dst (+ dst skip))
     (set j (+ j 1))))
 
 (struct gfx/font
@@ -215,7 +246,7 @@
   (glyph-unused-2 u8)
   (glyph-unused-3 u8))
 
-(fun (gfx/glyph font x y c)
+(fun (gfx/glyph-noclip-nocompose font x y c)
   (var gfx (ctxt/gfx context))
   (var glyph 0)
   (if ((< c 128)
@@ -226,6 +257,7 @@
   (var h (gfx/glyph-height glyph))
   (set x (+ x (gfx/glyph-offset-x glyph)))
   (set y (+ y (gfx/glyph-offset-y glyph)))
+  (gfx/win-to-screen gfx x y)
   (var src-p (+ glyph gfx/glyph-header))
   (var dst-p (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/width) w) u32))
@@ -245,13 +277,60 @@
 
 (fun (gfx/put-pixel x y c)
   (var gfx (ctxt/gfx context))
-  (set (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)) c))
+  (if ((and (>= x 0) (>= y 0)
+            (< x (gfx/gfx-win-w gfx)) (< y (gfx/gfx-win-h gfx)))
+       (gfx/win-to-screen gfx x y)
+       (set (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)) c))))
+
+(fun (gfx/min a b)
+  (if ((< a b) a) (else b)))
+
+(fun (gfx/put-pixel-compose x y c)
+  (var gfx (ctxt/gfx context))
+  (if ((and (>= x 0) (>= y 0)
+            (< x (gfx/gfx-win-w gfx)) (< y (gfx/gfx-win-h gfx)))
+       (gfx/win-to-screen gfx x y)
+       (var ptr (+ (gfx/gfx-pixels gfx) (* (+ (* y (gfx/width)) x) u32)))
+       (var sc (u32 ptr))
+       (set (u32 ptr) (gfx/color (gfx/min (gfx/color-r c) (gfx/color-r sc))
+                                 (gfx/min (gfx/color-g c) (gfx/color-g sc))
+                                 (gfx/min (gfx/color-b c) (gfx/color-b sc)))))))
 
 (fun (gfx/get-pixel x y)
   (var gfx (ctxt/gfx context))
-  (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)))
+  (if ((and (>= x 0) (>= y 0)
+            (< x (gfx/gfx-win-w gfx)) (< y (gfx/gfx-win-h gfx)))
+       (gfx/win-to-screen gfx x y)
+       (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)))
+      (else
+       0)))
 
-;; Drawing
+(fun (gfx/glyph font x y c)
+  (var gfx (ctxt/gfx context))
+  (var glyph 0)
+  (if ((< c 128)
+       (set glyph (u64 (gfx/font-glyphs font) c))))
+  (if ((not glyph)
+       (set glyph (u64 (gfx/font-glyphs font) 32))))
+  (var w (gfx/glyph-width glyph))
+  (var h (gfx/glyph-height glyph))
+  (set x (+ x (gfx/glyph-offset-x glyph)))
+  (set y (+ y (gfx/glyph-offset-y glyph)))
+  (gfx/win-to-screen gfx x y)
+  (var src-p (+ glyph gfx/glyph-header))
+  (var i)
+  (var j)
+  (set j 0)
+  (while (< j h)
+    (set i 0)
+    (while (< i w)
+      (gfx/put-pixel-compose (+ x i) (+ y j) (* (- 255 (u8 src-p)) 65793))
+      (set src-p (+ src-p u8))
+      (set i (+ i 1)))
+    (set j (+ j 1)))
+  (gfx/glyph-advance glyph))
+
+;; Drawing (deprecated)
 
 (fun (gfx/draw-init x y w h)
   (var g (ctxt/gfx context))
@@ -328,7 +407,7 @@
     (var dx (gfx/glyph font x y (u8 str)))
     (set x (+ x dx))
     (set str (+ str 1))))
-  
+
 (fun (gfx/advance-to x)
   (var g (ctxt/gfx context))
   (if ((and (gfx/gfx-inverse g)
