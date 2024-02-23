@@ -219,7 +219,8 @@ that by maintaining a pointer to the pointer of the current instance.
          (mem/free inst))
         (else
          (set ptr (loc (app/-app-link (u64 ptr)))))))
-  (app/paint-needed (app/ac-apps c)))
+  (if ((app/ac-apps c)
+       (app/paint-needed (app/ac-apps c)))))
 @
 
 Launching has to allocate the new instance structure, initialize
