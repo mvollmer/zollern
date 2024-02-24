@@ -1254,7 +1254,7 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var w (app/app-width inst))
   (var h (app/app-height inst))
   (gfx/draw-init x y w h)
-  (tx/draw-ink (tx/inst-ink inst) (+ x 10) (- y (tx/inst-y-off inst)) (+ x w) (+ y h)))
+  (tx/draw-ink (tx/inst-ink inst) (+ x (/ (- (app/app-width inst) 700) 2)) (- y (tx/inst-y-off inst)) (+ x w) (+ y h)))
 
 (fun (tx/input inst state input x y)
   (var old-off (tx/inst-y-off inst))

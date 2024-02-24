@@ -499,7 +499,34 @@ in a pair is the first element of the list, and the second value
 is a pointer to the rest of the list. The last pair has a zero
 as its "rest" pointer. Thus, a empty list is just a zero value.
 
-We can install this transformer as a macro like so:
+When the compiler sees [code (prim-var z)], the [code lang/$prim-var]
+function would be called with [code form] pointing to a list
+that looks like this:
+@c
+form ->  pair(symbol("prim-var"),
+              pair(symbol("z"),
+                   0))
+@
+The call [code (exp/rest form)] retrieves the second value of
+the pair pointed to by [code form], the pointer to the pair containing
+the [code z] symbol:
+@c
+(exp/rest form) ->  pair(symbol("z", 0))
+@
+The [code (exp/make-number 10)] expression returns an object that
+represents the number 10.
+@c
+(exp/make-number 10) -> number(10)
+@
+And finally, the call to [code exp/make-pair] creates a new pair
+that represents the desired macro expansion, [code (10 z)].
+@c
+(exp/make-pair (exp/make-number 10) (exp/rest form)))  ->  pair(number(10),
+                                                                pair(symbol("z"),
+                                                                     0))
+@
+
+We can install this transformer into the compiler like so:
 @c
 (2 lang/prim-var 0 lang/$prim-var)
 @
@@ -514,7 +541,7 @@ and adjust it to cover all primitives!
 Let's try to do better and write a macro that produces all of
 tha boilerplate from just
 @c
-(defprim prim-var number)
+(defprim prim-var 10)
 @
 To help with this, let us quickly make a function to produce the
 general form of a primitive:

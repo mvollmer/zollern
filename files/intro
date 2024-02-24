@@ -1,1 +1,142 @@
 @** Welcome to Zollern!
+
+Zollern is a useless but fun programming environment. You can
+read, write, and run programs.
+
+@* Getting around
+
+The screen always shows two windows: a bigger one on the left,
+and a smaller one on the right. The smaller one always shows
+a list of [emph books], and you can perform some actions on them,
+such as opening them in an editor or running them as a program.
+
+The left window then shows the current appliction, like the editor
+for a particular book, or a game, or a book after running it
+through the type setter.
+
+(Right now it shows the text you are reading.)
+
+You can switch between the two windows with [code C-x C-x]. (That's
+Control X, twice.)
+
+When the cursor is in the list of books, you can move it up and
+down with the cursor keys. The following keys are available:
+
+@d
+To edit the book, press [code e].
+
+To compile and run the book as an application, press [code r].
+
+To typeset and view the formatted version of the book, press [code v].
+@
+
+For example, if you move the cursor to the "mandel" book and hit
+[code r], you will see a rendering of the Mandelbrot set instead
+of this text. To return to this text, move the focus back to
+the list of books, and hit [code v] on the "intro" book.
+
+To quit Zollern, hit [code Q] while the curser is in the right
+window. Changes to books are preserved when you exit Zollern,
+but nothing else is.
+
+There are also some global keys that work the same everywhere:
+
+@d
+To edit the book of the current application, hit [code C-x e].
+
+To compile and restart the current application, press [code C-x r].
+
+To typeset and view the book of the current application, press [code C-x v].
+
+To quit the current application (or editor session, or document
+viewer), press [code C-x q].
+@
+
+For example, if you are currently interacting with the Mandelbrot
+application, pressin [code C-x v] will switch to its formatted
+source code. Pressin [code C-x e] will open that source code
+in the editor where you can make changes. And pressing [code
+C-x r] in the editor will then compile those changes and start
+the new version of the Mandelbrot viewer. If you want to close
+that viewer, press [code C-x q].
+
+And this also works in the right window, the one with the book
+list: Pressing [code C-x e] in that window will let you edit
+the source code that produces that list. Try it!
+
+@* How to read a book
+
+Books can contain source code, both as examples and as [emph real]
+code. When compiling a book, only real code will be processed,
+everything else will be ignored.
+
+Example code looks like this:
+@c
+(fun (this-will-not-be-compiled)
+  .. and can .. be nonsense)
+@
+while real code looks like this:
+@=
+(fun (intro/a-real-function x)
+  <body of the real function>)
+@
+The piece in angle brackets, [code <body of the real function>],
+is called a [emph fragment]. It will be defined later in the
+book, at a point where it makes sense for the exposition of the
+program, even if the compiler wants to see it earlier. A fragment
+definition looks like this:
+
+@= <body of the real function>
+(* x x)
+@
+
+The "mandel" book is a good example.
+
+@* How to write a book
+
+Books are written in plain text. There is special syntax for using
+bold, or italics, for marking the real code sections, defining
+fragments, etc. Any of the existing books can be used as examples.
+For example, if you want to know how the previous section "How
+to read a book" was actually written, hit [code C-x e] right
+now! The ultimate details are in the "tx" book.
+
+The programming language is explained (and implemented) in the
+"lang" book.
+
+The editor of course has a number of key bindings that might be
+good to know. For now, you have to read the "ed" book to figure
+them out, but this important one is actually defined in the "shell"
+book:
+
+@d
+To save the book so that the compiler will see your changes, press
+[code C-x s].
+@
+
+
+@* What's this all about
+
+Zollern is about bringing some personal fun back into hacking.
+We do the simplest most straighforward thing and don't worry
+about whether it has a point or matches some best industry practice.
+
+The Z1 language has no memory safety or even a type checker, but
+I see nothing wrong in implementing an editor in it. Or a simple
+type setter. It can be done and it's just fine. And fun.
+
+But proving that memory safety or type checking is not necessary
+is not the point. There might be a Z2 language later on, maybe
+with dynamic types and a garbage collector, and we might rewrite
+parts of the editor in it, if that feels like fun.
+
+Zollern pretends that the real world doesn't exist. There will
+be no HTPP servers, or JSON parsers, or POSIX, or OpenGL. There
+is only the x86-64 ISA, ASCII, and a RGBA frame buffer.
+
+It would be fully in the Zollern spirit to invent its own ISA
+and run on that, maybe emulated, maybe in an FPGA. That would
+be fun. But x86-64 is everywhere and not terrible and super fast.
+Which allows us to mostly not worry about optimization at all,
+which is fun, too.
+ 
