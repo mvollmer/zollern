@@ -51,7 +51,7 @@ Computing a square then follows easily:
 
 [emph [hide x[sup 2]] = x[sub r] x[sub r] - x[sub i] x[sub i] + i (x[sub i] x[sub r] + x[sub r] x[sub i] )]
 
-[emph [hide x[sup 2]] = x[supsub 2|r] -x[supsub 2|i] + i 2x[sub i] x[sub r]]
+[emph [hide x[sup 2]] = x[supsub 2|r] - x[supsub 2|i] + i 2x[sub i] x[sub r]]
 @
 
 Now we can implement the iteration that defines the Mandelbrot
