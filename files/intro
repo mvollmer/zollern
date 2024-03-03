@@ -107,13 +107,9 @@ now! The ultimate details are in the "tx" book.
 
 The editor of course has a number of key bindings that might be
 good to know. For now, you have to read the "ed" book to figure
-them out, but this important one is actually defined in the "shell"
-book:
+them out.
 
-@d
-To save the book so that the compiler will see your changes, press
-[code C-x s].
-@
+There is no need (or means) to explicitly save a book.
 
 @* What's this all about
 
