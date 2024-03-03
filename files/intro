@@ -90,7 +90,11 @@ definition looks like this:
 (* x x)
 @
 
-The "mandel" book is a good example.
+Code is written using [emph s-expression] syntax, like Lisp. But
+the Z1 language is nothing like Lisp, it's more like the untyped
+predecessors to C.  The "lang" book has more details.
+
+The "mandel" book is a good first read.
 
 @* How to write a book
 
@@ -101,9 +105,6 @@ For example, if you want to know how the previous section "How
 to read a book" was actually written, hit [code C-x e] right
 now! The ultimate details are in the "tx" book.
 
-The programming language is explained (and implemented) in the
-"lang" book.
-
 The editor of course has a number of key bindings that might be
 good to know. For now, you have to read the "ed" book to figure
 them out, but this important one is actually defined in the "shell"
@@ -113,7 +114,6 @@ book:
 To save the book so that the compiler will see your changes, press
 [code C-x s].
 @
-
 
 @* What's this all about
 
@@ -129,6 +129,9 @@ But proving that memory safety or type checking is not necessary
 is not the point. There might be a Z2 language later on, maybe
 with dynamic types and a garbage collector, and we might rewrite
 parts of the editor in it, if that feels like fun.
+
+But Zollern will always use s-expressions, I guess. I find them
+elegantly simple, and macros are fun.
 
 Zollern pretends that the real world doesn't exist. There will
 be no HTPP servers, or JSON parsers, or POSIX, or OpenGL. There

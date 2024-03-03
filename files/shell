@@ -330,6 +330,7 @@
              (mem/free dup-name))             
             ((== input ch/s)
              (if ((str/eq (app/app-mode app) "ed")
+                  (app/paint-needed inst)
                   (shell/ed-save app))))
             ((== input ch/q)
              (if ((not (or (and (str/eq (app/app-name app) "intro")

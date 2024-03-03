@@ -162,10 +162,14 @@ file can be larger than one page...
 (def (ed/char ?ed ?pos)
   (ed/textbuf-get-char (ed/buf ?ed) ?pos))
 
+(fun (ed/set-char ed pos char)
+  (ed/textbuf-set-char (ed/buf ed) pos char)
+  (set (ed/dirty ed) 1)
+  (if ((var shell (app/-ac-shell (ctxt/app context)))
+       (app/paint-needed shell))))
+  
 (defset (ed/char ?ed ?pos) char
-  (begin
-    (ed/textbuf-set-char (ed/buf ?ed) ?pos ?char)
-    (set (ed/dirty ed) 1)))
+  (ed/set-char ?ed ?pos ?char))
 
 (def (ed/len ?ed)
   (ed/textbuf-len (ed/buf ?ed)))
