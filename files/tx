@@ -1,18 +1,39 @@
-@** TX - simple type setting
+@** Type setting
 
-This is not TeX.
+This is Zollerns simple typesetter. The input to the typesetter
+is a plain text book, just like to the compiler. In fact, books
+are meant to be processed by both the typesetter and the compiler.
+When processed by the compiler, the result is some machine code
+that can be run, maybe directly as an application or indirectly
+by code from other books. When processed by the typesetter, the
+result is also a kind of program, but a very special one: When
+that program is executed, it draws a nicely formatted version
+of the plain text to the screen.
 
+The implementation consists of a number of things:
+
+@d
+[item - ]A data structure for nested boxes and glue,
+
+[item - ]a parser for a markup syntax that can create such a data structure
+from a plain text book,
+
+[item - ]functions for [emph setting] the data structure so that all
+its boxes have concrete positions and sizes,
+
+[item - ]functions for converting this form of the data structure into
+instructions for drawing,
+
+[item - ]a function for executing those instructions,
+
+[item - ]and finally a function that puts this all together and launches
+the "view" mode application for a book.
 @
-Data structures, this is deliberately a stress test for malloc/free.
+
+All these things use a lot of global state, and the [code tx]
+context structure is correspondingly huge:
 
 @=
-(enum
-  nt-hbox
-  nt-vbox
-  nt-tbox
-  nt-pbox
-  nt-glue)
-
 (struct tx/context
   ;; constructing
   c-box-context
@@ -44,15 +65,128 @@ Data structures, this is deliberately a stress test for malloc/free.
   c-need-par-skip
   c-prev-depth)
 
-(struct tx/box-context
-  bc-prev
-  bc-box
-  bc-tailp)
+@* Markup syntax
+
+The input is structured into [emph sections], most of which contain
+[emph paragraphs], which contain [emph words] and [emph commands].
+
+A section starts with a [code @] character at the beginning of
+a input line. It ends when the next section starts (or at the
+end of the book, of course). The characters immediately after
+the [code @] determine what kind of section it is and how its
+content is interpreted.
+
+Some sections contain paragraphs of text, and also provide different
+levels of headings:
+
+@d
+[code @** ...] - A section with a very prominent
+title. Books usually start with such a section. For example,
+this book starts with [code @** Type setting].
+
+[code @* ...] - A section with a medium title, appropriate for
+starting a new chapter. For example, this chapter starts with
+[code @* Markup syntax].
+
+[code @] - A section with no title. This is used to switch back
+to text mode after specialized sections such as [code @c] or
+[code @=], see below.
+@
+
+Other sections are more specialized:
+@d
+[code @d] - Text that will be "displayed". This very text here
+that explains the special sections is such a displayed section.
+
+[code @c] - Example code that will be typeset verbatim without
+any justification or command processing. It will not be compiled.
+
+[code @=] - Real code that is part of the program and will be
+compiled.
+@
+
+Within a text section started by [code @**], [code @*], or [code
+\@], paragraphs are separated by blank lines. The words of a paragraph
+are all gathered up and then broken into nicely justified lines,
+independent of where the line endings are in the input.
+
+In addition to words, a paragraph can also contain commands like
+[code \[b this\]]. The first word after the initial [code \[]
+determines which command it is, and the rest will be processed
+according to the rules of that command. Most commands just switch
+some parameters and then add their words to the current paragraph.
+
+Here are some commands:
+
+@d
+[code \[b ...\]] - Typeset "..." in [b bold].
+
+[code \[emph ...\]] - Typeset "..." [emph emphasized].
+
+[code \[code ...\]] - Typeset "..." as [code code].
+
+[code \[sup ...\]] - Typeset "..." as a superscript: x[sup 2].
+
+[code \[sub ...\]] - Typeset "..." as a subscript: x[sub n].
+
+[code \[supsub ...\|---\]] - Typeset "..." as a superscript and "---" as a subscript: x[supsub 2|n].
+@
+
+New commands are defined by writing Z1 functions.
+
+@* Data structures
+
+The typesettern works with nested, rectangular [emph boxes] and
+flexible [emph glue]. For example, a word turns into a [emph
+text box], and the spaces between words turn into glue.
+
+When a paragraph is broken into lines, each line is represented
+by a [emph horizontal box] (full of text boxes and glue), and
+these boxes are put into a [emph vertical box] that forms the
+document.
+
+The math commands like [code sup] do their job by putting a text
+box into a small vertical box with some vertical glue. That glue
+is used to position the text box as desired. The small vertical
+box is then added to the current paragraph and will eventually
+end up in a horizonal box.
+
+A glue node can be flexible, it can shrink and expand. For example,
+the centered book titles are created by making a horizontal box
+with expandable glue, a text box with the title, and another
+expandle glue, in that order. The two expandable glue nodes both push
+the title into the middle of the horizontal box.
+
+If you have used [tex], this should all be quite familiar.
+
+Both boxes and glue are [emph nodes]. A node store a type code,
+and a link to a next node. This link is used to form the list
+of children of boxes.
+
+@=
+(enum
+  nt-hbox
+  nt-vbox
+  nt-tbox
+  nt-pbox
+  nt-glue)
 
 (struct tx/node
   n-type
   n-next)
+@
 
+Next we define the various box structures. All boxes have a [emph
+width], a [emph height], and a [emph depth]. The height measures
+from the baseline of a box upwards to its top edge, and the depth
+measures downwards to its bottom edge. (The width of course measures
+from its left edge to its right edge. One day there will be a
+picture here.)
+
+A new box starts out with indeterminate dimensions. The final
+values will be computed while [emph setting the glue].
+
+@=
 (struct tx/box
   (:base tx/node)
   b-width b-height b-depth
@@ -61,13 +195,35 @@ Data structures, this is deliberately a stress test for malloc/free.
 
 (fun (tx/is-box node)
   (< (tx/n-type node) tx/nt-glue))
+@
 
+The first concrete box type is the [emph text] box. Text boxes
+never have children. They have a [code b-children] field, but
+it is always zero.
+
+@=
 (struct tx/tbox
   (:base tx/box)
   tb-font
   tb-color
   tb-str)
+@
 
+Horizontal and vertical boxes can both have a [emph requested
+size]. This is assigned to a box when it is created, and used
+during the "setting" phase to compute how the glue in the box
+has to stretch or shrink.
+
+For example, the horizontal boxes for the lines of a paragraph
+are given a requested size equal to the current line width, and
+the inter-word glue shrinks and stretches to justify the line
+nicely between the left and right margins.
+
+the magical value [code tx/NATURAL-SIZE] can be used to tell the
+glue setting phase that glue in a box should not shrink or stretch
+at all.
+
+@=
 (defconst tx/NATURAL-SIZE 40000)
 
 (struct tx/hbox
@@ -77,29 +233,103 @@ Data structures, this is deliberately a stress test for malloc/free.
 (struct tx/vbox
   (:base tx/box)
   vb-height)
+@
 
+Paragraphs are actually also stored in their own boxes, but they
+never become children of other boxes. As soon as a paragraph
+box is complete, it is broken into horizontal boxes, which are
+then added to the surrounding box.
+
+@=
 (struct tx/pbox
   (:base tx/box)
   pb-width
   pb-line-skip
-  pb-left-off pb-left-plus
-  pb-right-off pb-right-plus)
+  pb-left-spec
+  pb-right-spec)
 
 (fun (tx/is-pbox node)
   (== (tx/n-type node) tx/nt-pbox))
+@
 
-(defconst tx/FILL-ORDER-SHIFT 40000)
+And now for the glue nodes. A piece of glue has three parameters:
+[emph length], [emph stretch], and [emph shrink]. The length is the
+natural size of the glue; it will be this size in a box that
+has [code tx/NATURAL-SIZE] as its requested size, for example.
 
-(struct tx/glue
+The shrink parameter determines how much the glue can shrink, if
+necessary, and the stretch parameter determines how easily it can
+stretch.
+
+Both the [emph stretch] and [emph shrink] parameter can have a
+[emph order] attached to them. Only glue of the highest order
+takes part in stretching or shrinking.
+
+For example, a box for a centered title will have a glue node
+with stretch order one at the start and end, and the actual title
+text might have inter-word glue in it, which has stretch order
+zero. When setting such a box, the two glues with streatch order
+one will do all the stretching, and the inter-word glue will
+not stretch at all.
+
+Orders higher than one will probably be quite rare.
+
+All the parameters of glue are crammed into 64 bits: 32 bits for
+the length, and 8 bits each for stretch, shrink, and their two
+orders. This allows us to pass around a complete glue specification
+as a single value.
+
+(This requires a bit of boilerplate code, and maybe Z1 itself
+will one day offer shortcuts for this.)
+
+@=
+(struct tx/gluespec-struct
+  (gss-length s32)
+  (gss-stretch s8)
+  (gss-stretch-order u8)
+  (gss-shrink s8)
+  (gss-shrink-order u8))
+
+(fun (tx/gluespec length stretch stretch-order shrink shrink-order)
+  (var spec)
+  (var l (loc spec))
+  (set (tx/gss-length l) length)
+  (set (tx/gss-stretch l) stretch)
+  (set (tx/gss-stretch-order l) stretch-order)
+  (set (tx/gss-shrink l) shrink)
+  (set (tx/gss-shrink-order l) shrink-order)
+  spec)
+
+(def (tx/gs-length ?spec) (tx/gss-length (loc ?spec)))
+(def (tx/gs-stretch ?spec) (tx/gss-stretch (loc ?spec)))
+(def (tx/gs-stretch-order ?spec) (tx/gss-stretch-order (loc ?spec)))
+(def (tx/gs-shrink ?spec) (tx/gss-shrink (loc ?spec)))
+(def (tx/gs-shrink-order ?spec) (tx/gss-shrink-order (loc ?spec)))
+
+(struct tx/gluenode
   (:base tx/node)
   g-size
-  g-off
-  g-plus
-  g-minus)
+  g-spec)
 
 (fun (tx/is-glue node)
   (== (tx/n-type node) tx/nt-glue))
+@
 
+Now that we have the data structures defined, we could go ahead
+and write some functions for actually creating instances of them,
+and for linking them all together.
+
+We wait with that, however, until after we have the functions
+for setting boxes and for drawing the final result. As we will
+see, constructing is intertwined with setting and interestingly
+also with drawing (because of an important optimization, the
+nature of which you can probably guess already).
+
+But we warm up with a function for returning the memory of node
+graph. All nodes will be allocated with [code mem/alloc], and
+thus we need to return their memory with [code mem/free].
+
+@=
 (fun (tx/free-node node)
   (var t (tx/n-type node))
   (if ((== t tx/nt-tbox)
@@ -111,7 +341,9 @@ Data structures, this is deliberately a stress test for malloc/free.
          (tx/free-node a)
          (set a b))))
   (mem/free node))
-
+@
+And sometimes it is helpful to print a node during debugging:
+@=
 (fun (tx/dbg-nodes l dbg)
   (while l
     (dbg l)
@@ -121,9 +353,11 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var t (tx/n-type n))
   (if ((== t tx/nt-glue)
        (dbg/out "glue\n")
-       (dbg/int " off" (tx/g-off n))
-       (dbg/int " plus" (tx/g-plus n))
-       (dbg/int " minus" (tx/g-minus n)))
+       (dbg/int " length" (tx/gs-length (tx/g-spec n)))
+       (dbg/int " stretch" (tx/gs-stretch (tx/g-spec n)))
+       (dbg/int " stretch order" (tx/gs-stretch-order (tx/g-spec n)))
+       (dbg/int " shrink" (tx/gs-shrink (tx/g-spec n)))
+       (dbg/int " shrink order" (tx/gs-shrink-order (tx/g-spec n))))
       ((== t tx/nt-tbox)
        (dbg/str "text" (tx/tb-str n)))
       ((== t tx/nt-hbox)
@@ -137,13 +371,19 @@ Data structures, this is deliberately a stress test for malloc/free.
        (tx/dbg-nodes (tx/b-children n) tx/dbg-node)
        (dbg/out "end\n"))))
 
-(fun (tx/dbg-cur)
-  (var bc (tx/c-box-context (ctxt/tx context)))
-  (set (u64 (tx/bc-tailp bc)) 0)
-  (tx/dbg-node (tx/bc-box bc)))
+@* Setting the glue
 
-;; Box setting
+The act of [emph setting the glue] in a box will give that box
+its final dimensions; it's width, height, and depth. It will
+also determine the final size of all the glue inside of it, of
+course, and this in turn determines the positions of all children
+of a box.
 
+This is pretty straightforward for a text box: It's height and
+depth comes from the font, and the width comes from all the characters
+in it.
+
+@=
 (fun (tx/set-tbox tb)
   (var f (tx/tb-font tb))
   (set (tx/b-height tb) (gfx/font-ascent f))
@@ -159,180 +399,247 @@ Data structures, this is deliberately a stress test for malloc/free.
     (set w (+ w (gfx/glyph-advance glyph)))
     (set str (+ str 1)))
   (set (tx/b-width tb) w))
+@
 
-(fun (tx/set-hbox hb)
-  (var natural-width 0)
-  (var max-stretch-order 0)
-  (var max-shrink-order 0)
-  (var max-height 0)
-  (var max-depth 0)
-  (var c (tx/b-children hb))
+The glue in child boxes is set before setting the glue in their
+parent boxes. This is a pretty simple approach and doesn't allow
+for sophisticated layouts. But the simplicity is more important
+to us right now.
+
+The height and depth of a horizontal box are then simply the maximum
+height and depth of all of its children, and for setting the
+glue inside of it, there are three cases:
+
+@d
+[item - ]The box should be its natural size. All glue nodes will
+simply be set to their natural length.
+
+[item - ]The box should be wider than its natural size. The glue
+nodes need to be stretched evenly to provide the extra width.
+As hinted at above, only glue nodes with the highest stretch
+order participate in this; the rest get their natural size.
+
+[item - ]The box should be narrower than its natural size, and
+the highest order glue needs to shrink evenly.
+@
+
+We start with a function that gathers some data about the children
+of a box. It is used for both horizontal and vertical boxes,
+so it does a bit too much work.
+
+@=
+(struct tx/box-stats
+  bs-natural-width
+  bs-natural-height
+  bs-max-width
+  bs-max-height
+  bs-max-depth
+  bs-max-stretch-order
+  bs-max-shrink-order
+  bs-total-stretch
+  bs-total-shrink)
+
+(fun (tx/compute-box-stats stats c)
+  (set (tx/bs-natural-width stats) 0)
+  (set (tx/bs-natural-height stats) 0)
+  (set (tx/bs-max-width stats) 0)
+  (set (tx/bs-max-height stats) 0)
+  (set (tx/bs-max-depth stats) 0)
+  (set (tx/bs-max-stretch-order stats) 0)
+  (set (tx/bs-max-shrink-order stats) 0)
+  (set (tx/bs-total-stretch stats) 0)
+  (set (tx/bs-total-shrink stats) 0)
+
   (while c
     (if ((tx/is-glue c)
-         (set natural-width (+ natural-width (tx/g-off c)))
-         (if ((> (tx/g-minus c) max-shrink-order)
-              (set max-shrink-order (tx/g-minus c))))
-         (if ((> (tx/g-plus c) max-stretch-order)
-              (set max-stretch-order (tx/g-plus c)))))
+         (var s (tx/g-spec c))
+         (set (tx/bs-natural-width stats) (+ (tx/bs-natural-width stats) (tx/gs-length s)))
+         (set (tx/bs-natural-height stats) (+ (tx/bs-natural-height stats) (tx/gs-length s)))
+         (if ((> (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
+              (set (tx/bs-max-stretch-order stats) (tx/gs-stretch-order s))
+              (set (tx/bs-total-stretch stats) 0)))
+         (if ((== (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
+              (set (tx/bs-total-stretch stats) (+ (tx/bs-total-stretch stats) (tx/gs-stretch s)))))
+         (if ((> (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
+              (set (tx/bs-max-shrink-order stats) (tx/gs-shrink-order s))
+              (set (tx/bs-total-shrink stats) 0)))
+         (if ((== (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
+              (set (tx/bs-total-shrink stats) (+ (tx/bs-total-shrink stats) (tx/gs-shrink s))))))
         ((tx/is-box c)
-         (set natural-width (+ natural-width (tx/b-width c)))
-         (if ((> (tx/b-height c) max-height)
-              (set max-height (tx/b-height c))))
-         (if ((> (tx/b-depth c) max-depth)
-              (set max-depth (tx/b-depth c))))))
-    (set c (tx/n-next c)))
-  (set (tx/b-height hb) max-height)
-  (set (tx/b-depth hb) max-depth)
-  (set max-shrink-order (* (/ max-shrink-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  (set max-stretch-order (* (/ max-stretch-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  ;(dbg/int "natural-width" natural-width)
-  ;(dbg/int "max-shrink-order" max-shrink-order)
-  ;(dbg/int "max-stretch-order" max-stretch-order)
-  ;; set the glue
+         (set (tx/bs-natural-width stats) (+ (tx/bs-natural-width stats) (tx/b-width c)))
+         (set (tx/bs-natural-height stats) (+ (tx/bs-natural-height stats) (tx/b-height c)))
+         (if ((> (tx/b-width c) (tx/bs-max-width stats))
+              (set (tx/bs-max-width stats) (tx/b-width c))))
+         (if ((> (tx/b-height c) (tx/bs-max-height stats))
+              (set (tx/bs-max-height stats) (tx/b-height c))))
+         (if ((> (tx/b-depth c) (tx/bs-max-depth stats))
+              (set (tx/bs-max-depth stats) (tx/b-depth c))))))
+    (set c (tx/n-next c))))
+@
+(One day... Z1 will be less verbose... one day...)
+
+@=
+(fun (tx/set-hbox hb)
+  (mem stats tx/box-stats)
+  (tx/compute-box-stats stats (tx/b-children hb))
+  (set (tx/b-height hb) (tx/bs-max-height stats))
+  (set (tx/b-depth hb) (tx/bs-max-depth stats))
+
   (if ((or (== (tx/hb-width hb) tx/NATURAL-SIZE)
-           (== (tx/hb-width hb) natural-width))
+           (== (tx/hb-width hb) (tx/bs-natural-width stats)))
+       <set the glue nodes to their natural size>
+       (set (tx/b-width hb) (tx/bs-natural-width stats)))
+
+      ((> (tx/hb-width hb) (tx/bs-natural-width stats))
+       (var extra-width (- (tx/hb-width hb) (tx/bs-natural-width stats)))
+       (var total-stretch (tx/bs-total-stretch stats))
        (set c (tx/b-children hb))
        (while c
          (if ((tx/is-glue c)
-              (set (tx/g-size c) (tx/g-off c))))
-         (set c (tx/n-next c)))
-       (set (tx/b-width hb) natural-width))
-      ((> (tx/hb-width hb) natural-width)
-       (var extra-width (- (tx/hb-width hb) natural-width))
-       (var total-stretch 0)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-plus c) max-stretch-order))
-              (set total-stretch (+ total-stretch (- (tx/g-plus c) max-stretch-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-stretch" total-stretch)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-plus c) max-stretch-order)
-                        (> total-stretch 0))
-                   (var w (/ (+ (* extra-width (- (tx/g-plus c) max-stretch-order)) (/ total-stretch 2)) total-stretch))
-                   (set (tx/g-size c) (+ (tx/g-off c) w))
-                   (set extra-width (- extra-width w))
-                   (set total-stretch (- total-stretch (- (tx/g-plus c) max-stretch-order))))
-                  (else
-                   (set (tx/g-size c) (tx/g-off c))))))
+              <stretch glue node c appropriately>))
          (set c (tx/n-next c)))
        (set (tx/b-width hb) (tx/hb-width hb)))
-      ((< (tx/hb-width hb) natural-width)
-       (var over-width (- natural-width (tx/hb-width hb)))
-       (var total-shrink 0)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-minus c) max-shrink-order))
-              (set total-shrink (+ total-shrink (- (tx/g-minus c) max-shrink-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-shrink" total-shrink)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-minus c) max-shrink-order)
-                        (> total-shrink 0))
-                   (set w (/ (+ (* over-width (- (tx/g-minus c) max-shrink-order)) (/ total-shrink 2)) total-shrink))
-                   (if ((> w (tx/g-off c))
-                        (set (tx/g-size c) 0))
-                       (else
-                        (set (tx/g-size c) (- (tx/g-off c) w))))
-                   (set over-width (- over-width w))
-                   (set total-shrink (- total-shrink (- (tx/g-minus c) max-shrink-order))))
-                  (else
-                   (set (tx/g-size c) (tx/g-off c))))))
-         (set c (tx/n-next c))
-         (set (tx/b-width hb) (tx/hb-width hb))))))
 
+      ((< (tx/hb-width hb) (tx/bs-natural-width stats))
+       (var over-width (- (tx/bs-natural-width stats) (tx/hb-width hb)))
+       (var total-shrink (tx/bs-total-shrink stats))
+       (set c (tx/b-children hb))
+       (while c
+         (if ((tx/is-glue c)
+              <shrink glue node c appropriately>))
+         (set c (tx/n-next c)))
+       (set (tx/b-width hb) (tx/hb-width hb)))))
+@
+
+Producing a box of natural width is really very straightforward.
+We just need to set all glue nodes to their natural size.
+
+@= <set the glue nodes to their natural size>
+(var c (tx/b-children hb))
+(while c
+  (if ((tx/is-glue c)
+       (set (tx/g-size c) (tx/gs-length (tx/g-spec c)))))
+  (set c (tx/n-next c)))
+@
+
+And here comes the computation that actually distributes the extra
+width evenly over all glue nodes.
+
+Mathematically, a glue node should get [emph e] * [emph s] / [emph
+t] of extra size, where [emph s] is the stretch parameter of
+the node, [emph t] is the sum of all stretch parameters of all
+glue nodes, and [emph e] is the extra width that needs to be
+distributed.
+
+But since we are computing with integers here, we need to be a
+bit more careful. First, we want to round the result of the division
+to the nearest integer. This is done by computing
+@d
+[emph w] = ([emph e] * [emph s] + [emph t]/2) / [emph t]
+@
+Second, we reduce [emph e] and [emph t] after each iteration according
+to
+@d
+[emph e] <- [emph e] - [emph w]
+
+[emph t] <- [emph t] - [emph s]
+@
+This ensures that all [emph w] exactly sum to the initial [emph e].
+
+@= <stretch glue node c appropriately>
+(var s (tx/g-spec c))
+(if ((and (>= (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
+          (> total-stretch 0))
+     (var w (/ (+ (* extra-width (tx/gs-stretch s)) (/ total-stretch 2)) total-stretch))
+     (set (tx/g-size c) (+ (tx/gs-length s) w))
+     (set extra-width (- extra-width w))
+     (set total-stretch (- total-stretch (tx/gs-stretch s))))
+  (else
+   (set (tx/g-size c) (tx/gs-length s))))
+@
+
+Shrinking is pretty much the same as stretching, just with different parameters.
+
+@= <shrink glue node c appropriately>
+(set s (tx/g-spec c))
+(if ((and (>= (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
+          (> total-shrink 0))
+     (set w (/ (+ (* over-width (tx/gs-shrink s)) (/ total-shrink 2)) total-shrink))
+     (set (tx/g-size c) (- (tx/gs-length s) w))
+     (set over-width (- over-width w))
+     (set total-shrink (- total-shrink (tx/gs-shrink s))))
+  (else
+   (set (tx/g-size c) (tx/gs-length s))))
+@
+
+Setting the glue inside a vertical box is almost identical to
+the process for a horizontal box, and we don't explain it in
+detail. But note that a vertical box always gets a depth of 0.
+This will probably need to change as we find more uses for vertical
+things.
+
+@=
 (fun (tx/set-vbox vb)
-  (var natural-height 0)
-  (var max-stretch-order 0)
-  (var max-shrink-order 0)
-  (var max-width 0)
-  (var c (tx/b-children vb))
-  (while c
-    (if ((tx/is-glue c)
-         (set natural-height (+ natural-height (tx/g-off c)))
-         (if ((> (tx/g-minus c) max-shrink-order)
-              (set max-shrink-order (tx/g-minus c))))
-         (if ((> (tx/g-plus c) max-stretch-order)
-              (set max-stretch-order (tx/g-plus c)))))
-        ((tx/is-box c)
-         (set natural-height (+ natural-height (tx/b-height c)))
-         (if ((> (tx/b-width c) max-width)
-              (set max-width (tx/b-width c))))))
-    (set c (tx/n-next c)))
-  (set (tx/b-width vb) max-width)
-  (set max-shrink-order (* (/ max-shrink-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  (set max-stretch-order (* (/ max-stretch-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  ;(dbg/int "natural-height" natural-height)
-  ;(dbg/int "max-shrink-order" max-shrink-order)
-  ;(dbg/int "max-stretch-order" max-stretch-order)
-  ;; set the glue
+  (mem stats tx/box-stats)
+  (tx/compute-box-stats stats (tx/b-children vb))
+  (set (tx/b-width vb) (tx/bs-max-width stats))
+
   (if ((or (== (tx/vb-height vb) tx/NATURAL-SIZE)
-           (== (tx/vb-height vb) natural-height))
-       (set c (tx/b-children vb))
+           (== (tx/vb-height vb) (tx/bs-natural-height stats)))
+       (var c (tx/b-children vb))
        (while c
          (if ((tx/is-glue c)
-              (set (tx/g-size c) (tx/g-off c))))
+              (set (tx/g-size c) (tx/gs-length (tx/g-spec c)))))
          (set c (tx/n-next c)))
-       (set (tx/b-height vb) natural-height)
+       (set (tx/b-height vb) (tx/bs-natural-height stats))
        (set (tx/b-depth vb) 0))
-      ((> (tx/vb-height vb) natural-height)
-       (var extra-height (- (tx/vb-height vb) natural-height))
-       (var total-stretch 0)
-       (set c (tx/b-children vb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-plus c) max-stretch-order))
-              (set total-stretch (+ total-stretch (- (tx/g-plus c) max-stretch-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-stretch" total-stretch)
+
+      ((> (tx/vb-height vb) (tx/bs-natural-height stats))
+       (var extra-height (- (tx/vb-height vb) (tx/bs-natural-height stats)))
+       (var total-stretch (tx/bs-total-stretch stats))
        (set c (tx/b-children vb))
        (while c
          (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-plus c) max-stretch-order)
+              (var s (tx/g-spec c))
+              (if ((and (>= (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
                         (> total-stretch 0))
-                   (var h (/ (+ (* extra-height (- (tx/g-plus c) max-stretch-order)) (/ total-stretch 2)) total-stretch))
-                   (set (tx/g-size c) (+ (tx/g-off c) h))
+                   (var h (/ (+ (* extra-height (tx/gs-stretch s)) (/ total-stretch 2)) total-stretch))
+                   (set (tx/g-size c) (+ (tx/gs-length s) h))
                    (set extra-height (- extra-height h))
-                   (set total-stretch (- total-stretch (- (tx/g-plus c) max-stretch-order))))
+                   (set total-stretch (- total-stretch (tx/gs-stretch s))))
                   (else
-                   (set (tx/g-size c) (tx/g-off c))))))
+                   (set (tx/g-size c) (tx/gs-length s))))))
          (set c (tx/n-next c)))
        (set (tx/b-height vb) (tx/vb-height vb))
        (set (tx/b-depth vb) 0))
-      ((< (tx/vb-height vb) natural-height)
-       (var over-height (- natural-height (tx/vb-height vb)))
-       (var total-shrink 0)
-       (set c (tx/b-children vb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-minus c) max-shrink-order))
-              (set total-shrink (+ total-shrink (- (tx/g-minus c) max-shrink-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-shrink" total-shrink)
+
+      ((< (tx/vb-height vb) (tx/bs-natural-height stats))
+       (var over-height (- (tx/bs-natural-height stats) (tx/vb-height vb)))
+       (var total-shrink (tx/bs-total-shrink stats))
        (set c (tx/b-children vb))
        (while c
          (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-minus c) max-shrink-order)
+              (set s (tx/g-spec c))
+              (if ((and (>= (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
                         (> total-shrink 0))
-                   (set h (/ (+ (* over-height (- (tx/g-minus c) max-shrink-order)) (/ total-shrink 2)) total-shrink))
-                   (if ((> h (tx/g-off c))
-                        (set (tx/g-size c) 0))
-                       (else
-                        (set (tx/g-size c) (- (tx/g-off c) h))))
+                   (set h (/ (+ (* over-height (tx/gs-shrink s)) (/ total-shrink 2)) total-shrink))
+                   (set (tx/g-size c) (- (tx/gs-length s) h))
                    (set over-height (- over-height h))
-                   (set total-shrink (- total-shrink (- (tx/g-minus c) max-shrink-order))))
+                   (set total-shrink (- total-shrink (tx/gs-shrink s))))
                   (else
-                   (set (tx/g-size c) (tx/g-off c))))))
+                   (set (tx/g-size c) (tx/gs-length s))))))
          (set c (tx/n-next c)))
        (set (tx/b-height vb) (tx/vb-height vb))
        (set (tx/b-depth vb) 0))))
+@
 
+Here is a function that can set the glue in any box, by looking
+at its type. This will be called below during the construction
+of boxes.
+
+Note that paragraph boxes are not handled here, since they will
+never appear as children of other boxes.
+@=
 (fun (tx/set-node node)
   (var t (tx/n-type node))
   (if ((== t tx/nt-tbox)
@@ -342,57 +649,119 @@ Data structures, this is deliberately a stress test for malloc/free.
       ((== t tx/nt-vbox)
        (tx/set-vbox node))))
 
-;; Line breaking
+@* Breaking paragraphs into lines
 
-(fun (tx/set-pbox node begin-line set-line-width add-node skip end-line)
+When a paragraph box is complete, it is immediately broken into
+lines. The parameters of a paragraph box are the requested width
+of the horizontal boxes that it will produce for the lines, as
+well specifications for glue that is inserted at the start and
+end of each line.
+
+As we all know, [tex] uses a interesting and fun algorithm to
+determine where to break lines. We should really explain and
+implement it here as well. But for now, we just collect box and
+glue nodes until their combined width is larger than what fits
+in a single line, and then we break just before that.
+
+There is no hyphenation, and nothing equivalent to the [emph discretionary]
+items that [tex] has.
+
+The [code set-pbox] function needs to construct horizontal boxes
+and glue nodes, etc, but we haven't defined any functions for
+that yet. Moreover, [code set-pbox] will be called from within
+those functions (specifically, from the function that ends a
+box), and thus we have mutual recursion here.
+
+As usual, we break this cycle by passing the construction functions
+to [code set-pbox] as parameters.
+
+@=
+(fun (tx/set-pbox node begin-line set-line-width add-node glue end-line)
   (var c (tx/b-children node))
   (set (tx/b-children node) 0)
   (var w 0)
-  (var line-width (- (tx/pb-width node) (tx/pb-left-off node) (tx/pb-right-off node)))
+  (var line-width (- (tx/pb-width node)
+                     (tx/gs-length (tx/pb-left-spec node))
+                     (tx/gs-length (tx/pb-right-spec node))))
   (var line-start c)
   (var break-point 0)
   (var next)
   (while c
-    (if ((tx/is-glue c)
-         (set w (+ w (tx/g-off c))))
-        ((tx/is-box c)
-         (set w (+ w (tx/b-width c)))))
+    <add the width of box c to w>
     (if ((> w line-width)
          (if (break-point
-              (begin-line)
-              (set-line-width (tx/pb-width node))
-              (skip (tx/pb-left-off node) (tx/pb-left-plus node) 0)
-              (while (!= line-start (tx/n-next break-point))
-                (set next (tx/n-next line-start))
-                (add-node line-start)
-                (set line-start next))
-              (skip (tx/pb-right-off node) (tx/pb-right-plus node) 0)
-              (end-line (tx/pb-line-skip node))))
-         (while (and line-start (not (tx/is-box line-start)))
-           (set next (tx/n-next line-start))
-           (tx/free-node line-start)
-           (set line-start next))
-         (set next line-start)
-         (set break-point 0)
-         (set w 0))
+              <make a line with all nodes between line-start and breakpoint>))
+         <start a new line>)
         (else
-         (if ((tx/is-box c)
+         (if (<there is a suitable breakpoint after box c>
               (set break-point c)))
          (set next (tx/n-next c))))
     (set c next))
-  (if (line-start
-       (begin-line)
-       (set-line-width (tx/pb-width node))
-       (skip (tx/pb-left-off node) (tx/pb-left-plus node) 0)
-       (while line-start
-         (set next (tx/n-next line-start))
-         (add-node line-start)
-         (set line-start next))
-       (skip (tx/pb-right-off node) (tx/pb-right-plus node) 0)
-       (end-line (tx/pb-line-skip node)))))
+  <make the last line with all nodes from line-start to the end>)
+@
+Keeping track of how long the current line is, of course, quite
+easy.
+@= <add the width of box c to w>
+(if ((tx/is-glue c)
+     (set w (+ w (tx/gs-length (tx/g-spec c)))))
+    ((tx/is-box c)
+     (set w (+ w (tx/b-width c)))))
+@
+Once it gets too long, we move all nodes between the start of
+the current line and the current node to a new horizontal box.
 
-;; Inking
+@= <make a line with all nodes between line-start and breakpoint>
+(begin-line)
+(set-line-width (tx/pb-width node))
+(glue (tx/pb-left-spec node))
+(while (!= line-start (tx/n-next break-point))
+  (set next (tx/n-next line-start))
+  (add-node line-start)
+  (set line-start next))
+(glue (tx/pb-right-spec node))
+(end-line (tx/pb-line-skip node))
+@
 
+And then we skip ahead to find the start of the next line and
+reset our state.
+
+@= <start a new line>
+(while (and line-start (not (tx/is-box line-start)))
+  (set next (tx/n-next line-start))
+  (tx/free-node line-start)
+  (set line-start next))
+(set next line-start)
+(set break-point 0)
+(set w 0)
+@
+
+We break at the first glue after a non-glue box. When starting
+a new line, all the glue nodes following the breakpoint are skipped,
+see [code <start a new line>] above.
+
+@= <there is a suitable breakpoint after box c>
+(and (not (tx/is-glue c))
+     (or (not (tx/n-next c))
+         (tx/is-glue (tx/n-next c))))
+@
+
+At the end there might be some boxes left over, and we make a
+line out of them as well.
+
+@= <make the last line with all nodes from line-start to the end>
+(if (line-start
+     (begin-line)
+     (set-line-width (tx/pb-width node))
+     (glue (tx/pb-left-spec node))
+     (while line-start
+       (set next (tx/n-next line-start))
+       (add-node line-start)
+       (set line-start next))
+     (glue (tx/pb-right-spec node))
+     (end-line (tx/pb-line-skip node))))
+
+@* Inking
+@=
 (enum
   ink-x
   ink-dx
@@ -436,6 +805,13 @@ Data structures, this is deliberately a stress test for malloc/free.
   (set (u8 (tx/c-ink-ptr ctxt)) b)
   (set (tx/c-ink-ptr ctxt) (+ (tx/c-ink-ptr ctxt) 1)))
 
+(fun (tx/emit-s32 ctxt val)
+  (var l (loc val))
+  (tx/emit-byte ctxt (u8 l 3))
+  (tx/emit-byte ctxt (u8 l 2))
+  (tx/emit-byte ctxt (u8 l 1))
+  (tx/emit-byte ctxt (u8 l 0)))
+
 (fun (tx/emit-set ctxt new old set-op delta-op)
   (var delta (- new old))
   (if ((== delta 0)
@@ -445,10 +821,7 @@ Data structures, this is deliberately a stress test for malloc/free.
        (tx/emit-byte ctxt delta))
       (else
        (tx/emit-byte ctxt set-op)
-       (tx/emit-byte ctxt (/ new (* 256 256 256)))
-       (tx/emit-byte ctxt (/ new (* 256 256)))
-       (tx/emit-byte ctxt (/ new 256))
-       (tx/emit-byte ctxt new))))
+       (tx/emit-s32 ctxt new))))
 
 (fun (tx/ink-moveto x y)
   (var ctxt (ctxt/tx context))
@@ -542,8 +915,9 @@ Data structures, this is deliberately a stress test for malloc/free.
          (set c (tx/n-next c)))
        (tx/ink-box-end node b-x b-y))))
 
-;; Drawing
+@* Drawing
 
+@=
 (struct tx/draw-ink-data
   di-page
   di-ptr
@@ -568,6 +942,19 @@ Data structures, this is deliberately a stress test for malloc/free.
   (set (tx/di-ptr d) (+ (tx/di-ptr d) 1))
   val)
 
+(fun (tx/get-s32 d)
+  (var val)
+  (var l (loc val))
+  (set (u8 l 3) (tx/get-u8 d))
+  (set (u8 l 2) (tx/get-u8 d))
+  (set (u8 l 1) (tx/get-u8 d))
+  (set (u8 l 0) (tx/get-u8 d))
+  (if ((< (s8 l 3) 0)
+       (set (s32 l 1) -1))
+      (else
+       (set (s32 l 1) 0)))
+  val)
+
 (fun (tx/draw-ink ink x-start y-start x-end y-end)
   (mem d tx/draw-ink-data)
   (tx/set-page d ink)
@@ -584,17 +971,11 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var op)
   (while (!= (set op (tx/get-u8 d)) tx/ink-end)
     (if ((== op tx/ink-x)
-         (set x (* (tx/get-u8 d) 256 256 256))
-         (set x (* (tx/get-u8 d) 256 256))
-         (set x (* (tx/get-u8 d) 256))
-         (set x (+ x (tx/get-u8 d))))
+         (set x (tx/get-s32 d)))
         ((== op tx/ink-dx)
          (set x (+ x (tx/get-s8 d))))
         ((== op tx/ink-y)
-         (set y (* (tx/get-u8 d) 256 256 256))
-         (set y (* (tx/get-u8 d) 256 256))
-         (set y (* (tx/get-u8 d) 256))
-         (set y (+ y (tx/get-u8 d))))
+         (set y (tx/get-s32 d)))
         ((== op tx/ink-dy)
          (set y (+ y (tx/get-s8 d))))
         ((== op tx/ink-setfont-sans)
@@ -636,7 +1017,13 @@ Data structures, this is deliberately a stress test for malloc/free.
                 (gfx/tint-rect-2 xx yy w h color-r color-g color-b 255 255 255)))
            (set xx (+ xx w)))))))
 
-;; Constructing
+@* Constructing
+@=
+
+(struct tx/box-context
+  bc-prev
+  bc-box
+  bc-tailp)
 
 (fun (tx/start)
   (var c (mem/alloc tx/context))
@@ -703,11 +1090,9 @@ Data structures, this is deliberately a stress test for malloc/free.
        (set (tx/c-prev-depth c) 0)))
   (if (bc
        (if ((> extra-skip 0)
-            (var n (mem/alloc tx/glue))
+            (var n (mem/alloc tx/gluenode))
             (set (tx/n-type n) tx/nt-glue)
-            (set (tx/g-off n) extra-skip)
-            (set (tx/g-plus n) 0)
-            (set (tx/g-minus n) 0)
+            (set (tx/g-spec n) (tx/gluespec extra-skip 0 0 0 0))
             (set (u64 (tx/bc-tailp bc)) node)
             (set (tx/bc-tailp bc) (loc (tx/n-next node)))))
        (set (u64 (tx/bc-tailp bc)) node)
@@ -717,7 +1102,7 @@ Data structures, this is deliberately a stress test for malloc/free.
        (tx/ink-node node 0 (tx/c-outer-y c))
        (var dy)
        (if ((== (tx/n-type node) tx/nt-glue)
-            (set dy (tx/g-off node)))
+            (set dy (tx/gs-length (tx/g-spec node))))
            (else
             (set dy (+ (tx/b-height node) (tx/b-depth node)))))
        (set (tx/c-outer-y c) (+ (tx/c-outer-y c) dy))
@@ -735,16 +1120,17 @@ Data structures, this is deliberately a stress test for malloc/free.
   (set (tx/tb-str n) (str/dup str))
   (tx/add-context n))
 
-(fun (tx/fill order value)
-  (+ (* tx/FILL-ORDER-SHIFT order) value))
-
-(fun (tx/skip off plus minus)
-  (var n (mem/alloc tx/glue))
+(fun (tx/glue spec)
+  (var n (mem/alloc tx/gluenode))
   (set (tx/n-type n) tx/nt-glue)
-  (set (tx/g-off n) off)
-  (set (tx/g-plus n) plus)
-  (set (tx/g-minus n) minus)
+  (set (tx/g-spec n) spec)
   (tx/add-context n))
+
+(fun (tx/skip length)
+  (tx/glue (tx/gluespec length 0 0 0 0)))
+
+(fun (tx/fill stretch order)
+  (tx/glue (tx/gluespec 0 stretch order 0 0)))
 
 (fun (tx/set-box-bg-color color)
   (var n (tx/get-context))
@@ -778,25 +1164,21 @@ Data structures, this is deliberately a stress test for malloc/free.
   (set (tx/n-type n) tx/nt-pbox)
   (set (tx/pb-width n) width)
   (set (tx/pb-line-skip n) line-skip)
-  (set (tx/pb-left-off n) left-skip)
-  (set (tx/pb-left-plus n) 0)
-  (set (tx/pb-right-off n) right-skip)
-  (set (tx/pb-right-plus n) 0))
+  (set (tx/pb-left-spec n) (tx/gluespec left-skip 0 0 0 0))
+  (set (tx/pb-right-spec n) (tx/gluespec right-skip 0 0 0 0)))
 
-(fun (tx/set-pbox-left-skip off plus)
+(fun (tx/set-pbox-left-spec spec)
   (var n (tx/get-context))
-  (set (tx/pb-left-off n) off)
-  (set (tx/pb-left-plus n) plus))
+  (set (tx/pb-left-spec n) spec))
 
-(fun (tx/set-pbox-right-skip off plus)
+(fun (tx/set-pbox-right-spec spec)
   (var n (tx/get-context))
-  (set (tx/pb-right-off n) off)
-  (set (tx/pb-right-plus n) plus))
+  (set (tx/pb-right-spec n) spec))
 
 (fun (tx/end-with-baseline-skip skip)
   (var n (tx/pop-context))
   (if ((tx/is-pbox n)
-       (tx/set-pbox n tx/begin-hbox tx/set-hbox-width tx/add-context tx/skip tx/end-with-baseline-skip)
+       (tx/set-pbox n tx/begin-hbox tx/set-hbox-width tx/add-context tx/glue tx/end-with-baseline-skip)
        (tx/free-node n))
       (else
        (tx/add-context-with-baseline-skip n skip))))
@@ -804,12 +1186,13 @@ Data structures, this is deliberately a stress test for malloc/free.
 (fun (tx/end)
   (tx/end-with-baseline-skip 0))
 
-;; Markup parsing
+@* Markup parsing
+@=
 
 (fun (tx/maybe-par-skip)
   (var c (ctxt/tx context))
   (if ((tx/c-need-par-skip c)
-       (tx/skip (- (tx/c-par-skip c) (tx/c-prev-depth c)) 0 0)
+       (tx/skip (- (tx/c-par-skip c) (tx/c-prev-depth c)))
        (set (tx/c-need-par-skip c) 0))))
 
 (fun (tx/no-par-skip)
@@ -830,7 +1213,7 @@ Data structures, this is deliberately a stress test for malloc/free.
 (fun (tx/par)
   (var b (tx/get-context))
   (if ((and b (== (tx/n-type b) tx/nt-pbox))
-       (tx/skip 0 (tx/fill 1 1) 0)
+       (tx/fill 1 1)
        (tx/end)
        (tx/need-par-skip))))
 
@@ -960,7 +1343,7 @@ Data structures, this is deliberately a stress test for malloc/free.
     (if ((== (u8 t) ch/spc)
          (var b (tx/get-context))
          (if ((and b (not (== (tx/n-type b) tx/nt-vbox)))
-              (tx/skip 5 5 0)))
+              (tx/glue (tx/gluespec 5 5 0 0 0))))
          (tx/next-token))
         ((== (u8 t) ch/nl)
          (tx/par)
@@ -979,7 +1362,7 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var t (tx/c-cur-token c))
   (var is-main 0)
   ;; parse header line
-  (tx/skip 15 0 0)
+  (tx/skip 15)
   (if ((str/eq t "]")
        (set is-main 1))
       (else
@@ -987,7 +1370,7 @@ Data structures, this is deliberately a stress test for malloc/free.
        (tx/parse-text)
        (tx/text " =")
        (tx/end)
-       (tx/skip 2 0 0)))
+       (tx/skip 2)))
   ;; parse body
   (set (tx/c-verbatim c) 1)
   (set (tx/c-font c) fonts/mono)
@@ -1000,21 +1383,21 @@ Data structures, this is deliberately a stress test for malloc/free.
          (if (need-empty-line
               (tx/begin-hbox)
               (tx/set-box-bg-color (gfx/color 180 180 180))
-              (tx/skip 3 0 0)
+              (tx/skip 3)
               (tx/text "")
               (tx/end)))
          (set need-empty-line 0)
          (tx/begin-hbox)
          (tx/begin-hbox)
          (tx/set-box-bg-color (gfx/color 180 180 180))
-         (tx/skip 3 0 0)
+         (tx/skip 3)
          (tx/text "") ;; so that the box has the right height and depth
          (tx/end)
-         (tx/skip 10 0 0)
+         (tx/skip 10)
          (tx/text t)
          (tx/end)))
     (tx/next-token))
-  (tx/skip (- 15 (tx/c-par-skip c)) 0 0))
+  (tx/skip (- 15 (tx/c-par-skip c))))
 
 (fun (tx/parse-code-block-section)
   (var c (ctxt/tx context))
@@ -1033,10 +1416,11 @@ Data structures, this is deliberately a stress test for malloc/free.
          (set need-empty-line 1))
         (else
          (if (need-empty-line
-              (tx/skip 15 0 0)))
+              (tx/skip 15)))
          (set need-empty-line 0)
          (tx/begin-hbox)
-         (tx/skip 30 0 0)
+         (tx/skip 30)
+         (tx/unescape t)
          (tx/text t)
          (tx/end)))
     (tx/next-token))
@@ -1059,28 +1443,28 @@ Data structures, this is deliberately a stress test for malloc/free.
 (fun (tx/cmd-title)
   (var c (ctxt/tx context))
   (tx/par)
-  (tx/skip (* 3 (tx/c-par-skip c)) 0 0)
+  (tx/skip (* 3 (tx/c-par-skip c)))
   (var old-font (tx/c-font c))
   (set (tx/c-font c) fonts/sans-l)
   (tx/begin-hbox)
   (tx/set-hbox-width (tx/c-line-width c))
-  (tx/skip 0 (tx/fill 1 1) 0)
+  (tx/fill 1 1)
   (tx/parse-text)
-  (tx/skip 0 (tx/fill 1 1) 0)
+  (tx/fill 1 1)
   (tx/end)
-  (tx/skip (* 2 (tx/c-par-skip c)) 0 0)
+  (tx/skip (* 2 (tx/c-par-skip c)))
   (set (tx/c-font c) old-font))
 
 (fun (tx/cmd-section)
   (var c (ctxt/tx context))
   (tx/par)
-  (tx/skip (* 2 (tx/c-par-skip c)) 0 0)
+  (tx/skip (* 2 (tx/c-par-skip c)))
   (var old-font (tx/c-font c))
   (set (tx/c-font c) fonts/sans-b)
   (tx/begin-hbox)
   (tx/set-hbox-width (tx/c-line-width c))
   (tx/parse-text)
-  (tx/skip 0 (tx/fill 1 1) 0)
+  (tx/fill 1 1)
   (tx/end)
   (set (tx/c-font c) old-font))
 
@@ -1129,79 +1513,112 @@ Data structures, this is deliberately a stress test for malloc/free.
   (if ((str/eq cmd "b")
        (var old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-b)
+       (tx/ensure-hmode)
        (tx/parse-text)
        (set (tx/c-font c) old-font))
       ((str/eq cmd "emph")
        (set old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-o)
+       (tx/ensure-hmode)
+       (tx/parse-text)
+       (set (tx/c-font c) old-font))
+      ((str/eq cmd "normal")
+       (set old-font (tx/c-font c))
+       (set (tx/c-font c) fonts/sans)
+       (tx/ensure-hmode)
        (tx/parse-text)
        (set (tx/c-font c) old-font))
       ((str/eq cmd "large")
        (set old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-l)
+       (tx/ensure-hmode)
        (tx/parse-text)
        (set (tx/c-font c) old-font))
       ((str/eq cmd "code")
        (set old-font (tx/c-font c))
        (set (tx/c-font c) fonts/mono)
+       (tx/ensure-hmode)
        (tx/begin-hbox)
        (tx/begin-vbox)
        (tx/set-vbox-height 14)
        (tx/end)
-       (tx/skip 3 0 0)
+       (tx/skip 3)
        (tx/set-box-bg-color (gfx/color 240 240 240))
        (tx/parse-text)
-       (tx/skip 3 0 0)
+       (tx/skip 3)
        (tx/end)
        (set (tx/c-font c) old-font))
       ((str/eq cmd "hide")
        (var old-color (tx/c-color c))
        (set (tx/c-color c) (gfx/color 255 255 255))
+       (tx/ensure-hmode)
        (tx/parse-text)
        (set (tx/c-color c) old-color))
       ((str/eq cmd "sub")
        (set old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-o-s)
+       (tx/ensure-hmode)
        (tx/begin-vbox)
        (tx/begin-hbox)
        (tx/parse-text)
        (tx/end)
-       (tx/skip -7 0 0)
+       (tx/skip -7)
        (tx/end)
        (set (tx/c-font c) old-font))
       ((str/eq cmd "sup")
        (set old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-o-s)
+       (tx/ensure-hmode)
        (tx/begin-vbox)
        (tx/begin-hbox)
-       (tx/skip 2 0 0)
+       (tx/skip 2)
        (tx/parse-text)
        (tx/end)
-       (tx/skip 7 0 0)
+       (tx/skip 7)
        (tx/end)
        (set (tx/c-font c) old-font))
       ((str/eq cmd "supsub")
        (set old-font (tx/c-font c))
        (set (tx/c-font c) fonts/sans-o-s)
+       (tx/ensure-hmode)
        (tx/begin-vbox)
        (tx/begin-hbox)
-       (tx/skip 2 0 0)
+       (tx/skip 2)
        (tx/parse-text)
        (tx/end)
        (var t (tx/c-cur-token (ctxt/tx context)))
        (if ((== (u8 t) ch/bar)
             (tx/next-token)
-            (tx/skip -1 0 0)
+            (tx/skip -1)
             (tx/begin-hbox)
             (tx/parse-text)
             (tx/end)))
-       (tx/skip -4 0 0)
+       (tx/skip -4)
        (tx/end)
        (set (tx/c-font c) old-font))
+      ((str/eq cmd "item")
+       (tx/ensure-hmode)
+       (tx/begin-hbox)
+       (tx/glue (tx/gluespec 0 0 0 1 1))
+       (tx/set-hbox-width 0)
+       (tx/parse-text)
+       (tx/end))
       ((str/eq cmd "title")
        (tx/cmd-title))
       ((str/eq cmd "section")
        (tx/cmd-section))
+      ((str/eq cmd "tex")
+       (tx/ensure-hmode)
+       (tx/text "T")
+       (tx/skip -2)
+       (tx/begin-vbox)
+       (tx/begin-hbox)
+       (tx/text "E")
+       (tx/end)
+       (tx/skip -3)
+       (tx/end)
+       (tx/skip -2)
+       (tx/text "X"))
       (else
        (dbg/str "UNKNOWN COMMAND" cmd)
        (tx/parse-text))))
@@ -1230,7 +1647,8 @@ Data structures, this is deliberately a stress test for malloc/free.
       (else
        (dbg/str "no such file:" name))))
 
-;; Main
+@* Viewing
+@=
 
 (struct tx/instance
   (:base app/instance)
