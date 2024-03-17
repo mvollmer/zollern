@@ -1,9 +1,137 @@
-@** TX - simple type setting
+@** Type setting
 
-This is not TeX.
+This is Zollerns simple typesetter. The input to the typesetter
+is a plain text book, just like to the compiler. In fact, books
+are meant to be processed by both the typesetter and the compiler.
+When processed by the compiler, the result is some machine code
+that can be run, maybe directly as an application or indirectly
+by code from other books. When processed by the typesetter, the
+result is also a kind of program, but a very special one: When
+that program is executed, it draws a nicely formatted version
+of the plain text to the screen.
 
+The implementation consists of a number of things:
+
+@d
+[item - ]a data structure for nested boxes and glue,
+
+[item - ]a parser for a markup syntax that can create such a data structure
+from a plain text book,
+
+[item - ]functions for [emph setting] the data structure so that all
+its boxes have concrete positions and sizes,
+
+[item - ]functions for converting this form of the data structure into
+instructions for drawing,
+
+[item - ]a function for executing those instructions,
+
+[item - ]and finally a function that puts this all together and launches
+the "view" mode application for a book.
 @
-Data structures, this is deliberately a stress test for malloc/free.
+
+Let's start with describing the markup syntax.
+
+@* Markup syntax
+
+The input is structured into [emph sections], most of which contain
+[emph paragraphs], which contain [emph words] and [emph commands].
+
+A section starts with a [code @] character at the beginning of
+a input line. It ends when the next section starts (or at the
+end of the book, of course). The characters immediately after
+the [code @] determine what kind of section it is and how its
+content is interpreted.
+
+Most sections contain paragraphs of text, and also provide different
+levels of headings:
+
+@d
+[code @** ...] - A section with a very prominent
+title. Books usually start with such a section. For example,
+this book starts with [code @** Type setting].
+
+[code @* ...] - A section with a medium title, appropriate for
+starting a new chapter. For example, this chapter starts with
+[code @* Markup syntax].
+
+[code @] - A section with no title. This is used to switch back
+to text mode after specialized sections such as [code @c] or
+[code @=], see below.
+
+[code @d] - Text that will be "displayed". This very text here
+that explains the different sections is such a displayed section.
+@
+
+There are also sections that don't contain text, but code. Such
+a section can not contain commands and will show up verbatim
+in the formatted output.
+
+@d
+[code @c] - Example code. It will not be compiled.
+
+[code @=] - Real code that is part of the program and will be
+compiled.
+@
+
+Within a text section started by [code @**], [code @*], [code
+\@], or [code @d], paragraphs are separated by blank lines. The
+words of a paragraph are all gathered up and then broken into
+nicely justified lines, independent of where the line endings
+are in the input.
+
+In addition to words, a paragraph can also contain commands like
+[code \[b this\]]. The first word after the initial [code \[]
+determines which command it is, and the rest will be processed
+according to the rules of that command. Most commands just switch
+some parameters and then add their words to the current paragraph.
+
+Here are some commands:
+
+@d
+[code \[b ...\]] - Typeset "..." in [b bold].
+
+[code \[emph ...\]] - Typeset "..." [emph emphasized].
+
+[code \[code ...\]] - Typeset "..." as [code code].
+
+[code \[sup ...\]] - Typeset "..." as a superscript: x[sup 2].
+
+[code \[sub ...\]] - Typeset "..." as a subscript: x[sub n].
+
+[code \[supsub ...\|---\]] - Typeset "..." as a superscript and "---" as a subscript: x[supsub 2|n].
+@
+
+New commands are defined by writing Z1 functions.
+
+@* Data structures
+
+The typesetter works with nested, rectangular [emph boxes] and
+flexible [emph glue]. For example, a word turns into a [emph
+text box], and the spaces between words turn into glue.
+
+When a paragraph is broken into lines, each line is represented
+by a [emph horizontal box] (full of text boxes and glue), and
+these boxes are put into a [emph vertical box] that forms the
+document.
+
+The math commands like [code sup] do their job by putting a text
+box into a small vertical box with some vertical glue. That glue
+is used to position the text box as desired. The small vertical
+box is then added to the current paragraph and will eventually
+end up in a horizonal box.
+
+A glue node can be flexible, it can shrink and expand. For example,
+the centered book titles are created by making a horizontal box
+with expandable glue, a text box with the title, and another
+expandle glue, in that order. The two expandable glue nodes both push
+the title into the middle of the horizontal box.
+
+If you have used [tex], this should all be quite familiar.
+
+Both boxes and glue are [emph nodes]. A node stores a type code,
+and a link to a next node. This link is used to form the list
+of children of boxes.
 
 @=
 (enum
@@ -13,46 +141,22 @@ Data structures, this is deliberately a stress test for malloc/free.
   nt-pbox
   nt-glue)
 
-(struct tx/context
-  ;; constructing
-  c-box-context
-  c-outer-y
-  ;; inking
-  c-ink
-  c-ink-cur-page
-  c-ink-ptr
-  c-ink-end
-  c-ink-x
-  c-ink-y
-  c-ink-font
-  c-ink-color
-  ;; parsing
-  c-rbuf
-  c-at-bol
-  c-in-section-header
-  c-cur-token
-  c-execute-command
-  ;; markup state
-  c-verbatim
-  c-font
-  c-color
-  c-line-width
-  c-line-skip
-  c-par-skip
-  c-left-skip
-  c-right-skip
-  c-need-par-skip
-  c-prev-depth)
-
-(struct tx/box-context
-  bc-prev
-  bc-box
-  bc-tailp)
-
 (struct tx/node
   n-type
   n-next)
+@
 
+Next we define the various box structures. All boxes have a [emph
+width], a [emph height], and a [emph depth]. The height measures
+from the baseline of a box upwards to its top edge, and the depth
+measures downwards to its bottom edge. (The width of course measures
+from its left edge to its right edge. One day there will be a
+picture here.)
+
+A new box starts out with indeterminate dimensions. The final
+values will be computed while [emph setting the glue].
+
+@=
 (struct tx/box
   (:base tx/node)
   b-width b-height b-depth
@@ -61,13 +165,35 @@ Data structures, this is deliberately a stress test for malloc/free.
 
 (fun (tx/is-box node)
   (< (tx/n-type node) tx/nt-glue))
+@
 
+The first concrete box type is the [emph text] box. Text boxes
+never have children. They have a [code b-children] field, but
+it is always zero.
+
+@=
 (struct tx/tbox
   (:base tx/box)
   tb-font
   tb-color
   tb-str)
+@
 
+Horizontal and vertical boxes can both have a [emph requested
+size]. This is assigned to a box when it is created, and used
+during the "setting" phase to compute how the glue in the box
+has to stretch or shrink.
+
+For example, the horizontal boxes for the lines of a paragraph
+are given a requested size equal to the current line width, and
+the inter-word glue shrinks and stretches to justify the line
+nicely between the left and right margins.
+
+The magical value [code tx/NATURAL-SIZE] is used to tell the glue
+setting phase that glue in a box should not shrink or stretch
+at all.
+
+@=
 (defconst tx/NATURAL-SIZE 40000)
 
 (struct tx/hbox
@@ -77,29 +203,102 @@ Data structures, this is deliberately a stress test for malloc/free.
 (struct tx/vbox
   (:base tx/box)
   vb-height)
+@
 
+Paragraphs are actually also stored in their own boxes, but they
+never become children of other boxes. As soon as a paragraph
+box is complete, it is broken into horizontal boxes, which are
+then added to the surrounding box.
+
+@=
 (struct tx/pbox
   (:base tx/box)
   pb-width
   pb-line-skip
-  pb-left-off pb-left-plus
-  pb-right-off pb-right-plus)
+  pb-left-spec
+  pb-right-spec)
 
 (fun (tx/is-pbox node)
   (== (tx/n-type node) tx/nt-pbox))
+@
 
-(defconst tx/FILL-ORDER-SHIFT 40000)
+And now for the glue nodes. A piece of glue has three parameters:
+[emph length], [emph stretch], and [emph shrink]. The length is the
+natural size of the glue; it will be this size in a box that
+has [code tx/NATURAL-SIZE] as its requested size, for example.
 
-(struct tx/glue
+The shrink parameter determines how much the glue can shrink, if
+necessary, and the stretch parameter determines how easily it can
+stretch.
+
+Both the [emph stretch] and [emph shrink] parameter can have a
+[emph order] attached to them. Only glue of the highest order
+takes part in stretching or shrinking.
+
+For example, a box for a centered title will have a glue node
+with stretch order one at the start and end, and the actual title
+text might have inter-word glue in it, which has stretch order
+zero. When setting such a box, the two glues with streatch order
+one will do all the stretching, and the inter-word glue will
+not stretch at all.
+
+Orders higher than one will probably be quite rare.
+
+All the parameters of glue are crammed into 64 bits: 32 bits for
+the length, and 8 bits each for stretch, shrink, and their two
+orders. This allows us to pass around a complete glue specification
+as a single value.
+
+(This requires a bit of boilerplate code, and maybe Z1 itself
+will one day offer shortcuts for this.)
+
+@=
+(struct tx/gluespec-struct
+  (gss-length s32)
+  (gss-stretch s8)
+  (gss-stretch-order u8)
+  (gss-shrink s8)
+  (gss-shrink-order u8))
+
+(fun (tx/gluespec length stretch stretch-order shrink shrink-order)
+  (var spec)
+  (var l (loc spec))
+  (set (tx/gss-length l) length)
+  (set (tx/gss-stretch l) stretch)
+  (set (tx/gss-stretch-order l) stretch-order)
+  (set (tx/gss-shrink l) shrink)
+  (set (tx/gss-shrink-order l) shrink-order)
+  spec)
+
+(def (tx/gs-length ?spec) (tx/gss-length (loc ?spec)))
+(def (tx/gs-stretch ?spec) (tx/gss-stretch (loc ?spec)))
+(def (tx/gs-stretch-order ?spec) (tx/gss-stretch-order (loc ?spec)))
+(def (tx/gs-shrink ?spec) (tx/gss-shrink (loc ?spec)))
+(def (tx/gs-shrink-order ?spec) (tx/gss-shrink-order (loc ?spec)))
+
+(struct tx/gluenode
   (:base tx/node)
   g-size
-  g-off
-  g-plus
-  g-minus)
+  g-spec)
 
 (fun (tx/is-glue node)
   (== (tx/n-type node) tx/nt-glue))
+@
 
+Now that we have the data structures defined, we could go ahead
+and write some functions for actually creating instances of them,
+and for linking them all together.
+
+We wait with that, however, until after we have the functions
+for setting boxes and for drawing the final result. As we will
+see, constructing is intertwined with setting and interestingly
+also with drawing.
+
+But we warm up with a function for returning the memory of node
+graph. All nodes will be allocated with [code mem/alloc], and
+thus we need to return their memory with [code mem/free].
+
+@=
 (fun (tx/free-node node)
   (var t (tx/n-type node))
   (if ((== t tx/nt-tbox)
@@ -111,7 +310,9 @@ Data structures, this is deliberately a stress test for malloc/free.
          (tx/free-node a)
          (set a b))))
   (mem/free node))
-
+@
+And sometimes it is helpful to print a node during debugging:
+@=
 (fun (tx/dbg-nodes l dbg)
   (while l
     (dbg l)
@@ -121,9 +322,11 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var t (tx/n-type n))
   (if ((== t tx/nt-glue)
        (dbg/out "glue\n")
-       (dbg/int " off" (tx/g-off n))
-       (dbg/int " plus" (tx/g-plus n))
-       (dbg/int " minus" (tx/g-minus n)))
+       (dbg/int " length" (tx/gs-length (tx/g-spec n)))
+       (dbg/int " stretch" (tx/gs-stretch (tx/g-spec n)))
+       (dbg/int " stretch order" (tx/gs-stretch-order (tx/g-spec n)))
+       (dbg/int " shrink" (tx/gs-shrink (tx/g-spec n)))
+       (dbg/int " shrink order" (tx/gs-shrink-order (tx/g-spec n))))
       ((== t tx/nt-tbox)
        (dbg/str "text" (tx/tb-str n)))
       ((== t tx/nt-hbox)
@@ -137,13 +340,19 @@ Data structures, this is deliberately a stress test for malloc/free.
        (tx/dbg-nodes (tx/b-children n) tx/dbg-node)
        (dbg/out "end\n"))))
 
-(fun (tx/dbg-cur)
-  (var bc (tx/c-box-context (ctxt/tx context)))
-  (set (u64 (tx/bc-tailp bc)) 0)
-  (tx/dbg-node (tx/bc-box bc)))
+@* Setting the glue
 
-;; Box setting
+The act of [emph setting the glue] in a box will give that box
+its final dimensions; it's width, height, and depth. It will
+also determine the final size of all the glue inside of it, of
+course, and this in turn determines the positions of all children
+of a box.
 
+This is pretty straightforward for a text box: It's height and
+depth comes from the font, and the width comes from all the characters
+in it.
+
+@=
 (fun (tx/set-tbox tb)
   (var f (tx/tb-font tb))
   (set (tx/b-height tb) (gfx/font-ascent f))
@@ -159,180 +368,251 @@ Data structures, this is deliberately a stress test for malloc/free.
     (set w (+ w (gfx/glyph-advance glyph)))
     (set str (+ str 1)))
   (set (tx/b-width tb) w))
+@
 
-(fun (tx/set-hbox hb)
-  (var natural-width 0)
-  (var max-stretch-order 0)
-  (var max-shrink-order 0)
-  (var max-height 0)
-  (var max-depth 0)
-  (var c (tx/b-children hb))
+The glue in child boxes is set before setting the glue in their
+parent boxes. This is a pretty simple approach and doesn't allow
+for sophisticated layouts. But the simplicity is more important
+to us right now.
+
+The height and depth of a horizontal box are then simply the maximum
+height and depth of all of its children, and for setting the
+glue inside of it, there are three cases:
+
+@d
+[item - ]The box should be its natural size. All glue nodes will
+simply be set to their natural length.
+
+[item - ]The box should be wider than its natural size. The glue
+nodes need to be stretched evenly to provide the extra width.
+As hinted at above, only glue nodes with the highest stretch
+order participate in this; the rest get their natural size.
+
+[item - ]The box should be narrower than its natural size, and
+the highest order glue needs to shrink evenly.
+@
+
+We start with a function that gathers some data about the children
+of a box. It is used for both horizontal and vertical boxes,
+so it does a bit too much work.
+
+@=
+(struct tx/box-stats
+  bs-natural-width
+  bs-natural-height
+  bs-max-width
+  bs-max-height
+  bs-max-depth
+  bs-max-stretch-order
+  bs-max-shrink-order
+  bs-total-stretch
+  bs-total-shrink)
+
+(fun (tx/compute-box-stats stats c)
+  (set (tx/bs-natural-width stats) 0)
+  (set (tx/bs-natural-height stats) 0)
+  (set (tx/bs-max-width stats) 0)
+  (set (tx/bs-max-height stats) 0)
+  (set (tx/bs-max-depth stats) 0)
+  (set (tx/bs-max-stretch-order stats) 0)
+  (set (tx/bs-max-shrink-order stats) 0)
+  (set (tx/bs-total-stretch stats) 0)
+  (set (tx/bs-total-shrink stats) 0)
+
   (while c
     (if ((tx/is-glue c)
-         (set natural-width (+ natural-width (tx/g-off c)))
-         (if ((> (tx/g-minus c) max-shrink-order)
-              (set max-shrink-order (tx/g-minus c))))
-         (if ((> (tx/g-plus c) max-stretch-order)
-              (set max-stretch-order (tx/g-plus c)))))
+         (var s (tx/g-spec c))
+         (set (tx/bs-natural-width stats) (+ (tx/bs-natural-width stats) (tx/gs-length s)))
+         (set (tx/bs-natural-height stats) (+ (tx/bs-natural-height stats) (tx/gs-length s)))
+         (if ((> (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
+              (set (tx/bs-max-stretch-order stats) (tx/gs-stretch-order s))
+              (set (tx/bs-total-stretch stats) 0)))
+         (if ((== (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
+              (set (tx/bs-total-stretch stats) (+ (tx/bs-total-stretch stats) (tx/gs-stretch s)))))
+         (if ((> (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
+              (set (tx/bs-max-shrink-order stats) (tx/gs-shrink-order s))
+              (set (tx/bs-total-shrink stats) 0)))
+         (if ((== (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
+              (set (tx/bs-total-shrink stats) (+ (tx/bs-total-shrink stats) (tx/gs-shrink s))))))
         ((tx/is-box c)
-         (set natural-width (+ natural-width (tx/b-width c)))
-         (if ((> (tx/b-height c) max-height)
-              (set max-height (tx/b-height c))))
-         (if ((> (tx/b-depth c) max-depth)
-              (set max-depth (tx/b-depth c))))))
-    (set c (tx/n-next c)))
-  (set (tx/b-height hb) max-height)
-  (set (tx/b-depth hb) max-depth)
-  (set max-shrink-order (* (/ max-shrink-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  (set max-stretch-order (* (/ max-stretch-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  ;(dbg/int "natural-width" natural-width)
-  ;(dbg/int "max-shrink-order" max-shrink-order)
-  ;(dbg/int "max-stretch-order" max-stretch-order)
-  ;; set the glue
+         (set (tx/bs-natural-width stats) (+ (tx/bs-natural-width stats) (tx/b-width c)))
+         (set (tx/bs-natural-height stats) (+ (tx/bs-natural-height stats) (tx/b-height c)))
+         (if ((> (tx/b-width c) (tx/bs-max-width stats))
+              (set (tx/bs-max-width stats) (tx/b-width c))))
+         (if ((> (tx/b-height c) (tx/bs-max-height stats))
+              (set (tx/bs-max-height stats) (tx/b-height c))))
+         (if ((> (tx/b-depth c) (tx/bs-max-depth stats))
+              (set (tx/bs-max-depth stats) (tx/b-depth c))))))
+    (set c (tx/n-next c))))
+@
+(One day... Z1 will be less verbose... one day...)
+
+The task of setting the glue then has the expected structure.
+We call [code tx/compute-box-stats] and then handle one of the
+three cases.
+
+@=
+(fun (tx/set-hbox hb)
+  (mem stats tx/box-stats)
+  (tx/compute-box-stats stats (tx/b-children hb))
+  (set (tx/b-height hb) (tx/bs-max-height stats))
+  (set (tx/b-depth hb) (tx/bs-max-depth stats))
+
   (if ((or (== (tx/hb-width hb) tx/NATURAL-SIZE)
-           (== (tx/hb-width hb) natural-width))
+           (== (tx/hb-width hb) (tx/bs-natural-width stats)))
+       <set the glue nodes to their natural size>
+       (set (tx/b-width hb) (tx/bs-natural-width stats)))
+
+      ((> (tx/hb-width hb) (tx/bs-natural-width stats))
+       (var extra-width (- (tx/hb-width hb) (tx/bs-natural-width stats)))
+       (var total-stretch (tx/bs-total-stretch stats))
        (set c (tx/b-children hb))
        (while c
          (if ((tx/is-glue c)
-              (set (tx/g-size c) (tx/g-off c))))
-         (set c (tx/n-next c)))
-       (set (tx/b-width hb) natural-width))
-      ((> (tx/hb-width hb) natural-width)
-       (var extra-width (- (tx/hb-width hb) natural-width))
-       (var total-stretch 0)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-plus c) max-stretch-order))
-              (set total-stretch (+ total-stretch (- (tx/g-plus c) max-stretch-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-stretch" total-stretch)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-plus c) max-stretch-order)
-                        (> total-stretch 0))
-                   (var w (/ (+ (* extra-width (- (tx/g-plus c) max-stretch-order)) (/ total-stretch 2)) total-stretch))
-                   (set (tx/g-size c) (+ (tx/g-off c) w))
-                   (set extra-width (- extra-width w))
-                   (set total-stretch (- total-stretch (- (tx/g-plus c) max-stretch-order))))
-                  (else
-                   (set (tx/g-size c) (tx/g-off c))))))
+              <stretch glue node c appropriately>))
          (set c (tx/n-next c)))
        (set (tx/b-width hb) (tx/hb-width hb)))
-      ((< (tx/hb-width hb) natural-width)
-       (var over-width (- natural-width (tx/hb-width hb)))
-       (var total-shrink 0)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-minus c) max-shrink-order))
-              (set total-shrink (+ total-shrink (- (tx/g-minus c) max-shrink-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-shrink" total-shrink)
-       (set c (tx/b-children hb))
-       (while c
-         (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-minus c) max-shrink-order)
-                        (> total-shrink 0))
-                   (set w (/ (+ (* over-width (- (tx/g-minus c) max-shrink-order)) (/ total-shrink 2)) total-shrink))
-                   (if ((> w (tx/g-off c))
-                        (set (tx/g-size c) 0))
-                       (else
-                        (set (tx/g-size c) (- (tx/g-off c) w))))
-                   (set over-width (- over-width w))
-                   (set total-shrink (- total-shrink (- (tx/g-minus c) max-shrink-order))))
-                  (else
-                   (set (tx/g-size c) (tx/g-off c))))))
-         (set c (tx/n-next c))
-         (set (tx/b-width hb) (tx/hb-width hb))))))
 
+      ((< (tx/hb-width hb) (tx/bs-natural-width stats))
+       (var over-width (- (tx/bs-natural-width stats) (tx/hb-width hb)))
+       (var total-shrink (tx/bs-total-shrink stats))
+       (set c (tx/b-children hb))
+       (while c
+         (if ((tx/is-glue c)
+              <shrink glue node c appropriately>))
+         (set c (tx/n-next c)))
+       (set (tx/b-width hb) (tx/hb-width hb)))))
+@
+
+Producing a box of natural width is really very straightforward.
+We just need to set all glue nodes to their natural size.
+
+@= <set the glue nodes to their natural size>
+(var c (tx/b-children hb))
+(while c
+  (if ((tx/is-glue c)
+       (set (tx/g-size c) (tx/gs-length (tx/g-spec c)))))
+  (set c (tx/n-next c)))
+@
+
+And here comes the computation that actually distributes the extra
+width evenly over all glue nodes.
+
+Mathematically, a glue node should get [emph e] * [emph s] / [emph
+t] of extra size, where [emph s] is the stretch parameter of
+the node, [emph t] is the sum of all stretch parameters of all
+glue nodes, and [emph e] is the extra width that needs to be
+distributed.
+
+But since we are computing with integers here, we need to be a
+bit more careful. First, we want to round the result of the division
+to the nearest integer. This is done by computing
+@d
+[emph w] = ([emph e] * [emph s] + [emph t]/2) / [emph t]
+@
+Second, we reduce [emph e] and [emph t] after each iteration according
+to
+@d
+[emph e] <- [emph e] - [emph w]
+
+[emph t] <- [emph t] - [emph s]
+@
+This ensures that all [emph w] exactly sum to the initial [emph e].
+
+@= <stretch glue node c appropriately>
+(var s (tx/g-spec c))
+(if ((and (>= (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
+          (> total-stretch 0))
+     (var w (/ (+ (* extra-width (tx/gs-stretch s)) (/ total-stretch 2)) total-stretch))
+     (set (tx/g-size c) (+ (tx/gs-length s) w))
+     (set extra-width (- extra-width w))
+     (set total-stretch (- total-stretch (tx/gs-stretch s))))
+  (else
+   (set (tx/g-size c) (tx/gs-length s))))
+@
+
+Shrinking is pretty much the same as stretching, just with different parameters.
+
+@= <shrink glue node c appropriately>
+(set s (tx/g-spec c))
+(if ((and (>= (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
+          (> total-shrink 0))
+     (set w (/ (+ (* over-width (tx/gs-shrink s)) (/ total-shrink 2)) total-shrink))
+     (set (tx/g-size c) (- (tx/gs-length s) w))
+     (set over-width (- over-width w))
+     (set total-shrink (- total-shrink (tx/gs-shrink s))))
+  (else
+   (set (tx/g-size c) (tx/gs-length s))))
+@
+
+Setting the glue inside a vertical box is almost identical to
+the process for a horizontal box, and we don't explain it in
+detail. But note that a vertical box always gets a depth of 0.
+This will probably need to change as we find more uses for vertical
+things.
+
+@=
 (fun (tx/set-vbox vb)
-  (var natural-height 0)
-  (var max-stretch-order 0)
-  (var max-shrink-order 0)
-  (var max-width 0)
-  (var c (tx/b-children vb))
-  (while c
-    (if ((tx/is-glue c)
-         (set natural-height (+ natural-height (tx/g-off c)))
-         (if ((> (tx/g-minus c) max-shrink-order)
-              (set max-shrink-order (tx/g-minus c))))
-         (if ((> (tx/g-plus c) max-stretch-order)
-              (set max-stretch-order (tx/g-plus c)))))
-        ((tx/is-box c)
-         (set natural-height (+ natural-height (tx/b-height c)))
-         (if ((> (tx/b-width c) max-width)
-              (set max-width (tx/b-width c))))))
-    (set c (tx/n-next c)))
-  (set (tx/b-width vb) max-width)
-  (set max-shrink-order (* (/ max-shrink-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  (set max-stretch-order (* (/ max-stretch-order tx/FILL-ORDER-SHIFT) tx/FILL-ORDER-SHIFT))
-  ;(dbg/int "natural-height" natural-height)
-  ;(dbg/int "max-shrink-order" max-shrink-order)
-  ;(dbg/int "max-stretch-order" max-stretch-order)
-  ;; set the glue
+  (mem stats tx/box-stats)
+  (tx/compute-box-stats stats (tx/b-children vb))
+  (set (tx/b-width vb) (tx/bs-max-width stats))
+
   (if ((or (== (tx/vb-height vb) tx/NATURAL-SIZE)
-           (== (tx/vb-height vb) natural-height))
-       (set c (tx/b-children vb))
+           (== (tx/vb-height vb) (tx/bs-natural-height stats)))
+       (var c (tx/b-children vb))
        (while c
          (if ((tx/is-glue c)
-              (set (tx/g-size c) (tx/g-off c))))
+              (set (tx/g-size c) (tx/gs-length (tx/g-spec c)))))
          (set c (tx/n-next c)))
-       (set (tx/b-height vb) natural-height)
+       (set (tx/b-height vb) (tx/bs-natural-height stats))
        (set (tx/b-depth vb) 0))
-      ((> (tx/vb-height vb) natural-height)
-       (var extra-height (- (tx/vb-height vb) natural-height))
-       (var total-stretch 0)
-       (set c (tx/b-children vb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-plus c) max-stretch-order))
-              (set total-stretch (+ total-stretch (- (tx/g-plus c) max-stretch-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-stretch" total-stretch)
+
+      ((> (tx/vb-height vb) (tx/bs-natural-height stats))
+       (var extra-height (- (tx/vb-height vb) (tx/bs-natural-height stats)))
+       (var total-stretch (tx/bs-total-stretch stats))
        (set c (tx/b-children vb))
        (while c
          (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-plus c) max-stretch-order)
+              (var s (tx/g-spec c))
+              (if ((and (>= (tx/gs-stretch-order s) (tx/bs-max-stretch-order stats))
                         (> total-stretch 0))
-                   (var h (/ (+ (* extra-height (- (tx/g-plus c) max-stretch-order)) (/ total-stretch 2)) total-stretch))
-                   (set (tx/g-size c) (+ (tx/g-off c) h))
+                   (var h (/ (+ (* extra-height (tx/gs-stretch s)) (/ total-stretch 2)) total-stretch))
+                   (set (tx/g-size c) (+ (tx/gs-length s) h))
                    (set extra-height (- extra-height h))
-                   (set total-stretch (- total-stretch (- (tx/g-plus c) max-stretch-order))))
+                   (set total-stretch (- total-stretch (tx/gs-stretch s))))
                   (else
-                   (set (tx/g-size c) (tx/g-off c))))))
+                   (set (tx/g-size c) (tx/gs-length s))))))
          (set c (tx/n-next c)))
        (set (tx/b-height vb) (tx/vb-height vb))
        (set (tx/b-depth vb) 0))
-      ((< (tx/vb-height vb) natural-height)
-       (var over-height (- natural-height (tx/vb-height vb)))
-       (var total-shrink 0)
-       (set c (tx/b-children vb))
-       (while c
-         (if ((and (tx/is-glue c)
-                   (>= (tx/g-minus c) max-shrink-order))
-              (set total-shrink (+ total-shrink (- (tx/g-minus c) max-shrink-order)))))
-         (set c (tx/n-next c)))
-       ;(dbg/int "total-shrink" total-shrink)
+
+      ((< (tx/vb-height vb) (tx/bs-natural-height stats))
+       (var over-height (- (tx/bs-natural-height stats) (tx/vb-height vb)))
+       (var total-shrink (tx/bs-total-shrink stats))
        (set c (tx/b-children vb))
        (while c
          (if ((tx/is-glue c)
-              (if ((and (>= (tx/g-minus c) max-shrink-order)
+              (set s (tx/g-spec c))
+              (if ((and (>= (tx/gs-shrink-order s) (tx/bs-max-shrink-order stats))
                         (> total-shrink 0))
-                   (set h (/ (+ (* over-height (- (tx/g-minus c) max-shrink-order)) (/ total-shrink 2)) total-shrink))
-                   (if ((> h (tx/g-off c))
-                        (set (tx/g-size c) 0))
-                       (else
-                        (set (tx/g-size c) (- (tx/g-off c) h))))
+                   (set h (/ (+ (* over-height (tx/gs-shrink s)) (/ total-shrink 2)) total-shrink))
+                   (set (tx/g-size c) (- (tx/gs-length s) h))
                    (set over-height (- over-height h))
-                   (set total-shrink (- total-shrink (- (tx/g-minus c) max-shrink-order))))
+                   (set total-shrink (- total-shrink (tx/gs-shrink s))))
                   (else
-                   (set (tx/g-size c) (tx/g-off c))))))
+                   (set (tx/g-size c) (tx/gs-length s))))))
          (set c (tx/n-next c)))
        (set (tx/b-height vb) (tx/vb-height vb))
        (set (tx/b-depth vb) 0))))
+@
 
+Here is a function that can set the glue in any box, by looking
+at its type. This will be called below during the construction
+of boxes.
+
+Note that paragraph boxes are not handled here, since they will
+never appear as children of other boxes.
+@=
 (fun (tx/set-node node)
   (var t (tx/n-type node))
   (if ((== t tx/nt-tbox)
@@ -342,57 +622,159 @@ Data structures, this is deliberately a stress test for malloc/free.
       ((== t tx/nt-vbox)
        (tx/set-vbox node))))
 
-;; Line breaking
+@* Breaking paragraphs into lines
 
-(fun (tx/set-pbox node begin-line set-line-width add-node skip end-line)
+When a paragraph box is complete, it is immediately broken into
+lines. The parameters of a paragraph box are the requested width
+of the horizontal boxes that it will produce for the lines, as
+well specifications for glue that is inserted at the start and
+end of each line.
+
+As we all know, [tex] uses a interesting and fun algorithm to
+determine where to break lines. We should really explain and
+implement it here as well. But for now, we just collect box and
+glue nodes until their combined width is larger than what fits
+in a single line, and then we break just before that.
+
+There is no hyphenation, and nothing equivalent to the [emph discretionary]
+items that [tex] has.
+
+The [code set-pbox] function needs to construct horizontal boxes
+and glue nodes, etc, but we haven't defined any functions for
+that yet. Moreover, [code set-pbox] will be called from within
+those functions (specifically, from the function that ends a
+box), and thus we have mutual recursion here.
+
+As usual, we break this cycle by passing the construction functions
+to [code set-pbox] as parameters.
+
+@=
+(fun (tx/set-pbox node begin-line set-line-width add-node glue end-line)
   (var c (tx/b-children node))
   (set (tx/b-children node) 0)
   (var w 0)
-  (var line-width (- (tx/pb-width node) (tx/pb-left-off node) (tx/pb-right-off node)))
+  (var line-width (- (tx/pb-width node)
+                     (tx/gs-length (tx/pb-left-spec node))
+                     (tx/gs-length (tx/pb-right-spec node))))
   (var line-start c)
   (var break-point 0)
   (var next)
   (while c
-    (if ((tx/is-glue c)
-         (set w (+ w (tx/g-off c))))
-        ((tx/is-box c)
-         (set w (+ w (tx/b-width c)))))
+    <add the width of box c to w>
     (if ((> w line-width)
          (if (break-point
-              (begin-line)
-              (set-line-width (tx/pb-width node))
-              (skip (tx/pb-left-off node) (tx/pb-left-plus node) 0)
-              (while (!= line-start (tx/n-next break-point))
-                (set next (tx/n-next line-start))
-                (add-node line-start)
-                (set line-start next))
-              (skip (tx/pb-right-off node) (tx/pb-right-plus node) 0)
-              (end-line (tx/pb-line-skip node))))
-         (while (and line-start (not (tx/is-box line-start)))
-           (set next (tx/n-next line-start))
-           (tx/free-node line-start)
-           (set line-start next))
-         (set next line-start)
-         (set break-point 0)
-         (set w 0))
+              <make a line with all nodes between line-start and breakpoint>))
+         <start a new line>)
         (else
-         (if ((tx/is-box c)
+         (if (<there is a suitable breakpoint after box c>
               (set break-point c)))
          (set next (tx/n-next c))))
     (set c next))
-  (if (line-start
-       (begin-line)
-       (set-line-width (tx/pb-width node))
-       (skip (tx/pb-left-off node) (tx/pb-left-plus node) 0)
-       (while line-start
-         (set next (tx/n-next line-start))
-         (add-node line-start)
-         (set line-start next))
-       (skip (tx/pb-right-off node) (tx/pb-right-plus node) 0)
-       (end-line (tx/pb-line-skip node)))))
+  <make the last line with all nodes from line-start to the end>)
+@
+Keeping track of how long the current line is, of course, quite
+easy.
+@= <add the width of box c to w>
+(if ((tx/is-glue c)
+     (set w (+ w (tx/gs-length (tx/g-spec c)))))
+    ((tx/is-box c)
+     (set w (+ w (tx/b-width c)))))
+@
+Once it gets too long, we move all nodes between the start of
+the current line and the current node to a new horizontal box.
 
-;; Inking
+@= <make a line with all nodes between line-start and breakpoint>
+(begin-line)
+(set-line-width (tx/pb-width node))
+(glue (tx/pb-left-spec node))
+(while (!= line-start (tx/n-next break-point))
+  (set next (tx/n-next line-start))
+  (add-node line-start)
+  (set line-start next))
+(glue (tx/pb-right-spec node))
+(end-line (tx/pb-line-skip node))
+@
 
+And then we skip ahead to find the start of the next line and
+reset our state.
+
+@= <start a new line>
+(while (and line-start (not (tx/is-box line-start)))
+  (set next (tx/n-next line-start))
+  (tx/free-node line-start)
+  (set line-start next))
+(set next line-start)
+(set break-point 0)
+(set w 0)
+@
+
+We break at the first glue after a non-glue box. When starting
+a new line, all the glue nodes following the breakpoint are skipped,
+see [code <start a new line>] above.
+
+@= <there is a suitable breakpoint after box c>
+(and (not (tx/is-glue c))
+     (or (not (tx/n-next c))
+         (tx/is-glue (tx/n-next c))))
+@
+
+At the end there might be some boxes left over, and we make a
+line out of them as well.
+
+@= <make the last line with all nodes from line-start to the end>
+(if (line-start
+     (begin-line)
+     (set-line-width (tx/pb-width node))
+     (glue (tx/pb-left-spec node))
+     (while line-start
+       (set next (tx/n-next line-start))
+       (add-node line-start)
+       (set line-start next))
+     (glue (tx/pb-right-spec node))
+     (end-line (tx/pb-line-skip node))))
+
+@* Inking
+
+After setting the glue, the data structure is ready to be drawn
+onto the screen. All box and glue nodes have their final sizes,
+and all children of boxes thus have their final position, relative
+to their parent box.
+
+But instead of using the data structure directly to draw the result,
+we first convert it into a more compact form. This speeds up
+repeated drawing slightly (such as when scrolling through a long
+document), but more importantly, it reduces memory use. The structures
+for nodes and glue are quite wasteful, as far as memory is concerned,
+and we don't want to keep them around after the glue has been
+set.
+
+And this works great together with a simple observation: The outermost
+box will always be a vertical box of natural size, and thus all
+glue in it will also be of natural size, and thus we know the
+final position of a child node as soon as it is added. No later
+node can influence how the earlier glue will be set.
+
+Consequently, we don't actually have to explicitly create this
+outermost box, and as soon as children are added to it, we can
+convert them to their more compact form and then free their memory.
+
+As a result, we only need to allocate the nodes for a single paragraph,
+most of the time, and not for the whole document. This is a big win.
+
+(Not that Zollern tries to save memory. There is plenty of that
+stuff, more than we need. But this is a fun technique nevertheless.)
+
+So what is this compact form? It's [emph byte code] for a very
+specialized [emph virtual machine].
+
+The instructions for that machine perform things like "add 5 to
+the x coordinate of the current position", and "draw some glyphs
+at the current position". It can't loop and doesn't have conditionals.
+
+Here are the operation codes. How the parameters are encoded will
+become clear further below. It's all very straightforward.
+
+@=
 (enum
   ink-x
   ink-dx
@@ -408,170 +790,29 @@ Data structures, this is deliberately a stress test for malloc/free.
   ink-glyphs
   ink-save-pos
   ink-tint
-  ink-tint2
   ink-end)
+@
 
-(fun (tx/more-ink ctxt)
-  (var ink (sys/page-get))
-  (set (u64 ink) 0)
-  (set (tx/c-ink-ptr ctxt) (+ ink 8))
-  (set (tx/c-ink-end ctxt) (+ ink sys/page-size))
-  (if ((tx/c-ink-cur-page ctxt)
-       (set (u64 (tx/c-ink-cur-page ctxt)) ink))
-      (else
-       (set (tx/c-ink ctxt) ink)))
-  (set (tx/c-ink-cur-page ctxt) ink))
+Let's explain these operation codes in detail by first showing
+the [code tx/draw-ink] function that executes them.
 
-(fun (tx/free-ink ink)
-  (while ink
-    (var next (u64 ink))
-    (sys/page-put ink)
-    (set ink next)))
+It uses functions like [code tx/get-u8] and [code tx/get-s32]
+to retrieve the next 8-bit or 32-bit quantity of the program.
+They are defined further down below, once we know how the program
+is actually stored.
 
-(fun (tx/emit-byte ctxt b)
-  ;; (dbg/int "E" b)
-  ;; (dbg/int "-" (- (tx/c-ink-ptr ctxt) (tx/c-ink ctxt)))
-  (if ((>= (tx/c-ink-ptr ctxt) (tx/c-ink-end ctxt))
-       (tx/more-ink ctxt)))
-  (set (u8 (tx/c-ink-ptr ctxt)) b)
-  (set (tx/c-ink-ptr ctxt) (+ (tx/c-ink-ptr ctxt) 1)))
+The [code tx/draw-ink] function stores the state of our little
+virtual machine in some local variables: [code x] and [code y]
+hold the current position, [code font] has the current font,
+and there are some more.
 
-(fun (tx/emit-set ctxt new old set-op delta-op)
-  (var delta (- new old))
-  (if ((== delta 0)
-       (begin))
-      ((and (< delta 128) (>= delta -128))
-       (tx/emit-byte ctxt delta-op)
-       (tx/emit-byte ctxt delta))
-      (else
-       (tx/emit-byte ctxt set-op)
-       (tx/emit-byte ctxt (/ new (* 256 256 256)))
-       (tx/emit-byte ctxt (/ new (* 256 256)))
-       (tx/emit-byte ctxt (/ new 256))
-       (tx/emit-byte ctxt new))))
+A lot of the operation codes just update this state in pretty obvious
+ways. There are only two that do the actual drawing.
 
-(fun (tx/ink-moveto x y)
-  (var ctxt (ctxt/tx context))
-  (tx/emit-set ctxt x (tx/c-ink-x ctxt) tx/ink-x tx/ink-dx)
-  (set (tx/c-ink-x ctxt) x)
-  (tx/emit-set ctxt y (tx/c-ink-y ctxt) tx/ink-y tx/ink-dy)
-  (set (tx/c-ink-y ctxt) y))
-
-(fun (tx/emit-color ctxt color)
-  (tx/emit-byte ctxt (gfx/color-r color))
-  (tx/emit-byte ctxt (gfx/color-g color))
-  (tx/emit-byte ctxt (gfx/color-b color)))
-
-(fun (tx/ink-text x y node)
-  ;; (dbg/str "INK" (tx/tb-str node))
-  ;; (dbg/int "x" x)
-  ;; (dbg/int "y" y)
-  (var ctxt (ctxt/tx context))
-  (tx/ink-moveto x y)
-  (var font (tx/tb-font node))
-  (if ((!= font (tx/c-ink-font ctxt))
-       (if ((== font fonts/sans)
-            (tx/emit-byte ctxt tx/ink-setfont-sans))
-           ((== font fonts/sans-l)
-            (tx/emit-byte ctxt tx/ink-setfont-sans-l))
-           ((== font fonts/sans-b)
-            (tx/emit-byte ctxt tx/ink-setfont-sans-b))
-           ((== font fonts/sans-o)
-            (tx/emit-byte ctxt tx/ink-setfont-sans-o))
-           ((== font fonts/sans-o-s)
-            (tx/emit-byte ctxt tx/ink-setfont-sans-o-s))
-           ((== font fonts/mono)
-            (tx/emit-byte ctxt tx/ink-setfont-mono)))
-       (set (tx/c-ink-font ctxt) font)))
-  (var color (tx/tb-color node))
-  (if ((!= color (tx/c-ink-color ctxt))
-       (tx/emit-byte ctxt tx/ink-setcolor)
-       (tx/emit-color ctxt color)
-       (set (tx/c-ink-color ctxt) color)))
-  (tx/emit-byte ctxt tx/ink-glyphs)
-  (var text (tx/tb-str node))
-  (while (u8 text)
-    (tx/emit-byte ctxt (u8 text))
-    (set text (+ text 1)))
-  (tx/emit-byte ctxt 0))
-
-(fun (tx/ink-box-start node x y)
-  (if ((!= (tx/b-bg-color node) (gfx/color 255 255 255))
-       (var c (ctxt/tx context))
-       (tx/ink-moveto x y)
-       (tx/emit-byte c tx/ink-save-pos))))
-
-(fun (tx/ink-box-end node x y)
-  (if ((!= (tx/b-bg-color node) (gfx/color 255 255 255))
-       (var c (ctxt/tx context))
-       (tx/ink-moveto (+ x (tx/b-width node)) (+ y (tx/b-height node) (tx/b-depth node)))
-       (tx/emit-byte c tx/ink-tint)
-       (tx/emit-color c (tx/b-bg-color node)))))
-
-(fun (tx/ink-node node x y)
-  (var t (tx/n-type node))
-  (var c)
-  (var b-x)
-  (var b-y)
-  (if ((== t tx/nt-tbox)
-       (tx/ink-text x y node))
-      ((== t tx/nt-hbox)
-       (set b-x x)
-       (set b-y y)
-       (tx/ink-box-start node b-x b-y)
-       (set c (tx/b-children node))
-       (while c
-         (if ((== (tx/n-type c) tx/nt-glue)
-              (set x (+ x (tx/g-size c))))
-             (else
-              (tx/ink-node c x (+ y (- (tx/b-height node) (tx/b-height c))))
-              (set x (+ x (tx/b-width c)))))
-         (set c (tx/n-next c)))
-       (tx/ink-box-end node b-x b-y))
-      ((== t tx/nt-vbox)
-       (set b-x x)
-       (set b-y y)
-       (tx/ink-box-start node b-x b-y)
-       (set c (tx/b-children node))
-       (while c
-         (if ((== (tx/n-type c) tx/nt-glue)
-              (set y (+ y (tx/g-size c))))
-             (else
-              (tx/ink-node c x y)
-              (set y (+ y (tx/b-height c) (tx/b-depth c)))))
-         (set c (tx/n-next c)))
-       (tx/ink-box-end node b-x b-y))))
-
-;; Drawing
-
-(struct tx/draw-ink-data
-  di-page
-  di-ptr
-  di-end)
-
-(fun (tx/set-page d page)
-  (set (tx/di-page d) page)
-  (set (tx/di-ptr d) (+ page 8))
-  (set (tx/di-end d) (+ page sys/page-size)))
-
-(fun (tx/get-u8 d)
-  (if ((>= (tx/di-ptr d) (tx/di-end d))
-       (tx/set-page d (u64 (tx/di-page d)))))
-  (var val (u8 (tx/di-ptr d)))
-  (set (tx/di-ptr d) (+ (tx/di-ptr d) 1))
-  val)
-
-(fun (tx/get-s8 d)
-  (if ((>= (tx/di-ptr d) (tx/di-end d))
-       (tx/set-page d (u64 (tx/di-page d)))))
-  (var val (s8 (tx/di-ptr d)))
-  (set (tx/di-ptr d) (+ (tx/di-ptr d) 1))
-  val)
-
-(fun (tx/draw-ink ink x-start y-start x-end y-end)
-  (mem d tx/draw-ink-data)
-  (tx/set-page d ink)
-  (var ptr ink)
+@= <define the tx/draw-ink function>
+(fun (tx/draw-ink ink x-off y-off)
+  (mem state tx/draw-state)
+  (tx/set-page state ink)
   (var x 0)
   (var y 0)
   (var save-x 0)
@@ -582,21 +823,17 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var color-b 0)
   (var color-is-black 1)
   (var op)
-  (while (!= (set op (tx/get-u8 d)) tx/ink-end)
+  (while (!= (set op (tx/get-u8 state)) tx/ink-end)
     (if ((== op tx/ink-x)
-         (set x (* (tx/get-u8 d) 256 256 256))
-         (set x (* (tx/get-u8 d) 256 256))
-         (set x (* (tx/get-u8 d) 256))
-         (set x (+ x (tx/get-u8 d))))
+         (set x (tx/get-s32 state)))
         ((== op tx/ink-dx)
-         (set x (+ x (tx/get-s8 d))))
+         (set x (+ x (tx/get-s8 state))))
+
         ((== op tx/ink-y)
-         (set y (* (tx/get-u8 d) 256 256 256))
-         (set y (* (tx/get-u8 d) 256 256))
-         (set y (* (tx/get-u8 d) 256))
-         (set y (+ y (tx/get-u8 d))))
+         (set y (tx/get-s32 state)))
         ((== op tx/ink-dy)
-         (set y (+ y (tx/get-s8 d))))
+         (set y (+ y (tx/get-s8 state))))
+
         ((== op tx/ink-setfont-sans)
          (set font fonts/sans))
         ((== op tx/ink-setfont-sans-l)
@@ -609,231 +846,814 @@ Data structures, this is deliberately a stress test for malloc/free.
          (set font fonts/sans-o-s))
         ((== op tx/ink-setfont-mono)
          (set font fonts/mono))
+
         ((== op tx/ink-setcolor)
-         (set color-r (tx/get-u8 d))
-         (set color-g (tx/get-u8 d))
-         (set color-b (tx/get-u8 d))
+         (set color-r (tx/get-u8 state))
+         (set color-g (tx/get-u8 state))
+         (set color-b (tx/get-u8 state))
          (set color-is-black (and (== color-r 0) (== color-g 0) (== color-b 0))))
+
         ((== op tx/ink-save-pos)
          (set save-x x)
          (set save-y y))
         ((== op tx/ink-tint)
-         (var r (tx/get-u8 d))
-         (var g (tx/get-u8 d))
-         (var b (tx/get-u8 d))
-         (gfx/tint-rect (+ x-start save-x) (+ y-start save-y) (- x save-x) (- y save-y) r g b))
+         (var r (tx/get-u8 state))
+         (var g (tx/get-u8 state))
+         (var b (tx/get-u8 state))
+         (gfx/tint-rect (+ x-off save-x) (+ y-off save-y) (- x save-x) (- y save-y) r g b))
+
         ((== op tx/ink-glyphs)
-         ;(dbg/str "T" (tx/di-ptr d))
-         ;(dbg/int "x" x)
-         ;(dbg/int "y" y)
          (var c)
-         (var xx (+ x-start x))
-         (var yy (+ y-start y))
-         (while (set c (tx/get-u8 d))
+         (var xx (+ x-off x))
+         (var yy (+ y-off y))
+         (while (set c (tx/get-u8 state))
            (var w (gfx/glyph font xx yy c))
            (if ((not color-is-black)
                 (var h (- (gfx/font-ascent font) (gfx/font-descent font)))
                 (gfx/tint-rect-2 xx yy w h color-r color-g color-b 255 255 255)))
            (set xx (+ xx w)))))))
 
-;; Constructing
+@
 
-(fun (tx/start)
+Compiling the box-and-glue data structure into instructions uses
+a simulated version of the machine state. For example, if we
+encounter a text box that tells us to draw glyphs from [code
+fonts/mono], we check whether [code fonts/mono] is already the
+current font in our simulated state, and only emit a [code tx/ink-setfont-mono]
+instruction if not. (And hen the simulated state is updated to
+say that [code fonts/mono] is the current font, of course.)
+
+@=
+(struct tx/ink-state
+  is-ink
+  is-cur-page
+  is-ptr
+  is-end
+
+  is-x
+  is-y
+  is-font
+  is-color)
+
+(fun (tx/ink-state-init state)
+  (set (tx/is-ink state) 0)
+  (set (tx/is-cur-page state) 0)
+  (set (tx/is-ptr state) 0)
+  (set (tx/is-end state) 0)
+  (set (tx/is-x state) 0)
+  (set (tx/is-y state) 0)
+  (set (tx/is-font state) 0)
+  (set (tx/is-color state) (gfx/color 0 0 0)))
+@
+
+The actual bytes that form the instructions and their parameters
+are stored in pages that are linked via their first [code u64]
+word. (Exactly like the real machine code of compiled books.)
+
+@=
+(fun (tx/more-ink state)
+  (var ink (sys/page-get))
+  (set (u64 ink) 0)
+  (set (tx/is-ptr state) (+ ink 8))
+  (set (tx/is-end state) (+ ink sys/page-size))
+  (if ((tx/is-cur-page state)
+       (set (u64 (tx/is-cur-page state)) ink))
+      (else
+       (set (tx/is-ink state) ink)))
+  (set (tx/is-cur-page state) ink))
+
+(fun (tx/free-ink ink)
+  (while ink
+    (var next (u64 ink))
+    (sys/page-put ink)
+    (set ink next)))
+@
+
+Emitting the bytes is done with the [code tx/emit-u8] and [code tx/emit-s32]
+functions.
+
+@=
+(fun (tx/emit-u8 state b)
+  (if ((>= (tx/is-ptr state) (tx/is-end state))
+       (tx/more-ink state)))
+  (set (u8 (tx/is-ptr state)) b)
+  (set (tx/is-ptr state) (+ (tx/is-ptr state) 1)))
+
+(fun (tx/emit-s32 state val)
+  (var l (loc val))
+  (tx/emit-u8 state (u8 l 3))
+  (tx/emit-u8 state (u8 l 2))
+  (tx/emit-u8 state (u8 l 1))
+  (tx/emit-u8 state (u8 l 0)))
+@
+
+Here are the complementary [emph get] functions for [code tx/draw-ink]:
+
+@=
+(struct tx/draw-state
+  ds-page
+  ds-ptr
+  ds-end)
+
+(fun (tx/set-page state page)
+  (set (tx/ds-page state) page)
+  (set (tx/ds-ptr state) (+ page 8))
+  (set (tx/ds-end state) (+ page sys/page-size)))
+
+(fun (tx/get-u8 state)
+  (if ((>= (tx/ds-ptr state) (tx/ds-end state))
+       (tx/set-page state (u64 (tx/ds-page state)))))
+  (var val (u8 (tx/ds-ptr state)))
+  (set (tx/ds-ptr state) (+ (tx/ds-ptr state) 1))
+  val)
+
+(fun (tx/get-s8 state)
+  (if ((>= (tx/ds-ptr state) (tx/ds-end state))
+       (tx/set-page state (u64 (tx/ds-page state)))))
+  (var val (s8 (tx/ds-ptr state)))
+  (set (tx/ds-ptr state) (+ (tx/ds-ptr state) 1))
+  val)
+
+(fun (tx/get-s32 state)
+  (var val)
+  (var l (loc val))
+  (set (u8 l 3) (tx/get-u8 state))
+  (set (u8 l 2) (tx/get-u8 state))
+  (set (u8 l 1) (tx/get-u8 state))
+  (set (u8 l 0) (tx/get-u8 state))
+  (if ((< (s8 l 3) 0)
+       (set (s32 l 1) -1))
+      (else
+       (set (s32 l 1) 0)))
+  val)
+
+<define the tx/draw-ink function>
+@
+
+Coordinates are updated either incrementally (when the increment
+is small enough to fit into a [code s8]), or simply set to a
+new [code s32] value.
+
+@=
+(fun (tx/emit-set state new old set-op delta-op)
+  (var delta (- new old))
+  (if ((== delta 0)
+       (begin))
+      ((and (< delta 128) (>= delta -128))
+       (tx/emit-u8 state delta-op)
+       (tx/emit-u8 state delta))
+      (else
+       (tx/emit-u8 state set-op)
+       (tx/emit-s32 state new))))
+@
+
+For a color, we store three bytes for the red, green, and blue components.
+
+@=
+(fun (tx/emit-color state color)
+  (tx/emit-u8 state (gfx/color-r color))
+  (tx/emit-u8 state (gfx/color-g color))
+  (tx/emit-u8 state (gfx/color-b color)))
+@
+
+Now we come to the first higher level functions, for moving the
+machine state to a desired position.
+
+@=
+(fun (tx/ink-moveto state x y)
+  (tx/emit-set state x (tx/is-x state) tx/ink-x tx/ink-dx)
+  (set (tx/is-x state) x)
+  (tx/emit-set state y (tx/is-y state) tx/ink-y tx/ink-dy)
+  (set (tx/is-y state) y))
+@
+
+Drawing a text node of course uses the [code tx/ink-glyps] instruction,
+but it also takes care of the position, font, and color.
+
+@=
+(fun (tx/ink-text state node x y)
+  (tx/ink-moveto state x y)
+  (var font (tx/tb-font node))
+  (if ((!= font (tx/is-font state))
+       (if ((== font fonts/sans)
+            (tx/emit-u8 state tx/ink-setfont-sans))
+           ((== font fonts/sans-l)
+            (tx/emit-u8 state tx/ink-setfont-sans-l))
+           ((== font fonts/sans-b)
+            (tx/emit-u8 state tx/ink-setfont-sans-b))
+           ((== font fonts/sans-o)
+            (tx/emit-u8 state tx/ink-setfont-sans-o))
+           ((== font fonts/sans-o-s)
+            (tx/emit-u8 state tx/ink-setfont-sans-o-s))
+           ((== font fonts/mono)
+            (tx/emit-u8 state tx/ink-setfont-mono)))
+       (set (tx/is-font state) font)))
+  (var color (tx/tb-color node))
+  (if ((!= color (tx/is-color state))
+       (tx/emit-u8 state tx/ink-setcolor)
+       (tx/emit-color state color)
+       (set (tx/is-color state) color)))
+  (tx/emit-u8 state tx/ink-glyphs)
+  (var text (tx/tb-str node))
+  (while (u8 text)
+    (tx/emit-u8 state (u8 text))
+    (set text (+ text 1)))
+  (tx/emit-u8 state 0))
+@
+
+The only other thing besides text that can be drawn is actually
+the background of boxes. This is done in a weird way, dictated
+by the weird way the [code gfx] book works right now: It has
+to happen [emph after] drawing everything that is inside the
+box.
+
+To accomodate this weird way, the general box walking function
+calls [code tx/ink-box-start] and [code tx/ink-box-end] appropriately.
+
+Weird things will happen when nested boxes have different background
+colors. This needs improvement.
+
+@=
+(fun (tx/ink-box-start state node x y)
+  (if ((!= (tx/b-bg-color node) (gfx/color 255 255 255))
+       (tx/ink-moveto state x y)
+       (tx/emit-u8 state tx/ink-save-pos))))
+
+(fun (tx/ink-box-end state node x y)
+  (if ((!= (tx/b-bg-color node) (gfx/color 255 255 255))
+       (tx/ink-moveto state (+ x (tx/b-width node)) (+ y (tx/b-height node) (tx/b-depth node)))
+       (tx/emit-u8 state tx/ink-tint)
+       (tx/emit-color state (tx/b-bg-color node)))))
+@
+
+Producing the inking program for a general box node is now pretty
+straightforward.
+
+@=
+(fun (tx/ink-node state node x y)
+  (var t (tx/n-type node))
+  (var c)
+  (var b-x)
+  (var b-y)
+  (if ((== t tx/nt-tbox)
+       (tx/ink-text state node x y))
+      ((== t tx/nt-hbox)
+       (set b-x x)
+       (set b-y y)
+       (tx/ink-box-start state node b-x b-y)
+       (set c (tx/b-children node))
+       (while c
+         (if ((== (tx/n-type c) tx/nt-glue)
+              (set x (+ x (tx/g-size c))))
+             (else
+              (tx/ink-node state c x (+ y (- (tx/b-height node) (tx/b-height c))))
+              (set x (+ x (tx/b-width c)))))
+         (set c (tx/n-next c)))
+       (tx/ink-box-end state node b-x b-y))
+      ((== t tx/nt-vbox)
+       (set b-x x)
+       (set b-y y)
+       (tx/ink-box-start state node b-x b-y)
+       (set c (tx/b-children node))
+       (while c
+         (if ((== (tx/n-type c) tx/nt-glue)
+              (set y (+ y (tx/g-size c))))
+             (else
+              (tx/ink-node state c x y)
+              (set y (+ y (tx/b-height c) (tx/b-depth c)))))
+         (set c (tx/n-next c)))
+       (tx/ink-box-end state node b-x b-y))))
+@
+
+@* Constructing
+
+Now we are finally ready for the functions that actually construct
+the nested box data structure. These functions are used when
+parsing the markup syntax explained at the start of this book,
+and for defining commands like [code \[b ...\]]. They could also
+be used by Z1 programs in general that want to produce textual
+output.
+
+Type setting is done within a [emph session], and such a session
+maintains a [emph current box]. The current box is in the middle
+of being constructed, and new nodes are added to it. Once the
+current box is completed, the previously current box becomes
+current again, and the just completed box is added to it.
+
+Here is a example session that centers a string in a 400 pixel
+wide line:
+
+@c
+(tx/start-session)
+(tx/begin-hbox)
+(tx/set-hbox-width 400)
+(tx/fill 1)
+(set (tx/session-font) fonts/mono)
+(tx/text "Hello, World")
+(tx/fill 1)
+(tx/end)
+(var ink (tx/stop-session))
+@
+
+As you can see, functions have rather few parameters. For example,
+the session state is implicit and doesn't have to be passed into
+each function call. And we know from above that a horizontal
+box has a requested width and a background color, but the [code
+tx/begin-hbox] function does not take those as parameters.
+
+Rather, the parameters of a box can be modified while it is current,
+with functions like [code tx/set-hbox-width].
+
+Likewise, a text box has a font and foreground color as parameters,
+but the [code tx/text] function that constructs such a box only
+takes the actual text string.
+
+The font and color come from defaults maintained in the session
+state. They can be changed with accessors like [code tx/session-font].
+
+Here is a more formal documentation of a couple of functions:
+
+[b Session]
+@d
+[item - ][code (tx/start-session)]
+
+Start a new typesetting session.
+
+Session values like the font used for new text boxes are set to
+reasonable default values.
+
+The initial current box will be a vertical box of natural height.
+The requested height of this box can not be changed.
+
+[item - ][code (tx/stop-session)]
+
+Finish the current typesetting session and return its [emph ink].
+The ink can be drawn to the screen with [code tx/draw-ink] and
+must eventually be freed with [code tx/ink-free].
+@
+
+[b Horizontal and vertical boxes]
+@d
+[item - ][code (tx/begin-hbox)], [code (tx/begin-vbox)]
+
+Start a new horizontal or vertical box, respectively, and make
+it the current box. The box will have natural width or height,
+unless that is changed with [code tx/set-hbox-width] or [code
+tx/set-vbox-height], respectively.
+
+The box will have a white background. This can be changed with
+[code tx/set-box-bg-color].
+
+[item - ][code (tx/end)]
+
+Complete the current box and add it to its parent. The parent
+becomes the current box again.
+
+[item - ][code (tx/end-with-baseline-skip [emph length])]
+
+Complete the current box as with [code tx/end], but also add some
+glue between the previous box and this one. The glue is sized
+so that the baselines of these two boxes are [emph length] apart.
+
+This is meant to be used for adding horizontal boxes to a vertical
+box, of course.
+
+[item - ][code (tx/set-hbox-width [emph width])]
+
+Set the requested width of the current box, which must be a horizontal
+box.
+
+[item - ][code (tx/set-vbox-height [emph height])]
+
+Set the requested height of the current box, which must be a vertical
+box.
+
+[item - ][code (tx/set-box-bg-color [emph color])]
+
+Set the background color of the current box.
+@
+
+[b Text]
+@d
+[item - ][code (tx/text [emph string])]
+
+Add a text box to the current box. The font and color is taken
+from the global session state.
+
+[item - ][code (tx/session-font)], [code (set (tx/session-font) [emph font])]
+
+Access the default font for new text boxes.
+
+[item - ][code (tx/session-color)], [code (set (tx/session-color) [emph color])]
+
+Access the default color for new text boxes.
+@
+
+[b Glue]
+@d
+[item - ][code (tx/glue [emph spec])]
+
+Add a glue node to the current box with the given glue specification.
+
+[item - ][code (tx/skip [emph length])]
+
+Equivalent to [code (tx/glue (tx/gluespec [emph length] 0 0 0 0))].
+
+[item - ][code (tx/fill [emph stretch])]
+
+Equivalent to [code (tx/glue (tx/gluespec 0 [emph stretch] 1 0 0))].
+@
+
+[b Paragraphs]
+@d
+[item - ][code (tx/begin-pbox)]
+
+Begin a new paragraph box. Once the matching [code tx/end] is
+called, the paragraph is broken into lines, which are added as
+horizontal boxes to the current box.
+
+The line width and other parameters for a paragraph are taken
+from the session state.
+
+[item - ][code (tx/session-line-width)], [code (set (tx/session-line-width) [emph width])]
+
+Access the line width for new paragraphs.
+
+[item - ][code (tx/session-baseline-skip)]
+
+Access the baseline distance for paragraphs, see [code tx/end-with-baseline-skip].
+
+[item - ][code (tx/session-left-glue)], [code (tx/session-right-glue)],
+
+Access the spec for glue that is added to the beginning or end
+of each line, respectively. The line width calculations include
+the natural width of this glue.
+@
+
+As can be expected from the description above, the current session
+has to maintain a lot of state, in a big structure. Even more,
+the current session also keeps the stated needed during markup
+parsing, such as the file buffer for reading a book.
+
+@=
+(struct tx/context
+  (c-ink-state tx/ink-state)
+
+  c-box-builder
+  c-outer-y
+  c-prev-depth
+
+  c-font
+  c-color
+  c-line-width
+  c-baseline-skip
+  c-left-glue
+  c-right-glue
+
+  <global state for parsing>)
+@
+
+Let's define the many accessors for the session state. Of course,
+we do this with a custom macro.
+
+@=
+(def (tx/def-session-accessor ?name ?field)
+  (begin
+    (def (?name) (?field (ctxt/tx context)))
+    (defset (?name) val (set (?field (ctxt/tx context)) ??val))))
+
+(tx/def-session-accessor tx/session-font          tx/c-font)
+(tx/def-session-accessor tx/session-color         tx/c-color)
+(tx/def-session-accessor tx/session-line-width    tx/c-line-width)
+(tx/def-session-accessor tx/session-baseline-skip tx/c-baseline-skip)
+(tx/def-session-accessor tx/session-left-glue     tx/c-left-glue)
+(tx/def-session-accessor tx/session-right-glue    tx/c-right-glue)
+@
+
+Now we can write the code for starting a session, and already
+use the accessors to set the defaults.
+
+@=
+(fun (tx/reset-session)
+  (set (tx/session-font) fonts/sans)
+  (set (tx/session-color) (gfx/color 0 0 0))
+  (set (tx/session-line-width) 700)
+  (set (tx/session-baseline-skip) 16)
+  (set (tx/session-left-glue) 0)
+  (set (tx/session-right-glue) 0))
+  
+(fun (tx/start-session)
   (var c (mem/alloc tx/context))
-  (set (tx/c-box-context c) 0)
+  (tx/ink-state-init (tx/c-ink-state c))
+  (set (tx/c-box-builder c) 0)
   (set (tx/c-outer-y c) 0)
-  (set (tx/c-ink c) 0)
-  (set (tx/c-ink-cur-page c) 0)
-  (tx/more-ink c)
-  (set (tx/c-ink-x c) 0)
-  (set (tx/c-ink-y c) 0)
-  (set (tx/c-ink-font c) 0)
-  (set (tx/c-ink-color c) (gfx/color 0 0 0))
-  (set (tx/c-font c) fonts/sans)
-  (set (tx/c-color c) (gfx/color 0 0 0))
-  (set (tx/c-line-width c) 700)
-  (set (tx/c-line-skip c) 16)
-  (set (tx/c-par-skip c) 11)
-  (set (tx/c-left-skip c) 0)
-  (set (tx/c-right-skip c) 0)
-  (set (tx/c-need-par-skip c) 0)
   (set (tx/c-prev-depth c) 0)
-  (set (tx/c-verbatim c) 0)
-  (set (ctxt/tx context) c))
+  (set (ctxt/tx context) c)
+  (tx/reset-session))
+@
 
-(fun (tx/stop)
+The current box and the stack of its parents is maintained by
+a corresponding stack of [emph box builders]. Each builder remembers
+the box that it is building, and the location of the structure
+field that will receive the next child box.
+
+@=
+(struct tx/box-builder
+  bb-prev
+  bb-box
+  bb-tailp)
+
+(fun (tx/begin-box-building box)
   (var c (ctxt/tx context))
-  ;; XXX - Pop all the ongoing box contexts
-  (tx/emit-byte c tx/ink-end)
-  (var ink (tx/c-ink c))
-  (mem/free c)
-  ink)
+  (var bb (mem/alloc tx/box-builder))
+  (set (tx/bb-box bb) box)
+  (set (tx/bb-tailp bb) (loc (tx/b-children box)))
+  (set (tx/bb-prev bb) (tx/c-box-builder c))
+  (set (tx/c-box-builder c) bb))
+@
 
-(fun (tx/push-context box)
+The current box, which is used implicitly by a lot of the construction
+functions, is of course the box that is being built by the top-most
+box builder.
+
+@=
+(fun (tx/get-current-box)
+  (var bb (tx/c-box-builder (ctxt/tx context)))
+  (and bb (tx/bb-box bb)))
+@
+
+When a box is complete, the box builder makes sure that the [code
+tx/n-next] link of the last child of the current box is zero,
+and then pops itself off the stack.
+
+@=
+(fun (tx/end-box-building)
   (var c (ctxt/tx context))
-  (var bc (mem/alloc tx/box-context))
-  (set (tx/bc-box bc) box)
-  (set (tx/bc-tailp bc) (loc (tx/b-children box)))
-  (set (tx/bc-prev bc) (tx/c-box-context c))
-  (set (tx/c-box-context c) bc))
-
-(fun (tx/get-context)
-  (var bc (tx/c-box-context (ctxt/tx context)))
-  (and bc (tx/bc-box bc)))
-
-(fun (tx/pop-context)
-  (var c (ctxt/tx context))
-  (var bc (tx/c-box-context c))
-  (set (tx/c-box-context c) (tx/bc-prev bc))
-  (set (u64 (tx/bc-tailp bc)) 0)
-  (var b (tx/bc-box bc))
-  (mem/free bc)
+  (var bb (tx/c-box-builder c))
+  (set (tx/c-box-builder c) (tx/bb-prev bb))
+  (set (u64 (tx/bb-tailp bb)) 0)
+  (var b (tx/bb-box bb))
+  (mem/free bb)
   b)
+@
 
-(fun (tx/add-context-with-baseline-skip node skip)
+Adding a node as a child to the current box is now very easy. It
+only takes these two actions:
+
+@c
+(set (u64 (tx/bb-tailp bb)) node)
+(set (tx/bb-tailp bb) (loc (tx/n-next node)))
+@
+
+However, the function for doing this also has three other jobs:
+Setting the glue in the box, adding a baseline skip if requested,
+and if the current box is the outer-most vertical box, it also
+converts the node to its compact ink form.
+
+@=
+(fun (tx/add-to-current-box-with-baseline-skip node skip)
   (var c (ctxt/tx context))
-  (var bc (tx/c-box-context c))
+  (var bb (tx/c-box-builder c))
   (tx/set-node node)
-  (var extra-skip 0)
-  (if ((tx/is-box node)
-       (if ((> skip 0)
-            (set extra-skip (- skip (+ (tx/c-prev-depth c) (tx/b-height node))))))
-       (set (tx/c-prev-depth c) (tx/b-depth node)))
-      (else
-       (set (tx/c-prev-depth c) 0)))
-  (if (bc
+  <compute extra-skip>
+  (if (bb
        (if ((> extra-skip 0)
-            (var n (mem/alloc tx/glue))
-            (set (tx/n-type n) tx/nt-glue)
-            (set (tx/g-off n) extra-skip)
-            (set (tx/g-plus n) 0)
-            (set (tx/g-minus n) 0)
-            (set (u64 (tx/bc-tailp bc)) node)
-            (set (tx/bc-tailp bc) (loc (tx/n-next node)))))
-       (set (u64 (tx/bc-tailp bc)) node)
-       (set (tx/bc-tailp bc) (loc (tx/n-next node))))
+            <add a glue node for extra-skip>))
+       (set (u64 (tx/bb-tailp bb)) node)
+       (set (tx/bb-tailp bb) (loc (tx/n-next node))))
       (else
-       (set (tx/c-outer-y c) (+ (tx/c-outer-y c) extra-skip))
-       (tx/ink-node node 0 (tx/c-outer-y c))
-       (var dy)
-       (if ((== (tx/n-type node) tx/nt-glue)
-            (set dy (tx/g-off node)))
-           (else
-            (set dy (+ (tx/b-height node) (tx/b-depth node)))))
-       (set (tx/c-outer-y c) (+ (tx/c-outer-y c) dy))
-       (tx/free-node node))))
+       <convert the node to ink and free it>)))
+@
 
-(fun (tx/add-context node)
-  (tx/add-context-with-baseline-skip node 0))
+When [code skip] is greater than zero and we are adding a box,
+we should add just enough glue between the previous node and
+this node that the two baselines are [code skip] apart. We keep
+a record of the depth of the previous box for this reason. (We
+can't always find the previous box, since it might have already
+been converted to ink.)
 
+@= <compute extra-skip>
+(var extra-skip 0)
+(if ((tx/is-box node)
+     (if ((> skip 0)
+          (set extra-skip (- skip (+ (tx/c-prev-depth c) (tx/b-height node))))))
+     (set (tx/c-prev-depth c) (tx/b-depth node)))
+    (else
+     (set (tx/c-prev-depth c) 0)))
+@
+
+Adding a glue node for [code extra-skip] should be easy, just
+a call to [code tx/skip]. But that function isn't defined yet.
+The job is easy enough that we just duplicate the code here.
+
+@= <add a glue node for extra-skip>
+(var n (mem/alloc tx/gluenode))
+(set (tx/n-type n) tx/nt-glue)
+(set (tx/g-spec n) (tx/gluespec extra-skip 0 0 0 0))
+(set (u64 (tx/bb-tailp bb)) n)
+(set (tx/bb-tailp bb) (loc (tx/n-next n)))
+@
+
+Nodes that are added to the outermost vertical box are immediately
+converted to ink. We keep a record of the y coordinate for this.
+
+@= <convert the node to ink and free it>
+(set (tx/c-outer-y c) (+ (tx/c-outer-y c) extra-skip))
+(tx/ink-node (tx/c-ink-state c) node 0 (tx/c-outer-y c))
+(var dy)
+(if ((== (tx/n-type node) tx/nt-glue)
+     (set dy (tx/gs-length (tx/g-spec node))))
+  (else
+   (set dy (+ (tx/b-height node) (tx/b-depth node)))))
+(set (tx/c-outer-y c) (+ (tx/c-outer-y c) dy))
+(tx/free-node node)
+@
+
+The simple case of adding a node to the current box without a
+baseline skip is just a special case now.
+
+@=
+(fun (tx/add-to-current-box node)
+  (tx/add-to-current-box-with-baseline-skip node 0))
+@
+
+Ok, with all that machinery defined, creating concrete nodes is
+straightforward. Let's start with text boxes.
+
+As can be expected, we allocate memory for a [code tx/tbox] structure,
+initialize it appropriately, and then call [code tx/add-to-current-box].
+
+@=
 (fun (tx/text str)
   (var n (mem/alloc tx/tbox))
   (set (tx/n-type n) tx/nt-tbox)
-  (set (tx/b-children n) 0) ;; ???
-  (set (tx/tb-font n) (tx/c-font (ctxt/tx context)))
-  (set (tx/tb-color n) (tx/c-color (ctxt/tx context)))
+  (set (tx/b-children n) 0)
+  (set (tx/tb-font n) (tx/session-font))
+  (set (tx/tb-color n) (tx/session-color))
   (set (tx/tb-str n) (str/dup str))
-  (tx/add-context n))
+  (tx/add-to-current-box n))
+@
 
-(fun (tx/fill order value)
-  (+ (* tx/FILL-ORDER-SHIFT order) value))
+Glue nodes work the same.
 
-(fun (tx/skip off plus minus)
-  (var n (mem/alloc tx/glue))
+@=
+(fun (tx/glue spec)
+  (var n (mem/alloc tx/gluenode))
   (set (tx/n-type n) tx/nt-glue)
-  (set (tx/g-off n) off)
-  (set (tx/g-plus n) plus)
-  (set (tx/g-minus n) minus)
-  (tx/add-context n))
+  (set (tx/g-spec n) spec)
+  (tx/add-to-current-box n))
 
-(fun (tx/set-box-bg-color color)
-  (var n (tx/get-context))
-  (set (tx/b-bg-color n) color))
+(fun (tx/skip length)
+  (tx/glue (tx/gluespec length 0 0 0 0)))
 
+(fun (tx/fill stretch)
+  (tx/glue (tx/gluespec 0 stretch 1 0 0)))
+@
+
+Boxes with children follow a slightly different pattern. After
+allocating and initializing their node structure, a new box builder
+is started for them.
+
+@=
 (fun (tx/begin-hbox)
   (var n (mem/alloc tx/hbox))
-  (tx/push-context n)
-  (set (tx/b-bg-color n) (gfx/color 255 255 255))
   (set (tx/n-type n) tx/nt-hbox)
-  (set (tx/hb-width n) tx/NATURAL-SIZE))
-
-(fun (tx/set-hbox-width width)
-  (var n (tx/get-context))
-  (set (tx/hb-width n) width))
+  (set (tx/hb-width n) tx/NATURAL-SIZE)
+  (set (tx/b-bg-color n) (gfx/color 255 255 255))
+  (tx/begin-box-building n))
 
 (fun (tx/begin-vbox)
   (var n (mem/alloc tx/vbox))
-  (tx/push-context n)
-  (set (tx/b-bg-color n) (gfx/color 255 255 255))
   (set (tx/n-type n) tx/nt-vbox)
-  (set (tx/vb-height n) tx/NATURAL-SIZE))
+  (set (tx/vb-height n) tx/NATURAL-SIZE)
+  (set (tx/b-bg-color n) (gfx/color 255 255 255))
+  (tx/begin-box-building n))
+
+(fun (tx/begin-pbox)
+  (var n (mem/alloc tx/pbox))
+  (set (tx/n-type n) tx/nt-pbox)
+  (set (tx/pb-width n) (tx/session-line-width))
+  (set (tx/pb-line-skip n) (tx/session-baseline-skip))
+  (set (tx/pb-left-spec n) (tx/session-left-glue))
+  (set (tx/pb-right-spec n) (tx/session-right-glue))
+  (tx/begin-box-building n))
+@
+
+Here are the trivial functions for changing parameters of the
+current box.
+
+@=
+(fun (tx/set-hbox-width width)
+  (var b (tx/get-current-box))
+  (set (tx/hb-width b) width))
 
 (fun (tx/set-vbox-height height)
-  (var n (tx/get-context))
-  (set (tx/vb-height n) height))
+  (var b (tx/get-current-box))
+  (set (tx/vb-height b) height))
 
-(fun (tx/begin-pbox width line-skip left-skip right-skip)
-  (var n (mem/alloc tx/pbox))
-  (tx/push-context n)
-  (set (tx/n-type n) tx/nt-pbox)
-  (set (tx/pb-width n) width)
-  (set (tx/pb-line-skip n) line-skip)
-  (set (tx/pb-left-off n) left-skip)
-  (set (tx/pb-left-plus n) 0)
-  (set (tx/pb-right-off n) right-skip)
-  (set (tx/pb-right-plus n) 0))
+(fun (tx/set-box-bg-color color)
+  (var b (tx/get-current-box))
+  (set (tx/b-bg-color b) color))
+@
 
-(fun (tx/set-pbox-left-skip off plus)
-  (var n (tx/get-context))
-  (set (tx/pb-left-off n) off)
-  (set (tx/pb-left-plus n) plus))
+The current box is completed by calling [code tx/end] (or [code
+tx/end-with-baseline-skip]). This will finish the box builder
+and then add the box to its parent (which is now the current
+box).
 
-(fun (tx/set-pbox-right-skip off plus)
-  (var n (tx/get-context))
-  (set (tx/pb-right-off n) off)
-  (set (tx/pb-right-plus n) plus))
+But [code tx/end] (and [code tx/end-with-baseline-skip]) does one more
+job: when the just completed box is a paragraph, it is broken
+into lines at this point, and the lines are added to the current
+box instead.
 
+@=
 (fun (tx/end-with-baseline-skip skip)
-  (var n (tx/pop-context))
-  (if ((tx/is-pbox n)
-       (tx/set-pbox n tx/begin-hbox tx/set-hbox-width tx/add-context tx/skip tx/end-with-baseline-skip)
-       (tx/free-node n))
+  (var b (tx/end-box-building))
+  (if ((tx/is-pbox b)
+       (tx/set-pbox b tx/begin-hbox tx/set-hbox-width
+                    tx/add-to-current-box tx/glue
+                    tx/end-with-baseline-skip)
+       (tx/free-node b))
       (else
-       (tx/add-context-with-baseline-skip n skip))))
+       (tx/add-to-current-box-with-baseline-skip b skip))))
 
 (fun (tx/end)
   (tx/end-with-baseline-skip 0))
+@
 
-;; Markup parsing
+And we are already at the last function in the node construction
+API, [code tx/stop-session].
 
-(fun (tx/maybe-par-skip)
+@=
+(fun (tx/stop-session)
   (var c (ctxt/tx context))
-  (if ((tx/c-need-par-skip c)
-       (tx/skip (- (tx/c-par-skip c) (tx/c-prev-depth c)) 0 0)
-       (set (tx/c-need-par-skip c) 0))))
+  (while (tx/c-box-builder c)
+    (dbg/out "OPEN BOX AT END\n")
+    (tx/end))
+  (tx/emit-u8 (tx/c-ink-state c) tx/ink-end)
+  (var ink (tx/is-ink (tx/c-ink-state c)))
+  (mem/free c)
+  ink)
 
-(fun (tx/no-par-skip)
-  (var c (ctxt/tx context))
-  (set (tx/c-need-par-skip c) 0))
+@* Markup compiling
 
-(fun (tx/need-par-skip)
-  (var c (ctxt/tx context))
-  (set (tx/c-need-par-skip c) 1))
+And now we can tie it all together and implement a compiler for
+the markup language documented at the beginning of this book.
 
-(fun (tx/ensure-hmode)
-  (var c (ctxt/tx context))
-  (var b (tx/get-context))
-  (if ((or (not b) (== (tx/n-type b) tx/nt-vbox))
-       (tx/maybe-par-skip)
-       (tx/begin-pbox (tx/c-line-width c) (tx/c-line-skip c) (tx/c-left-skip c) (tx/c-right-skip c)))))
+The input is of course parsed into tokens, which are then interpreted
+according to some grammar. And since this is a markup language,
+whitespace is treated different from "normal" programming languages.
+A run of whitespace characters is returned as a proper token,
+it is not just used to separate other tokens. If the run of whitespace
+characters contains more than one newline character (i.e., when
+the input contains a empty line), then it is a [emph paragraph
+separator]; the token for that is "\\n". Otherwise it is [emph
+interword space], with a token of " ".
 
-(fun (tx/par)
-  (var b (tx/get-context))
-  (if ((and b (== (tx/n-type b) tx/nt-pbox))
-       (tx/skip 0 (tx/fill 1 1) 0)
-       (tx/end)
-       (tx/need-par-skip))))
+Other tokens are the "\[" and "\]" characters used to delimit
+commands.
 
+[emph Section headers] are tokens as well. When a line starts
+with a "@", then the first word of that line is returned as a
+token, with the "@" replaced by "\\t". The newline at the end
+of such a line is turned into a "\]" token. Thus, a section header
+is very similar to a command, as far as the grammar is concerned.
+
+The rest are [emph words]: runs of characters that are neither
+whitespace nor "\[" or "\]". If you want to include a character
+in a word that has a special meaning, you can escape it with
+"\\". For example, [code \[b \\\[\]] produces a bold [b \[].
+You can also escape a "@" at the beginning of the line with a
+"\\" to prevent it from becoming a section header.
+
+Here is a an example:
+
+@c
+\@** My title
+
+A line of [b words].
+
+And another.
+
+\@d
+A display.
+\@
+@
+
+This will produce these tokens: "\\t**", " ", "My", " ", "title",
+"\]", "A", " ", "line", " ", "of", " ", "\[", "b", " ", "words",
+"\]", ".", "\\n", "And", " ", "another.", "\\n", "\\td", "\]", "A",
+" ", "display.", " ", "\\t", "\]".
+
+Let's start with reading a file character by character. Zollern
+doesn't have any nice, general mechanism (yet) for input/output,
+so we have to implement even things like "read the next character
+from a file" ourselves.
+
+The session state has a [emph read buffer] for the book that is
+being processed. See the [code fs] book for an explanation.
+
+@=
 (fun (tx/get-char)
   (var r (tx/c-rbuf (ctxt/tx context)))
   (if ((== (fs/rbuf-size r) 0)
@@ -846,13 +1666,24 @@ Data structures, this is deliberately a stress test for malloc/free.
        (set (fs/rbuf-start r) (+ (fs/rbuf-start r) 1))
        (set (fs/rbuf-size r) (- (fs/rbuf-size r) 1))
        c)))
+@
 
+Sometimes we read too far and have to put the last character back.
+We only do this for a single character at a time, and thus we
+know that we can just move the buffer pointer backwards.
+
+@=
 (fun (tx/unget-char c)
   (if ((>= c 0)
        (var r (tx/c-rbuf (ctxt/tx context)))
        (set (fs/rbuf-start r) (- (fs/rbuf-start r) 1))
        (set (fs/rbuf-size r) (+ (fs/rbuf-size r) 1)))))
+@
+We classify input characters into white space, word characters,
+and "other". There is a function to collect a sequence of word
+characters, which also handles the escaping.
 
+@=
 (fun (tx/is-white-space c)
   (or (== c ch/spc)
       (== c ch/nl)))
@@ -873,7 +1704,11 @@ Data structures, this is deliberately a stress test for malloc/free.
     (set n (+ n 1)))
   (tx/unget-char c)
   (set (u8 t n) 0))
+@
 
+Before typesetting a word, we need to remove the escape character "\\" from it.
+
+@=
 (fun (tx/unescape t)
   (var tt t)
   (var esc 0)
@@ -886,81 +1721,240 @@ Data structures, this is deliberately a stress test for malloc/free.
          (set tt (+ tt 1))))
     (set t (+ t 1)))
   (set (u8 tt) 0))
+@
+And this brings us to the function that reads the next token from
+the input. Why do they always end up being such beasts?
 
+The session state has place for 255 characters of token and keeps
+track of whether we are at the beginning of a line or not, and
+whether are in a section header or not.
+
+There is also a whole different [emph verbatim] mode of tokenization
+that we haven't even mentioned yet. It used for reading code
+blocks and returns each line as its own token.
+
+@=
 (fun (tx/next-token)
   (var c (tx/get-char))
   (var t (tx/c-cur-token (ctxt/tx context)))
   (if ((< c 0)
        (set (u8 t) 0))
-      ((and (== c ch/@) (tx/c-at-bol (ctxt/tx context))) ;; section header
-       (set (u8 t) ch/ht)
-       (tx/next-word t (tx/get-char) 1)
-       (set (tx/c-at-bol (ctxt/tx context)) 0)
-       (set (tx/c-in-section-header (ctxt/tx context)) 1))
-      ((tx/c-verbatim (ctxt/tx context)) ;; each line is a token
-       (var n 0)
-       (while (and (< n 255) (!= c ch/nl))
-         (set (u8 t n) c)
-         (set c (tx/get-char))
-         (set n (+ n 1)))
-       (set (u8 t n) c)
-       (set (u8 t (+ n 1)) 0)
-       (set (tx/c-at-bol (ctxt/tx context)) 1))
+      ((and (== c ch/@) (tx/c-at-bol (ctxt/tx context)))
+       <read a section header token>)
+      ((tx/c-verbatim (ctxt/tx context))
+       <read the whole line as a token>)
       ((tx/is-white-space c)
-       (var n-new-lines 0)
-       (while (tx/is-white-space c)
-         (if ((== c ch/nl)
-              (set (tx/c-at-bol (ctxt/tx context)) 1)
-              (set n-new-lines (+ n-new-lines 1)))
-             (else
-              (set (tx/c-at-bol (ctxt/tx context)) 0)))
-         (set c (tx/get-char)))
-       (tx/unget-char c)
-       (if ((and (> n-new-lines 0)
-                 (tx/c-in-section-header (ctxt/tx context)))
-            (set (tx/c-in-section-header (ctxt/tx context)) 0)
-            (str/cpy t "]"))
-           ((or (> n-new-lines 1) (< c 0))
-            (str/cpy t "\n"))
-           (else
-            (str/cpy t " "))))
+       <read a whitespace token>)
       ((tx/is-word-char c)
-       (tx/next-word t c 0)
-       (set (tx/c-at-bol (ctxt/tx context)) 0))
+       <read a word token>)
       (else
-       (set (u8 t 0) c)
-       (set (u8 t 1) 0)
-       (set (tx/c-at-bol (ctxt/tx context)) 0)))
-  ;;(dbg/str "T" t)
-  )
+       <read a single character token>)))
+@
 
+Let's start with the simplests of tokens, the single characters
+ones like "\[" and "\]". Since we have just consumed some character
+that is not a newline, we know that we are no longer at the beginning
+of the line.
+
+@= <read a single character token>
+(set (u8 t 0) c)
+(set (u8 t 1) 0)
+(set (tx/c-at-bol (ctxt/tx context)) 0)
+@
+
+Next up is reading words. This is easy since we have the [code
+tx/next-word] function. And, we know that we are no longer at
+the beginning of the line.
+
+@= <read a word token>
+(tx/next-word t c 0)
+(set (tx/c-at-bol (ctxt/tx context)) 0)
+@
+
+A section header token is the "@" at the beginning of a line followed
+by word characters. But in order to distinguish them from ordinary
+words that happen to start with a "@", we replace the "@" in
+the token string with a "\\t". Using "\\t" is pretty arbitrary.
+It's a character that can't be in a Zollern book since the editor
+wont allow you to insert it. But it is probably a decision that
+we will regret.
+
+@= <read a section header token>
+(set (u8 t) ch/ht)
+(tx/next-word t (tx/get-char) 1)
+(set (tx/c-at-bol (ctxt/tx context)) 0)
+(set (tx/c-in-section-header (ctxt/tx context)) 1)
+@
+
+Reading a whitespace token consumes all characters that are classified
+as white space (obviously) and counts how many newlines were
+in it.
+
+Then the actual token is constructed according to the rules explained
+above: More than one newlines result in a "\\n" token, otherwise
+we get a " " token. Oh, and if this white space ends a section
+header line, the token is "\]".
+
+@= <read a whitespace token>
+(var n-new-lines 0)
+(while (tx/is-white-space c)
+  (if ((== c ch/nl)
+       (set (tx/c-at-bol (ctxt/tx context)) 1)
+       (set n-new-lines (+ n-new-lines 1)))
+      (else
+       (set (tx/c-at-bol (ctxt/tx context)) 0)))
+  (set c (tx/get-char)))
+(tx/unget-char c)
+(if ((and (> n-new-lines 0)
+          (tx/c-in-section-header (ctxt/tx context)))
+     (set (tx/c-in-section-header (ctxt/tx context)) 0)
+     (str/cpy t "]"))
+  ((or (> n-new-lines 1) (< c 0))
+   (str/cpy t "\n"))
+  (else
+   (str/cpy t " ")))
+@
+
+In [emph verbatim] mode, we just read until the next newline.
+No compression of whitespace is done, and no special characters
+are recognized.
+
+If you look at where this part is in the [code tx/net-token] function,
+you can see that a section header can interrupt a verbatim section,
+but whitespace, words, or special characters are not even considered.
+
+@= <read the whole line as a token>
+(var n 0)
+(while (and (< n 255) (!= c ch/nl))
+  (set (u8 t n) c)
+  (set c (tx/get-char))
+  (set n (+ n 1)))
+(set (u8 t n) c)
+(set (u8 t (+ n 1)) 0)
+(set (tx/c-at-bol (ctxt/tx context)) 1)
+@
+
+Let's see how parsing works by looking at the function that handles
+commands like [code \[b this\]].
+
+When the [code txc/parse-command] function is called, the current
+token is the "\[" start started the command. The next token is
+the word that names the command, "b" in the example above. (Note
+that whitespace after "\[" is not allowed. That could be relaxed.)
+
+Then comes optional whitespace, which is consumed by [code tx/parse-command]
+without adding any interword space to the current box.
+
+The the code that implements the actual command is executed. It
+is expected to read all following tokens until it sees the closing
+"\]" (or end of file, or a section header).
+
+The [code tx/parse-command] function then consumes the closing
+"\]" (or complains about it being missing).
+
+(The function for actually executing the command is a pointer
+in the session state because, you guessed it, we would have mutual
+recursion otherwise.)
+
+@=
 (fun (tx/parse-command)
   (var t (tx/c-cur-token (ctxt/tx context)))
   (mem cmd 256)
   (tx/next-token)
-  (var is-param (== (u8 t (- (str/len t) 1)) ch/:))
   (str/cpy cmd t)
   (tx/next-token)
   (while (tx/is-white-space (u8 t))
     (tx/next-token))
   ((tx/c-execute-command (ctxt/tx context)) cmd)
-  (if ((== (u8 t) 0)
-       (dbg/out "EOF INSIDE COMMAND\n"))
+  (if ((== (u8 t) ch/])
+       (tx/next-token))
       (else
-       (while (not (== (u8 t) ch/]))
-         (tx/next-token))
-       (tx/next-token)
-       (if (is-param
-            (while (tx/is-white-space (u8 t))
-              (tx/next-token)))))))
+       (dbg/out "MISSING \"]\"\n"))))
+@
+
+A text section has usually a lot of words separated by interword
+space, and an occasional paragraph separator. The first word
+should start a paragraph, and the "\\n" should end it.
+
+We make us a few convenience functions to deal with this. They
+are also meant to be used in commands and elsewhere.
+
+@d
+[item - ][code (tx/ensure-hmode)]
+
+If the current box is a vertical box, start a new paragraph. This
+consists of adding [emph par-skip] glue (if necessary), and calling
+[code tx/begin-pbox].
+
+[item - ][code (tx/par)]
+
+If the current box is a paragraph box, end it.
+
+[item - ][code (tx/session-par-skip)]
+
+Access the length of the glue inserted by [code tx/ensure-hmode].
+
+@
+The idea is that the compiler calls [code tx/ensure-hmode] whenever
+seeing something that should be in a paragraph, and calls [code
+tx/par] when encountering a "\\n" token.
+
+@=
+
+(tx/def-session-accessor tx/session-par-skip tx/c-par-skip)
+
+(fun (tx/maybe-par-skip)
+  (var c (ctxt/tx context))
+  (if ((tx/c-need-par-skip c)
+       (tx/skip (- (tx/session-par-skip) (tx/c-prev-depth c)))
+       (set (tx/c-need-par-skip c) 0))))
+
+(fun (tx/no-par-skip)
+  (var c (ctxt/tx context))
+  (set (tx/c-need-par-skip c) 0))
+
+(fun (tx/need-par-skip)
+  (var c (ctxt/tx context))
+  (set (tx/c-need-par-skip c) 1))
+
+(fun (tx/ensure-hmode)
+  (var c (ctxt/tx context))
+  (var b (tx/get-current-box))
+  (if ((or (not b) (== (tx/n-type b) tx/nt-vbox))
+       (tx/maybe-par-skip)
+       (tx/begin-pbox))))
+
+(fun (tx/par)
+  (var b (tx/get-current-box))
+  (if ((and b (== (tx/n-type b) tx/nt-pbox))
+       (tx/fill 1)
+       (tx/end)
+       (tx/need-par-skip))))
+@
+
+Here is the function that does the bulk of text processing. It
+is called to parse the body of a text section, and also to parse
+the arguments to most commands.
+
+It just reads tokens and does the obvious thing: A "\\n" token
+causes a call to [code tx/par], a " " token causes inter word
+space to be added (but not to a vertical box). A word token switches
+the machine into paragraph mode and a "\[" token calls [code tx/parse-command].
+
+This happens until we find some sort of end: the next section
+header, the "\]" token at the end of a command, or the end of
+input. (Let's not talk about the "\|" token... it might go away.)
+
+@=
+(tx/def-session-accessor tx/session-interword-glue tx/c-interword-glue)
 
 (fun (tx/parse-text)
   (var t (tx/c-cur-token (ctxt/tx context)))
   (while (and (u8 t) (not (== (u8 t) ch/])) (not (== (u8 t) ch/bar)) (not (== (u8 t) ch/ht)))
     (if ((== (u8 t) ch/spc)
-         (var b (tx/get-context))
+         (var b (tx/get-current-box))
          (if ((and b (not (== (tx/n-type b) tx/nt-vbox)))
-              (tx/skip 5 5 0)))
+              (tx/glue (tx/session-interword-glue))))
          (tx/next-token))
         ((== (u8 t) ch/nl)
          (tx/par)
@@ -973,25 +1967,313 @@ Data structures, this is deliberately a stress test for malloc/free.
          (tx/unescape t)
          (tx/text t)
          (tx/next-token)))))
+@
 
-(fun (tx/parse-code-section)
+And this brings us already to the actual commands. The details
+are all pretty straightforward.
+
+New commands can only be defined by writing a new Z1 function
+and adding it to the list of functions in this book. We explicitly
+don't want books to define their own commands via some macro
+language, and consequently there aren't any commands for the
+low-level constructs like horizontal boxes. At most, there might
+be a mechanism to define new commands and section headers via
+Z1 functions in books other than this "tx" book.
+
+For the commands that change only the font, we have a shortcut.
+
+@=
+(fun (tx/cmd-font font)
+  (var old-font (tx/session-font))
+  (set (tx/session-font) font)
+  (tx/ensure-hmode)
+  (tx/parse-text)
+  (set (tx/session-font) old-font))
+
+(fun (tx/cmd-normal) (tx/cmd-font fonts/sans))
+(fun (tx/cmd-b)      (tx/cmd-font fonts/sans-b))
+(fun (tx/cmd-emph)   (tx/cmd-font fonts/sans-o))
+@
+
+The [code code] command does a bit more: It puts everything into
+a box with a background and some border around it. Note that
+this means that the argument inside [code code] will never be
+broken into multiple lines.
+
+@=
+(fun (tx/cmd-code)
+  (var old-font (tx/session-font))
+  (set (tx/session-font) fonts/mono)
+  (tx/ensure-hmode)
+  (tx/begin-hbox)
+  (tx/begin-vbox)
+  (tx/set-vbox-height 14)
+  (tx/end)
+  (tx/skip 3)
+  (tx/set-box-bg-color (gfx/color 240 240 240))
+  (tx/parse-text)
+  (tx/skip 3)
+  (tx/end)
+  (set (tx/session-font) old-font))  
+@
+
+Here is something obscure: a command to hide text. This for example
+used by the "mandel" book to align equations.
+
+@=
+(fun (tx/cmd-hide)
+  (var old-color (tx/session-color))
+  (set (tx/session-color) (gfx/color 255 255 255))
+  (tx/ensure-hmode)
+  (tx/parse-text)
+  (set (tx/session-color) old-color))
+@
+
+The rest of the commands for mathematics are very, very primitive.
+If we need more, we probably have to enhance the typesetter in
+general, and get serious about fonts.
+
+@=
+(fun (tx/cmd-sub)
+  (var old-font (tx/session-font))
+  (set (tx/session-font) fonts/sans-o-s)
+  (tx/ensure-hmode)
+  (tx/begin-vbox)
+  (tx/begin-hbox)
+  (tx/parse-text)
+  (tx/end)
+  (tx/skip -7)
+  (tx/end)
+  (set (tx/session-font) old-font))
+
+(fun (tx/cmd-sup)
+  (var old-font (tx/session-font))
+  (set (tx/session-font) fonts/sans-o-s)
+  (tx/ensure-hmode)
+  (tx/begin-vbox)
+  (tx/begin-hbox)
+  (tx/skip 2)
+  (tx/parse-text)
+  (tx/end)
+  (tx/skip 7)
+  (tx/end)
+  (set (tx/session-font) old-font))
+@
+
+Here is the command that has motivated treating "\|" specially
+and introducing it as its own token. The "\|" is used to separate
+the two arguments.
+
+@=
+(fun (tx/cmd-supsub)
+  (var old-font (tx/session-font))
+  (set (tx/session-font) fonts/sans-o-s)
+  (tx/ensure-hmode)
+  (tx/begin-vbox)
+  (tx/begin-hbox)
+  (tx/skip 2)
+  (tx/parse-text)
+  (tx/end)
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  (if ((== (u8 t) ch/bar)
+       (tx/next-token)
+       (tx/skip -1)
+       (tx/begin-hbox)
+       (tx/parse-text)
+       (tx/end)))
+  (tx/skip -4)
+  (tx/end)
+  (set (tx/session-font) old-font))
+@
+
+(Actually.. we could also use a syntax like [code \[supsub \[2\]\[i\]\]]...)
+
+Here is the command for making lists, [code item]. It uses slightly
+advanced boxery. It creates a box of zero width which contains
+a glue node that can shrink without bound followed by the argument
+of [code item]. The result is that the glue will be as negative
+wide as the text is positive, so that they both cancel each other
+out, and the text will fully stick out of the box to the left.
+
+This kind of hack is very much in the spirit of [tex].
+
+@=
+(fun (tx/cmd-item)
+  (tx/ensure-hmode)
+  (tx/begin-hbox)
+  (tx/glue (tx/gluespec 0 0 0 1 1))
+  (tx/set-hbox-width 0)
+  (tx/parse-text)
+  (tx/end)))
+@
+
+And speaking of [tex], Zollerns typesetter can of course typeset
+its logo correctly.
+
+@=
+(fun (tx/cmd-tex)
+  (tx/ensure-hmode)
+  (tx/text "T")
+  (tx/skip -2)
+  (tx/begin-vbox)
+  (tx/begin-hbox)
+  (tx/text "E")
+  (tx/end)
+  (tx/skip -3)
+  (tx/end)
+  (tx/skip -2)
+  (tx/text "X"))
+@
+
+Now we only need to put all commands into a table. Linear search
+is goog enough for us.
+
+@=
+(fun (tx/execute-command cmd)
+  (if ((str/eq cmd "b")
+       (tx/cmd-b))
+      ((str/eq cmd "emph")
+       (tx/cmd-emph))
+      ((str/eq cmd "normal")
+       (tx/cmd-normal))
+      ((str/eq cmd "code")
+       (tx/cmd-code))
+      ((str/eq cmd "hide")
+       (tx/cmd-hide))
+      ((str/eq cmd "sub")
+       (tx/cmd-sub))
+      ((str/eq cmd "sup")
+       (tx/cmd-sup))
+      ((str/eq cmd "supsub")
+       (tx/cmd-supsub))
+      ((str/eq cmd "item")
+       (tx/cmd-item))
+      ((str/eq cmd "tex")
+       (tx/cmd-tex))
+      (else
+       (dbg/str "UNKNOWN COMMAND" cmd)
+       (tx/parse-text))))
+@
+
+Sections and their headers are quite similar to commands, but
+they are different enough that defining a new section type needs
+two functions instead of just one. One function is repsosible
+for parsing the header line, and the other for parsing the body
+of the section until its end.
+
+If the body of the section needs special tokenization rules, the
+header function is also the one that should activate them. (Currently,
+we only have the choice between [emph verbatim] and normal tokens,
+but maybe there will be more in the future.)
+
+Let's start with the functions for [code @**], title sections.
+The header function [code tx/cmd-head-title] does the obvious:
+It typesets a line in a large font with lots of whitespace around
+it. The text on the header line itself is handled by calling
+[code tx/parse-text]. That function will consume tokens until
+it sees the "\]" token that is produced for the "\\n" character
+at the end of the header line.
+
+The body function is even simpler: it just calls [code tx/parse-text]
+to handle paragraphs and commands until it sees the start of the
+next section.
+
+@=
+(fun (tx/cmd-head-title)
+  (tx/par)
+  (tx/skip (* 5 (tx/session-par-skip)))
+  (var old-font (tx/session-font))
+  (set (tx/session-font) fonts/sans-l)
+  (tx/begin-hbox)
+  (tx/set-hbox-width (tx/session-line-width))
+  (tx/fill 1)
+  (tx/parse-text)
+  (tx/fill 1)
+  (tx/end)
+  (tx/skip (* 2 (tx/session-par-skip)))
+  (set (tx/session-font) old-font))
+
+(fun (tx/cmd-body-title)
+  (tx/parse-text))
+@
+
+Chapters are more of the same, with bold instead of a large font,
+and a bit less whitespace.
+
+@=
+(fun (tx/cmd-head-chapter)
+  (tx/par)
+  (tx/skip (* 2 (tx/session-par-skip)))
+  (var old-font (tx/session-font))
+  (set (tx/session-font) fonts/sans-b)
+  (tx/begin-hbox)
+  (tx/set-hbox-width (tx/session-line-width))
+  (tx/parse-text)
+  (tx/fill 1)
+  (tx/end)
+  (set (tx/session-font) old-font))
+
+(fun (tx/cmd-body-chapter)
+  (tx/parse-text))
+@
+
+We even have functions for plain text sections. A plain text section
+doesn't really have a header line, so we don't parse anything.
+If there is actually something in the header line, the [code
+tx/parse-section] function below will complain.
+
+@=
+(fun (tx/cmd-head-text))
+
+(fun (tx/cmd-body-text)
+  (tx/parse-text))
+@
+
+A display section also doesn't have a header line. The body is
+typeset like any other text section, but the defaults for paragraphs
+are changed to get the desired indented effect.
+
+@=
+(fun (tx/cmd-head-display))
+
+(fun (tx/cmd-body-display)
+  (set (tx/session-line-width) (- (tx/session-line-width) 30))
+  (set (tx/session-left-glue) (tx/gluespec 30 0 0 0 0))
+  (tx/parse-text))
+@
+
+Code sections are more interesting. If there is something in the
+header line, we typeset it followed by a "=" sign. Then the tokenizer
+is switched into verbatim mode. It is important to do that before
+the first characters of the first line in the body have actually
+been processed. In other words, before [code tx/next-token] is
+called to consume the last token of the header line, the "\]".
+Switching to verbatim mode in the body function would thus be
+too late.
+
+@=
+(fun (tx/cmd-head-code)
   (var c (ctxt/tx context))
   (var t (tx/c-cur-token c))
-  (var is-main 0)
-  ;; parse header line
-  (tx/skip 15 0 0)
-  (if ((str/eq t "]")
-       (set is-main 1))
-      (else
+  (tx/maybe-par-skip)
+  (if ((not (str/eq t "]"))
        (tx/begin-hbox)
        (tx/parse-text)
        (tx/text " =")
        (tx/end)
-       (tx/skip 2 0 0)))
-  ;; parse body
-  (set (tx/c-verbatim c) 1)
-  (set (tx/c-font c) fonts/mono)
-  (tx/next-token)
+       (tx/skip 2)))
+  (set (tx/c-verbatim c) 1))
+@
+
+The body function does not use [code tx/parse-text], it the reads tokens
+by itself until the next section. Each token is set as a line,
+preceeded by the little gray vertical rule.
+
+@=
+(fun (tx/cmd-body-code)
+  (var c (ctxt/tx context))
+  (var t (tx/c-cur-token c))
+  (set (tx/session-font) fonts/mono)
   (var need-empty-line 0)
   (while (and (u8 t) (not (== (u8 t) ch/ht)))
     (if ((== (u8 t 0) ch/nl)
@@ -1000,212 +2282,108 @@ Data structures, this is deliberately a stress test for malloc/free.
          (if (need-empty-line
               (tx/begin-hbox)
               (tx/set-box-bg-color (gfx/color 180 180 180))
-              (tx/skip 3 0 0)
+              (tx/skip 3)
               (tx/text "")
               (tx/end)))
          (set need-empty-line 0)
          (tx/begin-hbox)
          (tx/begin-hbox)
          (tx/set-box-bg-color (gfx/color 180 180 180))
-         (tx/skip 3 0 0)
-         (tx/text "") ;; so that the box has the right height and depth
+         (tx/skip 3)
+         (tx/text "")
          (tx/end)
-         (tx/skip 10 0 0)
+         (tx/skip 10)
          (tx/text t)
          (tx/end)))
     (tx/next-token))
-  (tx/skip (- 15 (tx/c-par-skip c)) 0 0))
+  (tx/need-par-skip))
+@
 
-(fun (tx/parse-code-block-section)
+Typesetting a example code section is of course similar to typesetting
+a real code section.
+
+@=
+(fun (tx/cmd-head-example)
+  (tx/maybe-par-skip)
+  (set (tx/c-verbatim (ctxt/tx context)) 1))
+
+(fun (tx/cmd-body-example)
   (var c (ctxt/tx context))
   (var t (tx/c-cur-token c))
-  ;; skip header line
-  (while (not (str/eq t "]"))
-    (tx/next-token))
-  ;; parse body
-  (set (tx/c-verbatim c) 1)
-  (set (tx/c-font c) fonts/mono)
-  (tx/next-token)
+  (set (tx/session-font) fonts/mono)
   (var need-empty-line 0)
-  (tx/maybe-par-skip)
   (while (and (u8 t) (not (== (u8 t) ch/ht)))
     (if ((== (u8 t 0) ch/nl)
          (set need-empty-line 1))
         (else
          (if (need-empty-line
-              (tx/skip 15 0 0)))
+              (tx/skip 15)))
          (set need-empty-line 0)
          (tx/begin-hbox)
-         (tx/skip 30 0 0)
+         (tx/skip 30)
+         (tx/unescape t)
          (tx/text t)
          (tx/end)))
     (tx/next-token))
   (tx/need-par-skip))
+@
 
-(fun (tx/parse-block-section)
-  (var c (ctxt/tx context))
-  (var t (tx/c-cur-token c))
-  ;; skip header line
-  (while (not (str/eq t "]"))
-    (tx/next-token))
-  (tx/next-token)
-  ;; parse body
-  (set (tx/c-line-width c) (- (tx/c-line-width c) 30))
-  (set (tx/c-left-skip c) 30)
-  (tx/parse-text)
-  (set (tx/c-left-skip c) 0)
-  (set (tx/c-line-width c) (+ (tx/c-line-width c) 30)))
+And here is the main entry point to the "tx" grammar, [code tx/parse-section].
 
-(fun (tx/cmd-title)
-  (var c (ctxt/tx context))
-  (tx/par)
-  (tx/skip (* 3 (tx/c-par-skip c)) 0 0)
-  (var old-font (tx/c-font c))
-  (set (tx/c-font c) fonts/sans-l)
-  (tx/begin-hbox)
-  (tx/set-hbox-width (tx/c-line-width c))
-  (tx/skip 0 (tx/fill 1 1) 0)
-  (tx/parse-text)
-  (tx/skip 0 (tx/fill 1 1) 0)
-  (tx/end)
-  (tx/skip (* 2 (tx/c-par-skip c)) 0 0)
-  (set (tx/c-font c) old-font))
+It resets session values to their defaults, figures out which
+head and body functions to use, and then calls them, taking care
+to complete the parsing of the header line.
 
-(fun (tx/cmd-section)
-  (var c (ctxt/tx context))
-  (tx/par)
-  (tx/skip (* 2 (tx/c-par-skip c)) 0 0)
-  (var old-font (tx/c-font c))
-  (set (tx/c-font c) fonts/sans-b)
-  (tx/begin-hbox)
-  (tx/set-hbox-width (tx/c-line-width c))
-  (tx/parse-text)
-  (tx/skip 0 (tx/fill 1 1) 0)
-  (tx/end)
-  (set (tx/c-font c) old-font))
-
-(fun (tx/parse-text-section cmd)
-  (var t (tx/c-cur-token (ctxt/tx context)))
-  (set (tx/c-font (ctxt/tx context)) fonts/sans)
-  (set (tx/c-color (ctxt/tx context)) (gfx/color 0 0 0))
-  ;; parse header line
-  (if ((str/eq cmd "**")
-       (tx/cmd-title))
-      ((str/eq cmd "*")
-       (tx/cmd-section))
-      (else
-       (tx/parse-text)))
-  (if ((str/eq t "]")
-       (tx/next-token))
-      (else
-       (dbg/str "JUNK AFTER SECTION HEADER" t)))
-  ;; parse body
-  (tx/parse-text))
-
+@=
 (fun (tx/parse-section)
   (var t (tx/c-cur-token (ctxt/tx context)))
-  (while (!= (u8 t) ch/ht)
-    (dbg/str "JUKN BEFORE SECTION" t)
-    (tx/next-token))
+  (set (tx/c-verbatim (ctxt/tx context)) 0)
   (mem cmd 256)
   (str/cpy cmd (+ t 1))
-  (tx/par)
-  (set (tx/c-verbatim (ctxt/tx context)) 0)
-  ;; (dbg/str "SH" cmd)
   (tx/next-token)
   (if ((== (u8 t) ch/spc)
        (tx/next-token)))
-  (if ((str/eq cmd "=")
-       (tx/parse-code-section))
-      ((str/eq cmd "c")
-       (tx/parse-code-block-section))
-      ((str/eq cmd "d")
-       (tx/parse-block-section))
-      (else
-       (tx/parse-text-section cmd))))
+  (tx/par)
+  (tx/reset-session)
+  (var cmd-head)
+  (var cmd-body)
+  <find head and body functions for cmd>
+  (cmd-head)
+  (while (not (str/eq t "]"))
+    (dbg/str "JUNK AFTER HEADER" t)
+    (tx/next-token))
+  (tx/next-token)
+  (cmd-body))
+@
 
-(fun (tx/execute-command cmd)
-  (var c (ctxt/tx context))
-  (if ((str/eq cmd "b")
-       (var old-font (tx/c-font c))
-       (set (tx/c-font c) fonts/sans-b)
-       (tx/parse-text)
-       (set (tx/c-font c) old-font))
-      ((str/eq cmd "emph")
-       (set old-font (tx/c-font c))
-       (set (tx/c-font c) fonts/sans-o)
-       (tx/parse-text)
-       (set (tx/c-font c) old-font))
-      ((str/eq cmd "large")
-       (set old-font (tx/c-font c))
-       (set (tx/c-font c) fonts/sans-l)
-       (tx/parse-text)
-       (set (tx/c-font c) old-font))
-      ((str/eq cmd "code")
-       (set old-font (tx/c-font c))
-       (set (tx/c-font c) fonts/mono)
-       (tx/begin-hbox)
-       (tx/begin-vbox)
-       (tx/set-vbox-height 14)
-       (tx/end)
-       (tx/skip 3 0 0)
-       (tx/set-box-bg-color (gfx/color 240 240 240))
-       (tx/parse-text)
-       (tx/skip 3 0 0)
-       (tx/end)
-       (set (tx/c-font c) old-font))
-      ((str/eq cmd "hide")
-       (var old-color (tx/c-color c))
-       (set (tx/c-color c) (gfx/color 255 255 255))
-       (tx/parse-text)
-       (set (tx/c-color c) old-color))
-      ((str/eq cmd "sub")
-       (set old-font (tx/c-font c))
-       (set (tx/c-font c) fonts/sans-o-s)
-       (tx/begin-vbox)
-       (tx/begin-hbox)
-       (tx/parse-text)
-       (tx/end)
-       (tx/skip -7 0 0)
-       (tx/end)
-       (set (tx/c-font c) old-font))
-      ((str/eq cmd "sup")
-       (set old-font (tx/c-font c))
-       (set (tx/c-font c) fonts/sans-o-s)
-       (tx/begin-vbox)
-       (tx/begin-hbox)
-       (tx/skip 2 0 0)
-       (tx/parse-text)
-       (tx/end)
-       (tx/skip 7 0 0)
-       (tx/end)
-       (set (tx/c-font c) old-font))
-      ((str/eq cmd "supsub")
-       (set old-font (tx/c-font c))
-       (set (tx/c-font c) fonts/sans-o-s)
-       (tx/begin-vbox)
-       (tx/begin-hbox)
-       (tx/skip 2 0 0)
-       (tx/parse-text)
-       (tx/end)
-       (var t (tx/c-cur-token (ctxt/tx context)))
-       (if ((== (u8 t) ch/bar)
-            (tx/next-token)
-            (tx/skip -1 0 0)
-            (tx/begin-hbox)
-            (tx/parse-text)
-            (tx/end)))
-       (tx/skip -4 0 0)
-       (tx/end)
-       (set (tx/c-font c) old-font))
-      ((str/eq cmd "title")
-       (tx/cmd-title))
-      ((str/eq cmd "section")
-       (tx/cmd-section))
-      (else
-       (dbg/str "UNKNOWN COMMAND" cmd)
-       (tx/parse-text))))
+We just do some linear search again to find the right functions
+for [code cmd].
 
+@= <find head and body functions for cmd>
+(if ((str/eq cmd "**")
+     (set cmd-head tx/cmd-head-title)
+     (set cmd-body tx/cmd-body-title))
+  ((str/eq cmd "*")
+   (set cmd-head tx/cmd-head-chapter)
+   (set cmd-body tx/cmd-body-chapter))
+  ((str/eq cmd "d")
+   (set cmd-head tx/cmd-head-display)
+   (set cmd-body tx/cmd-body-display))
+  ((str/eq cmd "=")
+   (set cmd-head tx/cmd-head-code)
+   (set cmd-body tx/cmd-body-code))
+  ((str/eq cmd "c")
+   (set cmd-head tx/cmd-head-example)
+   (set cmd-body tx/cmd-body-example))
+  (else
+   (set cmd-head tx/cmd-head-text)
+   (set cmd-body tx/cmd-body-text)))
+@
+
+Alright, time to wrap up the markup parsing. We only need to open
+a file and call [code tx/parse-section] in a loop, more or less.
+
+@=
 (fun (tx/process-file name)
   (var c (ctxt/tx context))
   (mem r fs/rbuf)
@@ -1218,6 +2396,9 @@ Data structures, this is deliberately a stress test for malloc/free.
        (set (tx/c-at-bol c) 1)
        (set (tx/c-in-section-header c) 0)
        (set (tx/c-verbatim c) 0)
+       (set (tx/c-need-par-skip c) 0)
+       (set (tx/session-interword-glue) (tx/gluespec 5 5 0 0 0))
+       (set (tx/session-par-skip) 11)
        (tx/next-token)
        (tx/parse-text)
        (while (== (u8 t) ch/ht)
@@ -1229,8 +2410,37 @@ Data structures, this is deliberately a stress test for malloc/free.
        (set (tx/c-rbuf c) 0))
       (else
        (dbg/str "no such file:" name))))
+@
 
-;; Main
+We almost forgot all the markup parsing state. Here it is, see
+[code tx/context] above for how it fits into the session state.
+
+@= <global state for parsing>
+c-rbuf
+c-at-bol
+c-in-section-header
+c-verbatim
+c-cur-token
+c-execute-command
+c-interword-glue
+c-par-skip
+c-need-par-skip
+
+@* Viewing
+
+The application for viewing the typeset form of a book is straighforward.
+During initialization, a session is started, the book is parsed
+with [code tx/process-file], and the ink returned by [code tx/stop-session]
+is stored in the application state. The paint function then repeatedly
+draws the same ink, with a [emph y] coordinate offset that is
+controlled by input events.
+
+One interesting bit is that when a new viewer for a book is started,
+it inherits the y coordinate offset of the previous viewer for
+the same book. This way, editing a book and typesetting it will
+keep the viewer in about the right possition.
+
+@=
 
 (struct tx/instance
   (:base app/instance)
@@ -1240,10 +2450,10 @@ Data structures, this is deliberately a stress test for malloc/free.
 
 (fun (tx/init inst name offset)
   (set (tx/inst-y-off inst) offset)
-  (tx/start)
+  (tx/start-session)
   (tx/process-file name)
-  (set (tx/inst-ink inst) (tx/stop))
-  (set (tx/inst-y-max inst) (tx/c-ink-y (ctxt/tx context))))
+  (set (tx/inst-ink inst) (tx/stop-session))
+  (set (tx/inst-y-max inst) (tx/is-y (tx/c-ink-state (ctxt/tx context)))))
 
 (fun (tx/cleanup inst)
   (tx/free-ink (tx/inst-ink inst)))
@@ -1254,7 +2464,7 @@ Data structures, this is deliberately a stress test for malloc/free.
   (var w (app/app-width inst))
   (var h (app/app-height inst))
   (gfx/draw-init x y w h)
-  (tx/draw-ink (tx/inst-ink inst) (+ x (/ (- (app/app-width inst) 700) 2)) (- y (tx/inst-y-off inst)) (+ x w) (+ y h)))
+  (tx/draw-ink (tx/inst-ink inst) (+ x (/ (- w 700) 2)) (- y (tx/inst-y-off inst))))
 
 (fun (tx/input inst state input x y)
   (var old-off (tx/inst-y-off inst))
@@ -1289,3 +2499,30 @@ Data structures, this is deliberately a stress test for malloc/free.
   (if (old-app
        (set offset (tx/inst-y-off old-app))))
   (app/launch (app/new tx/instance tx/funcs name offset) name "tx"))
+@
+
+Happy type setting!
+
+@* Ideas for improvements
+
+@d
+[item - ]Embed error message in the ink (in red), don't write
+them to the debug console.
+
+[item - ]Don't allow glue to shrink more than its shrinkability
+when it has order 0. Give interword space some shrinkability
+and allow the line breaker to use it.
+
+[item - ]The real line breaking algorithm, but without hyphenation
+and without shapes.
+
+[item - ]Allow commands to tell the parser to eat whitespace after
+them, change [code item] to do that.
+
+[item - ]Links, to places in other books.
+
+[item - ]Typeset code sections in a fancier way. Highlight symbols
+from the "lang" book, highlight local vars, links.
+
+[item - ]Don't get into an infinite loop when the last line doesn't
+end in "\\n".

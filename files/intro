@@ -10,11 +10,12 @@ and a smaller one on the right. The smaller one always shows
 a list of [emph books], and you can perform some actions on them,
 such as opening them in an editor or running them as a program.
 
-The left window then shows the current appliction, like the editor
+The left window shows the current application, like the editor
 for a particular book, or a game, or a book after running it
 through the type setter.
 
-(Right now it shows the text you are reading.)
+(Right now it shows the text you are reading. It is the typeset
+version of the book named "intro".)
 
 You can switch between the two windows with [code C-x C-x]. (That's
 Control X, twice.)
@@ -33,7 +34,9 @@ To typeset and view the formatted version of the book, press [code v].
 For example, if you move the cursor to the "mandel" book and hit
 [code r], you will see a rendering of the Mandelbrot set instead
 of this text. To return to this text, move the focus back to
-the list of books, and hit [code v] on the "intro" book.
+the list of books, and hit [code v] on the "intro" book. (Or
+hit [code C-x q], which will quit the current application
+and return to the previous one.)
 
 To quit Zollern, hit [code Q] while the curser is in the right
 window. Changes to books are preserved when you exit Zollern,
@@ -53,8 +56,8 @@ viewer), press [code C-x q].
 @
 
 For example, if you are currently interacting with the Mandelbrot
-application, pressin [code C-x v] will switch to its formatted
-source code. Pressin [code C-x e] will open that source code
+application, pressing [code C-x v] will switch to its formatted
+source code. Pressing [code C-x e] will open that source code
 in the editor where you can make changes. And pressing [code
 C-x r] in the editor will then compile those changes and start
 the new version of the Mandelbrot viewer. If you want to close
@@ -109,12 +112,12 @@ The editor of course has a number of key bindings that might be
 good to know. For now, you have to read the "ed" book to figure
 them out.
 
-There is no need (or means) to explicitly save a book.
+There is usually no need to explicitly save a book.
 
-@* What's this all about
+@* What's this all about?
 
 Zollern is about bringing some personal fun back into hacking.
-We do the simplest most straighforward thing and don't worry
+It does the simplest most straighforward thing and doesn't worry
 about whether it has a point or matches some best industry practice.
 
 The Z1 language has no memory safety or even a type checker, but
@@ -127,10 +130,11 @@ with dynamic types and a garbage collector, and we might rewrite
 parts of the editor in it, if that feels like fun.
 
 But Zollern will always use s-expressions, I guess. I find them
-elegantly simple, and macros are fun.
+elegantly simple, and macros are fun. (But hygienic macros are
+not.)
 
 Zollern pretends that the real world doesn't exist. There will
-be no HTPP servers, or JSON parsers, or POSIX, or OpenGL. There
+be no HTTP servers, or JSON parsers, or POSIX, or OpenGL. There
 is only the x86-64 ISA, ASCII, and a RGBA frame buffer.
 
 It would be fully in the Zollern spirit to invent its own ISA
@@ -138,4 +142,3 @@ and run on that, maybe emulated, maybe in an FPGA. That would
 be fun. But x86-64 is everywhere and not terrible and super fast.
 Which allows us to mostly not worry about optimization at all,
 which is fun, too.
- 
