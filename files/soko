@@ -64,7 +64,7 @@ N steps, etc.
   tile-target-reaching)
 
 (struct soko/instance
-  (base app/instance)
+  (:base app/instance)
   dozer-dir
   dozer-x
   dozer-y

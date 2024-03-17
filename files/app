@@ -13,7 +13,7 @@ This is not great, obviously, but sufficient for now.
 
 An application is defined by a set of functions; one for painting,
 one for processing events, and a couple more. These functions
-are called at approprate times by the global event loop.
+are called at appropriate times by the global event loop.
 
 The state of an application is stored in its [emph instance] structure,
 which is passed to the application functions on every call.
@@ -44,7 +44,7 @@ this book.
 For example:
 @c
 (struct my/instance
-  (base app/instance)
+  (:base app/instance)
   my-data)
 @
 We also need to define the following functions for our new application,
@@ -331,7 +331,7 @@ book.
 
 @=
 (struct app/-shell-functab
-  (-sft-base app/-functab)
+  (:base app/-functab)
   -sft-global-input)
 
 (def (app/shell-functions ?name ?init ?cleanup ?paint ?input ?global-input)
@@ -345,7 +345,8 @@ book.
   (app/-init-name-and-mode inst "shell" "main")
   (app/-init-window inst
                     (gfx/gfx-screen-height gfx) 0
-                    (- (gfx/gfx-screen-width gfx) (gfx/gfx-screen-height gfx)) (gfx/gfx-screen-height gfx))
+                    (- (gfx/gfx-screen-width gfx) (gfx/gfx-screen-height gfx))
+                    (gfx/gfx-screen-height gfx))
   (app/paint-needed inst)
   (set (app/-ac-shell c) inst))
 @

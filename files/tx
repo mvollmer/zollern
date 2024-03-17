@@ -1233,7 +1233,7 @@ Data structures, this is deliberately a stress test for malloc/free.
 ;; Main
 
 (struct tx/instance
-  (base app/instance)
+  (:base app/instance)
   inst-ink
   inst-y-off
   inst-y-max)

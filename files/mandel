@@ -122,7 +122,7 @@ the zooming.
 
 @=
 (struct mandel/instance
-  (base app/instance)
+  (:base app/instance)
   cur-re-min cur-re-max
   cur-im-min cur-im-max)
 

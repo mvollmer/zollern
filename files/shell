@@ -1,7 +1,7 @@
 @=
 
 (struct shell/instance
-  (base app/instance)
+  (:base app/instance)
   cur
   cur-name
   max
@@ -36,7 +36,7 @@
   (set (shell/create-textbuf inst) 0))
 
 (struct shell/ed-app
-  (ed-base app/instance)
+  (:base app/instance)
   ed-name
   ed-text
   ed-ed)
@@ -212,7 +212,7 @@
   (gfx/draw-string (shell/output inst)))
 
 (struct shell/text-app
-  (ta-base app/instance)
+  (:base app/instance)
   ta-text)
 
 (fun (shell/text-init inst output)
