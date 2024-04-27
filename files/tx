@@ -81,7 +81,7 @@ nicely justified lines, independent of where the line endings
 are in the input.
 
 In addition to words, a paragraph can also contain commands like
-[code \[b this\]]. The first word after the initial [code \[]
+[code \[bold this\]]. The first word after the initial [code \[]
 determines which command it is, and the rest will be processed
 according to the rules of that command. Most commands just switch
 some parameters and then add their words to the current paragraph.
@@ -89,7 +89,7 @@ some parameters and then add their words to the current paragraph.
 Here are some commands:
 
 @d
-[code \[b ...\]] - Typeset "..." in [b bold].
+[code \[bold ...\]] - Typeset "..." in [bold bold].
 
 [code \[emph ...\]] - Typeset "..." [emph emphasized].
 
@@ -161,7 +161,8 @@ values will be computed while [emph setting the glue].
   (:base tx/node)
   b-width b-height b-depth
   b-children
-  b-bg-color)
+  b-bg-color
+  b-tag)
 
 (fun (tx/is-box node)
   (< (tx/n-type node) tx/nt-glue))
@@ -304,6 +305,8 @@ thus we need to return their memory with [code mem/free].
   (if ((== t tx/nt-tbox)
        (mem/free (tx/tb-str node)))
       ((tx/is-box node)
+       (if ((tx/b-tag node)
+            (mem/free (tx/b-tag node))))
        (var a (tx/b-children node))
        (while a
          (var b (tx/n-next a))
@@ -788,8 +791,8 @@ become clear further below. It's all very straightforward.
   ink-setfont-mono
   ink-setcolor
   ink-glyphs
-  ink-save-pos
   ink-tint
+  ink-tag
   ink-end)
 @
 
@@ -810,18 +813,17 @@ A lot of the operation codes just update this state in pretty obvious
 ways. There are only two that do the actual drawing.
 
 @= <define the tx/draw-ink function>
-(fun (tx/draw-ink ink x-off y-off)
+(fun (tx/draw-ink ink x-off y-off draw-tag-index)
   (mem state tx/draw-state)
   (tx/set-page state ink)
   (var x 0)
   (var y 0)
-  (var save-x 0)
-  (var save-y 0)
   (var font 0)
   (var color-r 0)
   (var color-g 0)
   (var color-b 0)
   (var color-is-black 1)
+  (var tag-index 0)
   (var op)
   (while (!= (set op (tx/get-u8 state)) tx/ink-end)
     (if ((== op tx/ink-x)
@@ -853,14 +855,19 @@ ways. There are only two that do the actual drawing.
          (set color-b (tx/get-u8 state))
          (set color-is-black (and (== color-r 0) (== color-g 0) (== color-b 0))))
 
-        ((== op tx/ink-save-pos)
-         (set save-x x)
-         (set save-y y))
+        ((== op tx/ink-tag)
+         (var tw (tx/get-u8 state))
+         (var th (tx/get-u8 state))
+         (while (tx/get-u8 state))
+         <optionally draw a tag target>)
+
         ((== op tx/ink-tint)
+         (var bw (tx/get-u8 state))
+         (var bh (tx/get-u8 state))
          (var r (tx/get-u8 state))
          (var g (tx/get-u8 state))
          (var b (tx/get-u8 state))
-         (gfx/tint-rect (+ x-off save-x) (+ y-off save-y) (- x save-x) (- y save-y) r g b))
+         (gfx/tint-rect (+ x-off x (- bw)) (+ y-off y (- bh)) bw bh r g b))
 
         ((== op tx/ink-glyphs)
          (var c)
@@ -1067,23 +1074,28 @@ by the weird way the [code gfx] book works right now: It has
 to happen [emph after] drawing everything that is inside the
 box.
 
-To accomodate this weird way, the general box walking function
-calls [code tx/ink-box-start] and [code tx/ink-box-end] appropriately.
-
 Weird things will happen when nested boxes have different background
 colors. This needs improvement.
 
 @=
-(fun (tx/ink-box-start state node x y)
+(fun (tx/ink-box-decorate state node x y)
+  (var w (tx/b-width node))
+  (var h (+ (tx/b-height node) (tx/b-depth node)))
   (if ((!= (tx/b-bg-color node) (gfx/color 255 255 255))
-       (tx/ink-moveto state x y)
-       (tx/emit-u8 state tx/ink-save-pos))))
-
-(fun (tx/ink-box-end state node x y)
-  (if ((!= (tx/b-bg-color node) (gfx/color 255 255 255))
-       (tx/ink-moveto state (+ x (tx/b-width node)) (+ y (tx/b-height node) (tx/b-depth node)))
+       (tx/ink-moveto state (+ x w) (+ y h))
        (tx/emit-u8 state tx/ink-tint)
-       (tx/emit-color state (tx/b-bg-color node)))))
+       (tx/emit-u8 state w)
+       (tx/emit-u8 state h)
+       (tx/emit-color state (tx/b-bg-color node))))
+  (if ((var tag (tx/b-tag node))
+       (tx/ink-moveto state (+ x w) (+ y h))
+       (tx/emit-u8 state tx/ink-tag)
+       (tx/emit-u8 state w)
+       (tx/emit-u8 state h)
+       (while (u8 tag)
+         (tx/emit-u8 state (u8 tag))
+         (set tag (+ tag 1)))
+       (tx/emit-u8 state 0))))
 @
 
 Producing the inking program for a general box node is now pretty
@@ -1100,7 +1112,6 @@ straightforward.
       ((== t tx/nt-hbox)
        (set b-x x)
        (set b-y y)
-       (tx/ink-box-start state node b-x b-y)
        (set c (tx/b-children node))
        (while c
          (if ((== (tx/n-type c) tx/nt-glue)
@@ -1109,11 +1120,10 @@ straightforward.
               (tx/ink-node state c x (+ y (- (tx/b-height node) (tx/b-height c))))
               (set x (+ x (tx/b-width c)))))
          (set c (tx/n-next c)))
-       (tx/ink-box-end state node b-x b-y))
+       (tx/ink-box-decorate state node b-x b-y))
       ((== t tx/nt-vbox)
        (set b-x x)
        (set b-y y)
-       (tx/ink-box-start state node b-x b-y)
        (set c (tx/b-children node))
        (while c
          (if ((== (tx/n-type c) tx/nt-glue)
@@ -1122,15 +1132,157 @@ straightforward.
               (tx/ink-node state c x y)
               (set y (+ y (tx/b-height c) (tx/b-depth c)))))
          (set c (tx/n-next c)))
-       (tx/ink-box-end state node b-x b-y))))
+       (tx/ink-box-decorate state node b-x b-y))))
 @
+
+@* Links
+
+You might have noticed that a box can have a [emph tag] associated
+with it. This is used for interactive elements such as links.
+You can query a ink object for the tag at a specific position,
+and also query it for the [emph n]-th tag that is currently visible.
+
+The query query functions have the same structure as [code draw-ink],
+but where as [code draw-ink] mostly ignores the [code ink-tag]
+operation, the query functions ignore the drawing operations.
+
+Here is [code tx/query-ink-xy], which is used to find the tag
+under the mouse when it is clicked.
+@=
+(fun (tx/query-ink-xy ink x-off y-off x-query y-query tagbuf)
+  (mem state tx/draw-state)
+  (tx/set-page state ink)
+  (var x 0)
+  (var y 0)
+  (var op)
+  (while (!= (set op (tx/get-u8 state)) tx/ink-end)
+    (if ((== op tx/ink-x)
+         (set x (tx/get-s32 state)))
+        ((== op tx/ink-dx)
+         (set x (+ x (tx/get-s8 state))))
+
+        ((== op tx/ink-y)
+         (set y (tx/get-s32 state)))
+        ((== op tx/ink-dy)
+         (set y (+ y (tx/get-s8 state))))
+
+        ((== op tx/ink-setcolor)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state))
+
+        ((== op tx/ink-tag)
+         (var bw (tx/get-u8 state))
+         (var bh (tx/get-u8 state))
+         (if ((and (>= x-query (+ x-off x (- bw)))
+                   (>= y-query (+ y-off y (- bh)))
+                   (< x-query (+ x-off x))
+                   (< y-query (+ y-off y)))
+              (var t tagbuf)
+              (var c)
+              (while (set c (tx/get-u8 state))
+                (set (u8 t) c)
+                (set t (+ t 1)))
+              (set (u8 t) 0))
+             (else
+              (while (tx/get-u8 state)))))
+
+        ((== op tx/ink-tint)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state))
+
+        ((== op tx/ink-glyphs)
+         (while (tx/get-u8 state))))))
+@
+
+Activating a link with the keyboard is done with the [code 1]
+to [code 9] keys. Pressing [code 1] will go to the target of
+the topmost link that is currently visible, [code 2] to the second,
+etc.
+
+To save you from counting the links, the [code tx/draw-ink] function
+can do that and optionally paint a big number over the boxes
+with a tag.
+
+Here is the code to do that, which we left out of the [code tx/draw-ink]
+function above.
+
+@= <optionally draw a tag target>
+(var gfx (ctxt/gfx context))
+(if ((and draw-tag-index
+          (< tag-index 9)
+          (>= (+ y-off (- y th)) 0)
+          (< (+ y-off y) (gfx/gfx-win-h gfx)))
+     (var tx (+ x-off (- x (/ tw 2))))
+     (var ty (+ y-off (- y (/ th 2))))
+     (gfx/rect (- tx 15) (- ty 15) 30 30 (gfx/color 255 255 255))
+     (gfx/glyph fonts/sans-l (- tx 6) (- ty 10) (+ ch/d1 tag-index))
+     (gfx/tint-rect-2 (- tx 15) (- ty 15) 30 30 255 255 255 40 40 40)
+     (set tag-index (+ tag-index 1))))
+@
+
+Querying the ink for an index is easy.
+
+@=
+(fun (tx/query-ink-index ink x-off y-off index tagbuf)
+  (mem state tx/draw-state)
+  (tx/set-page state ink)
+  (var x 0)
+  (var y 0)
+  (var tag-index 0)
+  (var op)
+  (while (!= (set op (tx/get-u8 state)) tx/ink-end)
+    (if ((== op tx/ink-x)
+         (set x (tx/get-s32 state)))
+        ((== op tx/ink-dx)
+         (set x (+ x (tx/get-s8 state))))
+
+        ((== op tx/ink-y)
+         (set y (tx/get-s32 state)))
+        ((== op tx/ink-dy)
+         (set y (+ y (tx/get-s8 state))))
+
+        ((== op tx/ink-setcolor)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state))
+
+        ((== op tx/ink-tag)
+         (var tw (tx/get-u8 state))
+         (var th (tx/get-u8 state))
+         (var gfx (ctxt/gfx context))
+         (if ((and (>= (+ y-off (- y th)) 0)
+                   (< (+ y-off y) (gfx/gfx-win-h gfx)))
+              (if ((== tag-index index)
+                   (var t tagbuf)
+                   (var c)
+                   (while (set c (tx/get-u8 state))
+                     (set (u8 t) c)
+                     (set t (+ t 1)))
+                   (set (u8 t) 0))
+                  (else
+                   (while (tx/get-u8 state))))                   
+              (set tag-index (+ tag-index 1)))))
+
+        ((== op tx/ink-tint)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state)
+         (tx/get-u8 state))
+
+        ((== op tx/ink-glyphs)
+         (while (tx/get-u8 state))))))
 
 @* Constructing
 
 Now we are finally ready for the functions that actually construct
 the nested box data structure. These functions are used when
 parsing the markup syntax explained at the start of this book,
-and for defining commands like [code \[b ...\]]. They could also
+and for defining commands like [code \[bold ...\]]. They could also
 be used by Z1 programs in general that want to produce textual
 output.
 
@@ -1173,7 +1325,7 @@ state. They can be changed with accessors like [code tx/session-font].
 
 Here is a more formal documentation of a couple of functions:
 
-[b Session]
+[bold Session]
 @d
 [item - ][code (tx/start-session)]
 
@@ -1192,7 +1344,7 @@ The ink can be drawn to the screen with [code tx/draw-ink] and
 must eventually be freed with [code tx/ink-free].
 @
 
-[b Horizontal and vertical boxes]
+[bold Horizontal and vertical boxes]
 @d
 [item - ][code (tx/begin-hbox)], [code (tx/begin-vbox)]
 
@@ -1233,7 +1385,7 @@ box.
 Set the background color of the current box.
 @
 
-[b Text]
+[bold Text]
 @d
 [item - ][code (tx/text [emph string])]
 
@@ -1249,7 +1401,7 @@ Access the default font for new text boxes.
 Access the default color for new text boxes.
 @
 
-[b Glue]
+[bold Glue]
 @d
 [item - ][code (tx/glue [emph spec])]
 
@@ -1264,7 +1416,7 @@ Equivalent to [code (tx/glue (tx/gluespec [emph length] 0 0 0 0))].
 Equivalent to [code (tx/glue (tx/gluespec 0 [emph stretch] 1 0 0))].
 @
 
-[b Paragraphs]
+[bold Paragraphs]
 @d
 [item - ][code (tx/begin-pbox)]
 
@@ -1341,7 +1493,7 @@ use the accessors to set the defaults.
   (set (tx/session-baseline-skip) 16)
   (set (tx/session-left-glue) 0)
   (set (tx/session-right-glue) 0))
-  
+
 (fun (tx/start-session)
   (var c (mem/alloc tx/context))
   (tx/ink-state-init (tx/c-ink-state c))
@@ -1484,9 +1636,14 @@ As can be expected, we allocate memory for a [code tx/tbox] structure,
 initialize it appropriately, and then call [code tx/add-to-current-box].
 
 @=
+(fun (tx/init-box n)
+  (set (tx/b-bg-color n) (gfx/color 255 255 255))
+  (set (tx/b-tag n) 0))
+
 (fun (tx/text str)
   (var n (mem/alloc tx/tbox))
   (set (tx/n-type n) tx/nt-tbox)
+  (tx/init-box n)
   (set (tx/b-children n) 0)
   (set (tx/tb-font n) (tx/session-font))
   (set (tx/tb-color n) (tx/session-color))
@@ -1518,20 +1675,21 @@ is started for them.
 (fun (tx/begin-hbox)
   (var n (mem/alloc tx/hbox))
   (set (tx/n-type n) tx/nt-hbox)
+  (tx/init-box n)
   (set (tx/hb-width n) tx/NATURAL-SIZE)
-  (set (tx/b-bg-color n) (gfx/color 255 255 255))
   (tx/begin-box-building n))
 
 (fun (tx/begin-vbox)
   (var n (mem/alloc tx/vbox))
   (set (tx/n-type n) tx/nt-vbox)
+  (tx/init-box n)
   (set (tx/vb-height n) tx/NATURAL-SIZE)
-  (set (tx/b-bg-color n) (gfx/color 255 255 255))
   (tx/begin-box-building n))
 
 (fun (tx/begin-pbox)
   (var n (mem/alloc tx/pbox))
   (set (tx/n-type n) tx/nt-pbox)
+  (tx/init-box n)
   (set (tx/pb-width n) (tx/session-line-width))
   (set (tx/pb-line-skip n) (tx/session-baseline-skip))
   (set (tx/pb-left-spec n) (tx/session-left-glue))
@@ -1554,6 +1712,10 @@ current box.
 (fun (tx/set-box-bg-color color)
   (var b (tx/get-current-box))
   (set (tx/b-bg-color b) color))
+
+(fun (tx/set-box-tag tag)
+  (var b (tx/get-current-box))
+  (set (tx/b-tag b) (str/dup tag)))
 @
 
 The current box is completed by calling [code tx/end] (or [code
@@ -1622,7 +1784,7 @@ is very similar to a command, as far as the grammar is concerned.
 The rest are [emph words]: runs of characters that are neither
 whitespace nor "\[" or "\]". If you want to include a character
 in a word that has a special meaning, you can escape it with
-"\\". For example, [code \[b \\\[\]] produces a bold [b \[].
+"\\". For example, [code \[bold \\\[\]] produces a bold [bold \[].
 You can also escape a "@" at the beginning of the line with a
 "\\" to prevent it from becoming a section header.
 
@@ -1631,7 +1793,7 @@ Here is a an example:
 @c
 \@** My title
 
-A line of [b words].
+A line of [bold words].
 
 And another.
 
@@ -1641,7 +1803,7 @@ A display.
 @
 
 This will produce these tokens: "\\t**", " ", "My", " ", "title",
-"\]", "A", " ", "line", " ", "of", " ", "\[", "b", " ", "words",
+"\]", "A", " ", "line", " ", "of", " ", "\[", "bold", " ", "words",
 "\]", ".", "\\n", "And", " ", "another.", "\\n", "\\td", "\]", "A",
 " ", "display.", " ", "\\t", "\]".
 
@@ -1835,7 +1997,7 @@ but whitespace, words, or special characters are not even considered.
 @
 
 Let's see how parsing works by looking at the function that handles
-commands like [code \[b this\]].
+commands like [code \[bold this\]].
 
 When the [code txc/parse-command] function is called, the current
 token is the "\[" start started the command. The next token is
@@ -1991,7 +2153,7 @@ For the commands that change only the font, we have a shortcut.
   (set (tx/session-font) old-font))
 
 (fun (tx/cmd-normal) (tx/cmd-font fonts/sans))
-(fun (tx/cmd-b)      (tx/cmd-font fonts/sans-b))
+(fun (tx/cmd-bold)   (tx/cmd-font fonts/sans-b))
 (fun (tx/cmd-emph)   (tx/cmd-font fonts/sans-o))
 @
 
@@ -2014,11 +2176,11 @@ broken into multiple lines.
   (tx/parse-text)
   (tx/skip 3)
   (tx/end)
-  (set (tx/session-font) old-font))  
+  (set (tx/session-font) old-font))
 @
 
 Here is something obscure: a command to hide text. This for example
-used by the "mandel" book to align equations.
+used by the [book mandel] book to align equations.
 
 @=
 (fun (tx/cmd-hide)
@@ -2125,13 +2287,33 @@ its logo correctly.
   (tx/text "X"))
 @
 
+Links to other books ...
+
+@=
+(fun (tx/cmd-book)
+  (tx/ensure-hmode)
+  (tx/skip -3)
+  (tx/begin-hbox)
+  (tx/begin-vbox)
+  (tx/set-vbox-height 14)
+  (tx/end)
+  (tx/skip 3)
+  (tx/set-box-bg-color (gfx/color 220 250 255))
+  (var t (tx/c-cur-token (ctxt/tx context)))
+  (tx/set-box-tag t)
+  (tx/parse-text)
+  (tx/skip 3)
+  (tx/end)
+  (tx/skip -3))
+@
+
 Now we only need to put all commands into a table. Linear search
 is goog enough for us.
 
 @=
 (fun (tx/execute-command cmd)
-  (if ((str/eq cmd "b")
-       (tx/cmd-b))
+  (if ((str/eq cmd "bold")
+       (tx/cmd-bold))
       ((str/eq cmd "emph")
        (tx/cmd-emph))
       ((str/eq cmd "normal")
@@ -2150,6 +2332,8 @@ is goog enough for us.
        (tx/cmd-item))
       ((str/eq cmd "tex")
        (tx/cmd-tex))
+      ((str/eq cmd "book")
+       (tx/cmd-book))
       (else
        (dbg/str "UNKNOWN COMMAND" cmd)
        (tx/parse-text))))
@@ -2446,28 +2630,31 @@ keep the viewer in about the right possition.
   (:base app/instance)
   inst-ink
   inst-y-off
-  inst-y-max)
+  inst-y-max
+  inst-draw-tag-index)
 
 (fun (tx/init inst name offset)
   (set (tx/inst-y-off inst) offset)
   (tx/start-session)
   (tx/process-file name)
   (set (tx/inst-ink inst) (tx/stop-session))
-  (set (tx/inst-y-max inst) (tx/is-y (tx/c-ink-state (ctxt/tx context)))))
+  (set (tx/inst-y-max inst) (tx/is-y (tx/c-ink-state (ctxt/tx context))))
+  (set (tx/inst-draw-tag-index inst) 0))
 
 (fun (tx/cleanup inst)
   (tx/free-ink (tx/inst-ink inst)))
 
 (fun (tx/paint inst)
-  (var x 0)
-  (var y 0)
   (var w (app/app-width inst))
   (var h (app/app-height inst))
-  (gfx/draw-init x y w h)
-  (tx/draw-ink (tx/inst-ink inst) (+ x (/ (- w 700) 2)) (- y (tx/inst-y-off inst))))
+  (gfx/draw-init 0 0 w h)
+  (tx/draw-ink (tx/inst-ink inst) (/ (- w 700) 2) (- (tx/inst-y-off inst)) (tx/inst-draw-tag-index inst)))
 
 (fun (tx/input inst state input x y)
   (var old-off (tx/inst-y-off inst))
+  (var w (app/app-width inst))
+  (var h (app/app-height inst))
+  (mem tagbuf 255)
   (if ((== input gfx/ev-key-down)
        (set (tx/inst-y-off inst) (+ (tx/inst-y-off inst) 20)))
       ((== input gfx/ev-scroll-down)
@@ -2479,14 +2666,30 @@ keep the viewer in about the right possition.
       ((== input gfx/ev-scroll-up)
        (set (tx/inst-y-off inst) (- (tx/inst-y-off inst) 100)))
       ((== input gfx/ev-key-page-up)
-       (set (tx/inst-y-off inst) (- (tx/inst-y-off inst) 500))))
+       (set (tx/inst-y-off inst) (- (tx/inst-y-off inst) 500)))
+      ((== input ch/spc)
+       (set (tx/inst-draw-tag-index inst) (- 1 (tx/inst-draw-tag-index inst)))
+       (app/paint-needed inst))
+      ((and (>= input ch/d1) (<= input ch/d9))
+       (set (tx/inst-draw-tag-index inst) 0)
+       (app/paint-needed inst)
+       (set (u8 tagbuf) 0)
+       (tx/query-ink-index (tx/inst-ink inst) (/ (- w 700) 2) (- (tx/inst-y-off inst)) (- input ch/d1) tagbuf)
+       (if ((u8 tagbuf)
+            (app/goto-link tagbuf))))
+      ((== input gfx/ev-button-1-release)
+       (set (u8 tagbuf) 0)
+       (tx/query-ink-xy (tx/inst-ink inst) (/ (- w 700) 2) (- (tx/inst-y-off inst)) x y tagbuf)
+       (if ((u8 tagbuf)
+            (app/goto-link tagbuf)))))
   (if ((< (tx/inst-y-off inst) 0)
        (set (tx/inst-y-off inst) 0)))
   (if ((> (tx/inst-y-off inst) (tx/inst-y-max inst))
        (set (tx/inst-y-off inst) (tx/inst-y-max inst))))
   (if ((!= old-off (tx/inst-y-off inst))
+       (set (tx/inst-draw-tag-index inst) 0)
        (app/paint-needed inst))))
-
+       
 (app/functions tx/funcs
   tx/init
   tx/cleanup
@@ -2501,7 +2704,7 @@ keep the viewer in about the right possition.
   (app/launch (app/new tx/instance tx/funcs name offset) name "tx"))
 @
 
-Happy type setting!
+Happy [emph type] [bold setting]!
 
 @* Ideas for improvements
 
@@ -2522,7 +2725,7 @@ them, change [code item] to do that.
 [item - ]Links, to places in other books.
 
 [item - ]Typeset code sections in a fancier way. Highlight symbols
-from the "lang" book, highlight local vars, links.
+from the [book lang] book, highlight local vars, links.
 
 [item - ]Don't get into an infinite loop when the last line doesn't
 end in "\\n".

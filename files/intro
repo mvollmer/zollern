@@ -15,7 +15,7 @@ for a particular book, or a game, or a book after running it
 through the type setter.
 
 (Right now it shows the text you are reading. It is the typeset
-version of the book named "intro".)
+version of the book named [book intro].)
 
 You can switch between the two windows with [code C-x C-x]. (That's
 Control X, twice.)
@@ -31,11 +31,11 @@ To compile and run the book as an application, press [code r].
 To typeset and view the formatted version of the book, press [code v].
 @
 
-For example, if you move the cursor to the "mandel" book and hit
-[code r], you will see a rendering of the Mandelbrot set instead
-of this text. To return to this text, move the focus back to
-the list of books, and hit [code v] on the "intro" book. (Or
-hit [code C-x q], which will quit the current application
+For example, if you move the cursor to the [book mandel] book
+and hit [code r], you will see a rendering of the Mandelbrot
+set instead of this text. To return to this text, move the focus
+back to the list of books, and hit [code v] on the [book intro]
+book. (Or hit [code C-x q], which will quit the current application
 and return to the previous one.)
 
 To quit Zollern, hit [code Q] while the curser is in the right
@@ -95,9 +95,9 @@ definition looks like this:
 
 Code is written using [emph s-expression] syntax, like Lisp. But
 the Z1 language is nothing like Lisp, it's more like the untyped
-predecessors to C.  The "lang" book has more details.
+predecessors to C. The [book lang] book has more details.
 
-The "mandel" book is a good first read.
+The [book mandel] book is a good first read.
 
 @* How to write a book
 
@@ -109,7 +109,7 @@ to read a book" was actually written, hit [code C-x e] right
 now! The ultimate details are in the "tx" book.
 
 The editor of course has a number of key bindings that might be
-good to know. For now, you have to read the "ed" book to figure
+good to know. For now, you have to read the [book ed] book to figure
 them out.
 
 There is usually no need to explicitly save a book.

@@ -22,11 +22,11 @@ Applications have a [emph name] and a [emph mode]. The name is
 usually the name of a book, and the mode is usually one of "main",
 "ed", or "tx".
 
-For example, editing the "lang" book will be done with an application
-named "lang" in mode "ed". The functions of that application
-are from the [code ed] book. Conversely, when playing the Soko
-game, there will be an application named "soko" in mode "main",
-and its functions will be from the [code soko] book.
+For example, editing the [book lang] book will be done with an
+application named "lang" in mode "ed". The functions of that
+application are from the [book ed] book. Conversely, when playing
+the Soko game, there will be an application named "soko" in mode
+"main", and its functions will be from the [book soko] book.
 
 @* Application instances
 
@@ -114,7 +114,7 @@ Here is how painting works: Each application has a flag that says
 whether or not the screen is up-to-date with respect to the state
 of the application. If not, the event loop will call the paint
 function of that application. The paint function in turn then
-uses functions from the [code gfx] book to draw whatever it wants
+uses functions from the [book gfx] book to draw whatever it wants
 in the rectangle bounded by (0, 0) and ([emph w, h]).
 
 The "painting needed" flag is maintained by some of the functions
@@ -323,19 +323,20 @@ application, and it also handles the global input events such
 as [code C-x q].
 
 The shell extends the function table of a normal application with
-one more entry: the "global input" function, and has its own
-launching function, [code app/launch-shell].
+two more entries: the "global input" function and the "goto link"
+function.
 
-Unsurprisingly, the only call to this function is in the "shell"
-book.
+It has its own launching function, [code app/launch-shell]. Unsurprisingly,
+the only call to this function is in the [book shell] book.
 
 @=
 (struct app/-shell-functab
   (:base app/-functab)
-  -sft-global-input)
+  -sft-global-input
+  -sft-goto-link)
 
-(def (app/shell-functions ?name ?init ?cleanup ?paint ?input ?global-input)
-  (book/funtab ?name ?init ?cleanup ?paint ?input ?global-input))
+(def (app/shell-functions ?name ?init ?cleanup ?paint ?input ?global-input ?goto-link)
+  (book/funtab ?name ?init ?cleanup ?paint ?input ?global-input ?goto-link))
 
 (fun (app/launch-shell inst)
   (var c (ctxt/app context))
@@ -349,6 +350,11 @@ book.
                     (gfx/gfx-screen-height gfx))
   (app/paint-needed inst)
   (set (app/-ac-shell c) inst))
+
+(fun (app/goto-link link)
+  (var c (ctxt/app context))
+  (if ((var shell (app/-ac-shell c))
+       ((app/-sft-goto-link (app/-app-functions shell)) shell link))))
 @
 Since there are two applications on the screen at all times, we
 need to decide which one should get input events. This is done
@@ -377,7 +383,7 @@ current application, but some are [emph global input events].
 The event loop intercepts the [code C-x] key itself and passes
 the next input event to the shell. For example, typing [code
 C-x e] will cause the event for [code e] to be passed to the
-[emph global-input] function of the shell instance. That function
+[emph global input] function of the shell instance. That function
 will then open the editor for the source code of the current
 application.
 

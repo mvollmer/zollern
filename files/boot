@@ -8,7 +8,7 @@ than to restart Zollern completely.
 
 @* Entry point
 
-The bootstrap compiler in the "comp" book will transfer control
+The bootstrap compiler in the [boot comp] book will transfer control
 to [code boot/start].
 
 @=

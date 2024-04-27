@@ -356,12 +356,17 @@
        (if ((== input ch/x)
             (app/focus-shell (not (app/app-focus inst))))))))
 
+(fun (shell/goto-link inst link)
+  (if ((not (app/switch link "tx"))
+       (tx/launch link))))
+
 (app/shell-functions shell/funcs
   shell/init
   shell/cleanup
   shell/paint
   shell/input
-  shell/global-input)
+  shell/global-input
+  shell/goto-link)
 
 (fun (shell/main)
   (tx/launch "intro")

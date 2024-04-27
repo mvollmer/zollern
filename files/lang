@@ -3,7 +3,7 @@
 This book defines the Zollern programming language on level one,
 called [emph Z1]. Two thirds of the compiler for this language
 are written in the level 0 bootstrap assembler language [emph
-Z0], see the [code asm] and [code comp] books. The remaining
+Z0], see the [book asm] and [book comp] books. The remaining
 third is contained in this book.
 
 The following text will first briefly describe the elements of
@@ -83,7 +83,7 @@ below.
 @c
 (gfx/rect x y 10 10 (gfx/color 40 40 50))
 @
-This expression has two calls to functions in the [code gfx] book.
+This expression has two calls to functions in the [book gfx] book.
 Pretty straightforward.
 @c
 ((u64 funcs 5) 9)
@@ -1547,7 +1547,7 @@ Global constants can be had via [code defconst], but [code var]
 only works inside functions.
 
 There is one exception, the global context. This is a single global
-variable which is (by convention) managed by the [code ctxt]
+variable which is (by convention) managed by the [book ctxt]
 book.
 
 The global context collects everything: the list of compiled books,

@@ -5,7 +5,7 @@ compiler from Z1 primitives such as [code (9 0 a b)] to machine
 code.
 
 It is written in the assembly language defined and implemented
-by the [code asm] book. It is compiled outside of Zollern when
+by the [book asm] book. It is compiled outside of Zollern when
 Zollern boots, and changing it thus requires a full reboot for
 those changes to take effect.
 
@@ -19,7 +19,7 @@ system, for example. And last, assembler is just very verbose.
 @* The Z0 assembler language
 
 Z0 implements its own variant of x86-64 assembler, with lots of
-parentheses, of course. The [code asm] book has all the details
+parentheses, of course. The [book asm] book has all the details
 of how it is defined, and here we give an overview from the point
 of actually using the assembly language.
 
@@ -236,7 +236,7 @@ This has to happen in the right order, of course, so that we only
 copy [code l1] to [code l3] after using [code l3] to set [code
 l7].
 
-The [code asm] book does not define speciality instructions like
+The [book asm] book does not define speciality instructions like
 [code syscall]. That is fine, we can define it right here.
 @=
 (def (syscall)
@@ -456,7 +456,7 @@ We make this job easier by never returning any of these pieces
 individually for reuse by the pool. Once the compiler is done,
 the whole pool is returned as one piece.
 
-The [code mem] book has a more sophisticated allocator that can
+The [book mem] book has a more sophisticated allocator that can
 be used by [code Z1] programs, but this compiler gets by with
 this simpler one.
 
@@ -533,11 +533,11 @@ straightforward in assembler!
 @* Reading files
 
 And now comes a lot of boring code to find and read files in a
-Zollern disk. This functionality is duplicated in the [code fs]
+Zollern disk. This functionality is duplicated in the [book fs]
 book and the details are described there.
 
 The Z1 compiler needs its own code to read files since it needs
-to compile all the rest during bootstrap, including the [code
+to compile all the rest during bootstrap, including the [book
 fs] book.
 
 A Zollern disk can be seen as a big array of 16k pages. The first
@@ -1059,7 +1059,7 @@ Let's continue with the parser. After splitting the input into
 tokens, these tokens need to be turned into a data structure
 that represents symbols, numbers strings, and lists.
 
-These are the expression objects that the macros in the [code
+These are the expression objects that the macros in the [book
 lang] book work with.
 
 All expression objects are allocated from the [code cc-tmp-pool]

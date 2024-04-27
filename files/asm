@@ -2,19 +2,19 @@
 
 This is the lower third of the compiler for the Z1 language, the
 definition of the assembler language. The middle third of the
-compiler is written in this assembler language (see the [code
+compiler is written in this assembler language (see the [book
 comp] book), and uses the instructions defined here when emitting
-machine code. (The upper third of the compiler is the [code lang]
+machine code. (The upper third of the compiler is the [book lang]
 book, and is written in the primitive version of Z1 understood
-by the [code comp] book.)
+by the [book comp] book.)
 
 This asssembler here is written in the input language of the [emph
 Z0] binary macro processor. Z0 is a program running outside of
 Zollern that can generate a binary file from a couple of input
 files that are written in its Z0 macro language.
 
-During each boot of Zollern, the Z0 program reads this [code asm]
-book followed by the [code comp] book and produces a binary output
+During each boot of Zollern, the Z0 program reads this [book asm]
+book followed by the [book comp] book and produces a binary output
 file.
 
 That binary file can be directly executed by the OS that hosts
@@ -28,10 +28,10 @@ The instructions at that certain address are defined here in this
 book, see the [code start] label at the very end.
 
 Those instructions will jump to the [code main] function in the
-[code comp] book, which in turn will compile the [code boot]
+[book comp] book, which in turn will compile the [book boot]
 book, which is written in Z1. Then the [code boot/start] function
 is called. If you want to know how the story continues, you have
-to read the [code boot] book, of course.
+to read the [book boot] book, of course.
 
 But, the Z0 macro processor can not do much: It can put arbitrary
 bytes into the memory of the process with the [code code] directives.
@@ -130,7 +130,7 @@ For example,
 will replace every occurance of a list with a single symbol named
 "syscall" in it with [code (1 0x0F 0x05)].
 
-Unlike the Z1 macros implemented in the [code comp] book, patterns
+Unlike the Z1 macros implemented in the [book comp] book, patterns
 do not only match on the first element of a list (the "operator"
 position), they must match everywhere. For example,
 @c
@@ -165,7 +165,7 @@ transform it into this:
 Z0 will remember the three definitions above and will select the
 one that matches. It does this by searching through all of them
 one by one, and uses the first that matches. However, it starts
-at the [b end], at the most recently defined one and goes backwards.
+at the [emph end], at the most recently defined one and goes backwards.
 
 @* Registers
 
@@ -250,7 +250,7 @@ Ok, here then are all the 16 register names:
 @
 The registers starting with "l" and "x" are for generic use by
 functions, "sp" is the stack pointer, and "cp" is the global
-"context" pointer. The [code comp] book explains the conventions
+"context" pointer. The [book comp] book explains the conventions
 for using them.
 
 @* Instruction encoding
@@ -908,7 +908,7 @@ the entrypoint of the compiler where we want.
 
 Thus, we define the first [code code] block here, and make it
 jump to the [code main] label. It will be defined at the end
-of the [code comp] book.
+of the [book comp] book.
 
 @=
 (code start

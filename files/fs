@@ -139,19 +139,22 @@ replace the old file atomically when it is completely written.
 
 @* Reading files
 
-- ([b fs/open] buf name)
+@d
+[item - ][code (fs/open [emph buf] [emph name])]
 
-Find the file named NAME and initialize BUF for use with fs/read.
-Returns zero if there is no file named NAME, non-zero otherwise.
+Find the file named [emph name] and initialize [emph buf] for use with
+[code fs/read]. Returns zero if there is no file named [emph name],
+non-zero otherwise.
 
-- ([b fs/close] buf)
+[item - ][code (fs/close [emph buf])]
 
-Releases the file described by BUF.
+Releases the file described by [emph buf].
 
-- ([b fs/read] buf)
+[item - ][code (fs/read [emph buf])]
 
-Updates BUF to describe the next chunk of its file. Returns zero
-when the file has been read completely.
+Updates [emph buf] to describe the next chunk of its file. Returns
+zero when the file has been read completely.
+@
 
 @=
 (struct fs/rbuf
