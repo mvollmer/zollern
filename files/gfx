@@ -71,17 +71,11 @@
   (set (gfx/cmd-arg3 cmd) arg3)
   (sys/write 4 cmd gfx/command))
 
-(fun (gfx/show)
+(fun (gfx/show-and-get)
   (gfx/cmd 2))
 
 (fun (gfx/read-event event)
   (sys/read 5 event gfx/event))
-
-(fun (gfx/wait)
-  (mem event gfx/event)
-  (while (begin
-           (gfx/read-event event)
-           (!= (gfx/ev-type event) 1))))
 
 (fun (gfx/resize w h)
   (var gfx (ctxt/gfx context))

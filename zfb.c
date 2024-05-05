@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -99,7 +101,7 @@ struct command {
 
 enum {
   OP_CONF = 1,
-  OP_SHOW = 2
+  OP_SHOW_AND_GET = 2,
 };
 
 struct event {
@@ -164,7 +166,8 @@ send_event (int type, int x, int y, int state, int input)
 
 SDL_Window *window;
 SDL_Renderer *renderer;
-SDL_Surface *fb;
+SDL_Texture *texture;
+int tx_width, tx_height;
 
 void
 setup_window ()
@@ -184,11 +187,10 @@ setup_window ()
 void
 configure (int width, int height)
 {
-  if (fb)
+  if (texture)
     {
-      int ow = fb->w, oh = fb->h;
-      SDL_FreeSurface (fb);
-      munmap (pixels, ow*oh*4);
+      SDL_DestroyTexture (texture);
+      munmap (pixels, tx_width*tx_height*4);
     }
 
   pixels = mmap (NULL, width*height*4, PROT_READ | PROT_WRITE, MAP_SHARED,
@@ -197,23 +199,27 @@ configure (int width, int height)
   if (pixels == MAP_FAILED)
     exitf (1, "pixels map: %m");
 
-  fb = SDL_CreateRGBSurfaceFrom (pixels, width, height,
-                                 32, 4*width,
-                                 0x00FF0000,
-                                 0x0000FF00,
-                                 0x000000FF,
-                                 0x00000000);
-  if (fb == NULL)
+  tx_width = width;
+  tx_height = height;
+  texture = SDL_CreateTexture (renderer,
+                               SDL_PIXELFORMAT_ARGB8888,
+                               SDL_TEXTUREACCESS_STREAMING,
+                               width, height);
+  if (texture == NULL)
     exitf (1, "%s\n", SDL_GetError());
 }
 
 void
 show ()
 {
-  SDL_Texture *texture = SDL_CreateTextureFromSurface (renderer, fb);
+  void *tx_pixels;
+  int tx_pitch;
+
+  SDL_LockTexture (texture, NULL, &tx_pixels, &tx_pitch);
+  memcpy (tx_pixels, pixels, tx_width * tx_height * 4);
+  SDL_UnlockTexture (texture);
   SDL_RenderCopy (renderer, texture, NULL, NULL);
   SDL_RenderPresent (renderer);
-  SDL_DestroyTexture (texture);
 }
 
 int
@@ -291,31 +297,13 @@ send_input_event (int input, int mod)
   send_event (EV_INPUT, x, y, state, input);
 }
 
-int command_event_type;
-
-void
-execute_command (struct command *cmd)
-{
-  if (verbose)
-    printf ("C %d\n", cmd->op);
-
-  switch (cmd->op)
-    {
-    case OP_CONF:
-      configure (cmd->arg1, cmd->arg2);
-      break;
-    case OP_SHOW:
-      show ();
-      break;
-    }
-}
-
-void
+bool
 handle_event (SDL_Event *e)
 {
   if (e->type == SDL_QUIT)
     {
       send_event (EV_QUIT, 0, 0, 0, 0);
+      return true;
     }
   else if (e->type == SDL_WINDOWEVENT
            && e->window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
@@ -330,12 +318,15 @@ handle_event (SDL_Event *e)
       if (e->text.text[0] == '~' || e->text.text[0] == '@' || e->text.text[0] == '|')
         mod &= ~KMOD_RALT;
       send_input_event (e->text.text[0], mod);
+      return true;
     }
   else if (e->type == SDL_KEYDOWN)
     {
       int input = input_from_code (e->key.keysym.sym, e->key.keysym.mod);
-      if (input != 0)
+      if (input != 0) {
           send_input_event (input, e->key.keysym.mod);
+          return true;
+      }
     }
   else if (e->type == SDL_MOUSEBUTTONDOWN)
     {
@@ -346,8 +337,10 @@ handle_event (SDL_Event *e)
         input = -EV_BTN_2_PRESS;
       else if (e->button.button == SDL_BUTTON_RIGHT)
         input = -EV_BTN_3_PRESS;
-      if (input)
+      if (input) {
         send_input_event (input, SDL_GetModState());
+        return true;
+      }
     }
   else if (e->type == SDL_MOUSEBUTTONUP)
     {
@@ -358,8 +351,10 @@ handle_event (SDL_Event *e)
         input = -EV_BTN_2_RELEASE;
       else if (e->button.button == SDL_BUTTON_RIGHT)
         input = -EV_BTN_3_RELEASE;
-      if (input)
+      if (input) {
         send_input_event (input, SDL_GetModState());
+        return true;
+      }
     }
   else if (e->type == SDL_MOUSEWHEEL)
     {
@@ -368,45 +363,25 @@ handle_event (SDL_Event *e)
         input = -EV_SCR_UP;
       else if (e->wheel.y < 0)
         input = -EV_SCR_DOWN;
-      if (input)
+      if (input) {
         send_input_event (input, SDL_GetModState());
-    }
-  else if (e->type == command_event_type)
-    {
-      struct command cmd;
-      cmd.op = e->wheel.which;
-      cmd.arg1 = e->wheel.x;
-      cmd.arg2 = e->wheel.y;
-      cmd.arg3 = e->wheel.direction;
-      execute_command (&cmd);
+        return true;
+      }
     }
 
-  // XXX - mouse events
+  return false;
 }
 
 int
-read_commands (void *unused)
+read_command (struct command *cmd)
 {
-  struct command cmd;
-
-  while (1)
-    {
-      int n = read (commands_in_fd, &cmd, sizeof (cmd));
-      if (n == 0)
-        exitf (0, "done");
-      else if (n < 0)
-        exitf (1, "read: %m");
-      else if (n != sizeof (cmd))
-        exitf (1, "short read: %d", n);
-
-      SDL_Event event;
-      event.type = command_event_type;
-      event.wheel.which = cmd.op;
-      event.wheel.x = cmd.arg1;
-      event.wheel.y = cmd.arg2;
-      event.wheel.direction = cmd.arg3;
-      SDL_PushEvent (&event);
-    }
+  int n = read (commands_in_fd, cmd, sizeof (*cmd));
+  if (n == 0)
+    exitf (0, "done");
+  else if (n < 0)
+    exitf (1, "read: %m");
+  else if (n != sizeof (*cmd))
+    exitf (1, "short read: %d", n);
 }
 
 void
@@ -485,14 +460,39 @@ main (int argc, char **argv)
 
   setup_window ();
 
-  command_event_type = SDL_RegisterEvents (1);
-  SDL_CreateThread (read_commands, "command pump", NULL);
-
   while (1)
     {
+      struct command cmd;
       SDL_Event event;
-      if (!SDL_WaitEvent (&event))
-        exitf (1, "Error while reading SDL events: %s\n", SDL_GetError());
-      handle_event (&event);
+      int n;
+
+      read_command (&cmd);
+
+      if (cmd.op == OP_CONF) {
+        configure (cmd.arg1, cmd.arg2);
+      } else if (cmd.op == OP_SHOW_AND_GET) {
+        // Eat pending key repeat events to slow things down a bit.
+        // Otherwise my six year old laptop can't keep up, especially
+        // when it runs on battery...
+        SDL_PumpEvents ();
+        while (true) {
+          n = SDL_PeepEvents (&event, 1,
+                              SDL_PEEKEVENT, SDL_KEYDOWN, SDL_KEYDOWN);
+          if (n > 0 && event.type == SDL_KEYDOWN && event.key.repeat) {
+            SDL_PeepEvents (&event, 1,
+                            SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
+          } else
+            break;
+        }
+
+        show ();
+
+        do {
+          if (!SDL_WaitEvent (&event))
+            exitf (1, "Error while reading SDL events: %s\n", SDL_GetError());
+        } while (!handle_event (&event));
+      } else {
+        exitf (1, "Unknown command: %d\n", cmd.op);
+      }
     }
 }

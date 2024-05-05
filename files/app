@@ -217,7 +217,7 @@ that by maintaining a pointer to the pointer of the current instance.
   (mem/free (app/app-mode inst))
   (book/funtab-unref (app/-app-functions inst))
   (mem/free inst))
-  
+
 (fun (app/quit inst)
   (var c (ctxt/app context))
   (var ptr (loc (app/-ac-apps c)))
@@ -398,7 +398,7 @@ application.
     (set (app/app-focus app) (not (app/-ac-shell-has-focus c)))
     (app/-paint-if-needed shell)
     (app/-paint-if-needed app)
-    (gfx/show)
+    (gfx/show-and-get)
     (mem event gfx/event)
     (gfx/read-event event)
     (if ((== (gfx/ev-type event) 1)
