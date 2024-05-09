@@ -1264,7 +1264,7 @@ Querying the ink for an index is easy.
                      (set t (+ t 1)))
                    (set (u8 t) 0))
                   (else
-                   (while (tx/get-u8 state))))                   
+                   (while (tx/get-u8 state))))
               (set tag-index (+ tag-index 1)))))
 
         ((== op tx/ink-tint)
@@ -2634,6 +2634,7 @@ keep the viewer in about the right possition.
   inst-draw-tag-index)
 
 (fun (tx/init inst name offset)
+  (app/instance-init inst)
   (set (tx/inst-y-off inst) offset)
   (tx/start-session)
   (tx/process-file name)
@@ -2641,19 +2642,19 @@ keep the viewer in about the right possition.
   (set (tx/inst-y-max inst) (tx/is-y (tx/c-ink-state (ctxt/tx context))))
   (set (tx/inst-draw-tag-index inst) 0))
 
-(fun (tx/cleanup inst)
-  (tx/free-ink (tx/inst-ink inst)))
+(fun (tx/fini inst)
+  (tx/free-ink (tx/inst-ink inst))
+  (app/instance-fini inst))
 
 (fun (tx/paint inst)
-  (var w (app/app-width inst))
-  (var h (app/app-height inst))
-  (gfx/draw-init 0 0 w h)
-  (tx/draw-ink (tx/inst-ink inst) (/ (- w 700) 2) (- (tx/inst-y-off inst)) (tx/inst-draw-tag-index inst)))
+  (tx/draw-ink (tx/inst-ink inst)
+               (/ (- (ui/elt-width inst) 700) 2) (- (tx/inst-y-off inst))
+               (tx/inst-draw-tag-index inst)))
 
 (fun (tx/input inst state input x y)
   (var old-off (tx/inst-y-off inst))
-  (var w (app/app-width inst))
-  (var h (app/app-height inst))
+  (var w (ui/elt-width inst))
+  (var h (ui/elt-height inst))
   (mem tagbuf 255)
   (if ((== input gfx/ev-key-down)
        (set (tx/inst-y-off inst) (+ (tx/inst-y-off inst) 20)))
@@ -2669,10 +2670,10 @@ keep the viewer in about the right possition.
        (set (tx/inst-y-off inst) (- (tx/inst-y-off inst) 500)))
       ((== input ch/spc)
        (set (tx/inst-draw-tag-index inst) (- 1 (tx/inst-draw-tag-index inst)))
-       (app/paint-needed inst))
+       (ui/paint-needed inst))
       ((and (>= input ch/d1) (<= input ch/d9))
        (set (tx/inst-draw-tag-index inst) 0)
-       (app/paint-needed inst)
+       (ui/paint-needed inst)
        (set (u8 tagbuf) 0)
        (tx/query-ink-index (tx/inst-ink inst) (/ (- w 700) 2) (- (tx/inst-y-off inst)) (- input ch/d1) tagbuf)
        (if ((u8 tagbuf)
@@ -2688,11 +2689,11 @@ keep the viewer in about the right possition.
        (set (tx/inst-y-off inst) (tx/inst-y-max inst))))
   (if ((!= old-off (tx/inst-y-off inst))
        (set (tx/inst-draw-tag-index inst) 0)
-       (app/paint-needed inst))))
-       
-(app/functions tx/funcs
+       (ui/paint-needed inst))))
+
+(app/instance-functions tx/funcs
   tx/init
-  tx/cleanup
+  tx/fini
   tx/paint
   tx/input)
 
@@ -2701,7 +2702,7 @@ keep the viewer in about the right possition.
   (var old-app (app/find name "tx"))
   (if (old-app
        (set offset (tx/inst-y-off old-app))))
-  (app/launch (app/new tx/instance tx/funcs name offset) name "tx"))
+  (app/launch (ui/new tx/instance tx/funcs name offset) name "tx"))
 @
 
 Happy [emph type] [bold setting]!

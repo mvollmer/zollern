@@ -225,6 +225,10 @@
     (set pixels (+ pixels skip))
     (set j (+ j 1))))
 
+(fun (gfx/clear)
+  (var gfx (ctxt/gfx context))
+  (gfx/rect (gfx/gfx-win-x gfx) (gfx/gfx-win-y gfx) (gfx/gfx-win-w gfx) (gfx/gfx-win-h gfx) (gfx/color 255 255 255)))
+
 (struct gfx/font
   (font-glyphs  u64)
   (font-ascent  s8)

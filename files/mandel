@@ -72,7 +72,7 @@ the outside of the set.
     <compute the squares of the real and imaginary parts>
     (if (<the magnitude of x is larger than 2>
          (goto out)))
-    <compute x^2 + c>    
+    <compute x^2 + c>
     (set i (+ i 1)))
   (label out)
   i)
@@ -130,9 +130,11 @@ the zooming.
 <define the [code mandel/render] function>
 
 (fun (mandel/init inst)
+  (app/instance-init inst)
   <init zoom>)
 
-(fun (mandel/cleanup inst))
+(fun (mandel/fini inst)
+  (app/instance-fini inst))
 
 (fun (mandel/paint inst)
   (mandel/render inst))
@@ -140,19 +142,19 @@ the zooming.
 (fun (mandel/input inst state input event-x event-y)
   (if ((== input gfx/ev-key-backspace)
        <zoom out>
-       (app/paint-needed inst))
+       (ui/paint-needed inst))
       ((== input gfx/ev-button-1-press)
        <zoom in>
-       (app/paint-needed inst))))
-  
-(app/functions mandel/funcs
+       (ui/paint-needed inst))))
+
+(app/instance-functions mandel/funcs
   mandel/init
-  mandel/cleanup
+  mandel/fini
   mandel/paint
   mandel/input)
 
 (fun (mandel/main)
-  (app/launch (app/new mandel/instance mandel/funcs) "mandel" "main"))
+  (app/launch (ui/new mandel/instance mandel/funcs) "mandel" "main"))
 
 @
 Zooming is pretty straightforward. It just looks like a lot of
@@ -171,8 +173,8 @@ of [code (mandel/cur-re-min inst)].
 @= <zoom in>
 (var re-len (f- (mandel/cur-re-max inst) (mandel/cur-re-min inst)))
 (var im-len (f- (mandel/cur-im-max inst) (mandel/cur-im-min inst)))
-(var x (f+ (mandel/cur-re-min inst) (f/ (f* (i->f event-x) re-len) (i->f (app/app-width inst)))))
-(var y (f+ (mandel/cur-im-min inst) (f/ (f* (i->f event-y) im-len) (i->f (app/app-height inst)))))
+(var x (f+ (mandel/cur-re-min inst) (f/ (f* (i->f event-x) re-len) (i->f (ui/elt-width inst)))))
+(var y (f+ (mandel/cur-im-min inst) (f/ (f* (i->f event-y) im-len) (i->f (ui/elt-height inst)))))
 (var dx2 (f/ re-len (i->f 4)))
 (var dy2 (f/ im-len (i->f 4)))
 (set (mandel/cur-re-min inst) (f- x dx2))
@@ -209,8 +211,8 @@ math and structure accesses.
   (var re-max (mandel/cur-re-max inst))
   (var im-min (mandel/cur-im-min inst))
   (var im-max (mandel/cur-im-max inst))
-  (var re (f+ re-min (f* (i->f x) (f/ (f- re-max re-min) (i->f (app/app-width inst))))))
-  (var im (f+ im-min (f* (i->f y) (f/ (f- im-max im-min) (i->f (app/app-height inst))))))
+  (var re (f+ re-min (f* (i->f x) (f/ (f- re-max re-min) (i->f (ui/elt-width inst))))))
+  (var im (f+ im-min (f* (i->f y) (f/ (f- im-max im-min) (i->f (ui/elt-height inst))))))
   (var c (- 255 (mandel/iter re im 255)))
   (gfx/put-pixel x y (gfx/color (* c 15) (* c 1) (* c 32))))
 
@@ -244,7 +246,7 @@ pixels. Easy enough.
 @= <define the [code mandel/render] function>
 (fun (mandel/render-h-line inst x1 x2 y)
   (var x x1)
-  (while (<= x x2) 
+  (while (<= x x2)
     (mandel/render-point inst x y)
     (set x (+ x 1))))
 
@@ -335,7 +337,7 @@ to get it all started, we need to render one explicitly.
   (mandel/fill-rect inst x1 x2 y1 y2))
 
 (fun (mandel/render inst)
-  (mandel/render-rect inst 0 (- (app/app-width inst) 1) 0 (- (app/app-height inst) 1)))
+  (mandel/render-rect inst 0 (- (ui/elt-width inst) 1) 0 (- (ui/elt-height inst) 1)))
 
 @
 And that's the whole story.

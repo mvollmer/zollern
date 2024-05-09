@@ -91,7 +91,7 @@ N steps, etc.
 
 (fun (soko/set-box inst x y b)
   (set (soko/boxes inst (+ x (* y soko/width))) b))
-  
+
 (fun (soko/paint-dozer x y dir)
   (if ((== dir soko/dir-up)
        (gfx/rect (+ x 10) (+ y 7) 10 20 (gfx/color 185 155 20))
@@ -135,7 +135,6 @@ N steps, etc.
   (gfx/rect (+ (* x 30) 24) (+ (* y 30) 24) 4 4 (gfx/color 0 0 0)))
 
 (fun (soko/paint-level inst)
-  (gfx/rect 10 10 600 600 (gfx/color 255 255 255))
   (var y 0)
   (while (< y soko/height)
     (var x 0)
@@ -357,19 +356,21 @@ N steps, etc.
   (soko/find-target-reaching inst))
 
 (fun (soko/init inst levels)
+  (app/instance-init inst)
   (set (soko/move-history inst) (sys/page-get))
   (set (soko/levels inst) levels)
   (set (soko/cur-level inst) 0)
   (soko/init-level inst))
 
-(fun (soko/cleanup inst)
-  (sys/page-put (soko/move-history inst)))
+(fun (soko/fini inst)
+  (sys/page-put (soko/move-history inst))
+  (app/instance-fini inst))
 
 (fun (soko/paint inst)
   (soko/paint-level inst))
 
 (fun (soko/input inst state input x y)
-  (app/paint-needed inst)
+  (ui/paint-needed inst)
   (if ((== state 0)
        (if ((== input ch/q)
             (app/quit inst))
@@ -403,14 +404,14 @@ N steps, etc.
                  (set (soko/cur-level inst) (+ (soko/cur-level inst) 1))
                  (soko/init-level inst))))))))
 
-(app/functions soko/funcs
+(app/instance-functions soko/funcs
   soko/init
-  soko/cleanup
+  soko/fini
   soko/paint
   soko/input)
 
 (fun (soko/launch levels)
-  (app/launch (app/new soko/instance soko/funcs levels)  "soko" "main"))
+  (app/launch (ui/new soko/instance soko/funcs levels)  "soko" "main"))
 
 (data soko/level_0
   (0

@@ -3,20 +3,14 @@
 Applications are, like everything else, very simple in Zollern:
 They are purely event-driven, and can draw into a single rectangular
 area of the screen. There is no multi-threading, and no background
-processing. There is just a global event loop. If an application
+processing. There is just a global event loop. If an
+application
 takes a long time to process an event (like computing the Mandelbrot
 set), this will block everything else and there is no way to
 interrupt that. If you code an infinite loop by accident, your
 only way out is to restart all of Zollern from the outside.
 
 This is not great, obviously, but sufficient for now.
-
-An application is defined by a set of functions; one for painting,
-one for processing events, and a couple more. These functions
-are called at appropriate times by the global event loop.
-
-The state of an application is stored in its [emph instance] structure,
-which is passed to the application functions on every call.
 
 Applications have a [emph name] and a [emph mode]. The name is
 usually the name of a book, and the mode is usually one of "main",
@@ -30,16 +24,15 @@ the Soko game, there will be an application named "soko" in mode
 
 @* Application instances
 
-Application instances use a simple form of [emph object orientation].
-Each instance structure should be derived from [code app/instance]
-and needs to provide implementations of the application methods
-in a table created by [code app/functions].
+Each application instance structure is a [code ui/element] and
+should be derived from [code app/instance]. It needs to provide
+implementations of the element methods in a table created by
+[code app/instance-functions].
 
-Deriving from [code app/instance] is done by simply defining a
-new structure type that has [code app/instance] as its first
-element. Then a pointer to such an instance is also a pointer
-to a [code app/instance] and can be used with the functions in
-this book.
+Deriving from [code app/instance] is done by defining a new structure
+type that has [code app/instance] as its first element. Then
+a pointer to such an instance is also a pointer to a [code app/instance]
+and can be used with the functions in this book.
 
 For example:
 @c
@@ -51,10 +44,12 @@ We also need to define the following functions for our new application,
 and collect them in a table.
 @c
 (fun (my/init inst)
+  (app/instance-init inst)
   (set (my/my-data inst) (mem/alloc 100)))
 
-(fun (my/cleanup inst)
-  (mem/free (my/my-data inst)))
+(fun (my/fini inst)
+  (mem/free (my/my-data inst))
+  (app/instance-fini inst))
 
 (fun (my/paint inst)
   (gfx/rect 10 10 10 10 (gfx/color 255 0 0)))
@@ -62,9 +57,9 @@ and collect them in a table.
 (fun (my/input inst state input)
   ...)
 
-(app/functions my/funcs
+(app/instance-functions my/funcs
   my/init
-  my/cleanup
+  my/fini
   my/paint
   my/input)
 @
@@ -72,7 +67,7 @@ and collect them in a table.
 With these, we can launch our application by calling [code app/launch].
 @c
 (fun (my/main)
-  (app/launch (app/new my/instance my/funcs) "my" "main"))
+  (app/launch (ui/new my/instance my/funcs) "my" "main"))
 @
 This will allocate [code my/instance] bytes of memory and initialize
 them to become the instance structure of the new application.
@@ -85,343 +80,210 @@ state is needed to draw the application. It can also treat its
 argument as a [code app/instance] structure and access a couple
 of [emph its] fields.
 
-Let's look at the actual definition of [code app/instance]:
+Let's look at the actual definition of [code app/instance]. As
+mentioned, it's a [code ui/element], and it has two extra fields
+for the name and mode.
 
 @=
 (struct app/instance
-  -app-link
-  -app-functions
-  -app-needs-paint
-  -app-x
-  -app-y
-
+  (:base ui/element)
   app-name
-  app-mode
-  app-focus
-  app-width
-  app-height)
-@
+  app-mode)
 
-The fields starting with "-" are meant to be private to this book.
-You will see below how they are used. But application functions
-are expected to look at the remaining fields. For example, [code
-app/app-width] and [code app/app-height] contain the size of
-the drawing area that the application is supposed to draw itself
-into and the paint function is supposed to take them into account.
-But the [code app/-app-x] and [code app/-app-y] fields are private,
+(fun (app/instance-init inst)
+  (ui/element-init inst)
+  (set (app/app-name inst) 0)
+  (set (app/app-mode inst) 0))
 
-Here is how painting works: Each application has a flag that says
-whether or not the screen is up-to-date with respect to the state
-of the application. If not, the event loop will call the paint
-function of that application. The paint function in turn then
-uses functions from the [book gfx] book to draw whatever it wants
-in the rectangle bounded by (0, 0) and ([emph w, h]).
-
-The "painting needed" flag is maintained by some of the functions
-in this book. For example, [code app/launch] will initialize
-it to true, and switching to an application will also automatically
-cause that application to be painted. But if an application needs
-to be painted after an input event, its input function needs
-to explicitly set that flag.
-
-This is done with the [code app/paint-needed] function:
-@=
-(fun (app/paint-needed inst)
-  (set (app/-app-needs-paint inst) 1))
-
-@* Application functions
-
-The functions of an application are collected with [code book/funtab].
-This allows us to maintain the reference count of the book that
-the functions are defined in.
-
-Imagine what would otherwise happen when a book is recompiled.
-Say that a application is running that has been launched by the
-"my" book. When the "my" book is changed and recompiled, the
-new book instance will replace the old one in the global lists
-of books. Ordinarily this will remove the old instance from memory.
-But the running application still uses the functions in the old
-instance of the book, and any request to paint it, or even to
-quit it, will result in a crash.
-
-We could be careful when compiling a book and make sure to first
-quit any application that uses its code. But its hard to figure
-that out for books that are used as indirect dependencies of
-other books. So instead, an application calls [code book/ref]
-for the book that launches it, and prevents that book from being
-prematurely removed from memory.
-
-The [code book/funtab] macro makes it easy to collect a bunch
-of functions together with a pointer to the book instance that
-they are defined in.
-
-But instead of telling applications to use [code book/funtab]
-directly, we wrap it up in our own [code app/functions] macro.
-This allows us to give names to the individual functions, and
-also causes compilation to fail if an application forgets one.
-
-@=
-(struct app/-functab
-  -ft-book
-  -ft-init
-  -ft-cleanup
-  -ft-paint
-  -ft-input)
-
-(def (app/functions ?name ?init ?cleanup ?paint ?input)
-  (book/funtab ?name ?init ?cleanup ?paint ?input))
-
-@* Launching and quitting applications
-
-All applications are maintained via a linked list in the [code
-ctxt/app] part of the global context. The first entry in that
-list receives (almost) all input events.
-
-@=
-(struct app/context
-  -ac-apps
-  -ac-shell
-  -ac-shell-has-focus)
-
-(fun (app/init)
-  (var c (mem/alloc app/context))
-  (set (ctxt/app context) c)
-  (set (app/-ac-apps c) 0)
-  (set (app/-ac-shell c) 0)
-  (set (app/-ac-shell-has-focus c) 0))
-@
-Here is a simple function to find an application by name and mode.
-@=
-(fun (app/find name mode)
-  (var c (ctxt/app context))
-  (var inst (app/-ac-apps c))
-  (while inst
-    (if ((and (str/eq (app/app-name inst) name)
-              (str/eq (app/app-mode inst) mode))
-         (goto done)))
-    (set inst (app/-app-link inst)))
-  (label done)
-  inst)
-@
-We start with the implementation of quitting an application, because
-launching a new application will first quit an existing application
-with the same name and mode.
-
-The [code app/quit] function has to walk the list, but it also
-has to modify it when removing the instance structure. It does
-that by maintaining a pointer to the pointer of the current instance.
-@=
-(fun (app/-free inst)
-  ((app/-ft-cleanup (app/-app-functions inst)) inst)
+(fun (app/instance-fini inst)
   (mem/free (app/app-name inst))
   (mem/free (app/app-mode inst))
-  (book/funtab-unref (app/-app-functions inst))
-  (mem/free inst))
+  (ui/element-fini inst))
 
-(fun (app/quit inst)
-  (var c (ctxt/app context))
-  (var ptr (loc (app/-ac-apps c)))
-  (while (u64 ptr)
-    (if ((== (u64 ptr) inst)
-         (set (u64 ptr) (app/-app-link inst)))
-        (else
-         (set ptr (loc (app/-app-link (u64 ptr)))))))
-  (if ((== (app/-ac-shell c) inst)
-       (set (app/-ac-shell c) 0)))
-  (if ((app/-ac-apps c)
-       (app/paint-needed (app/-ac-apps c))))
-  (app/-free inst))
+(def (app/instance-functions ?name ?init ?fini ?paint ?input)
+  (ui/element-functions ?name ?init ?fini ?paint ?input))
 @
 
-Launching has to allocate the new instance structure, initialize
-it, and link it into the list.
+@* The shell
 
-Launching is split into two steps: creating the new instance
-with [code app/new] and actually linking it into the list so
-that the event loop becomes aware of it.
-
-This is done so that we can invent more ways to create instances
-and more ways to launch them, without getting into a combinatorial
-explosion of create-and-launch functions.
-
-(Indeed, there is a second launch function below. And you can
-see that this is very close to some general object orientation
-support in Z1 itself, where the instance creation sould be done
-by the language, but launching an app is of course our job here.)
-
-Often, the initialization function needs some arguments, and we
-make that possible by passing five generic ones from the call
-to [code app/new] to the "init" function. Because Z1 doesn't
-check anything, you can just pass as many as you need to [code
-app/new] and define your init function to expect the same amount
-(up to a maximum of five). No type checker will yell at you.
+In addition to the applications, there is also the [emph shell].
+This is a special application, derived from [code app/shell-instance].
+It will always be displayed at the right in a narrow column and
+will receive the global input events and is responsible for links.
+(And it will be renamed "the navigator" soon, I guess.)
 
 @=
-(fun (app/new size functions arg1 arg2 arg3 arg4 arg5)
-  (var inst (mem/alloc size))
-  (book/funtab-ref functions)
-  (set (app/-app-functions inst) functions)
-  (set (app/-app-needs-paint inst) 0)
-  (set (app/-app-x inst) 0)
-  (set (app/-app-y inst) 0)
-  (set (app/app-width inst) 0)
-  (set (app/app-height inst) 0)
-  (set (app/app-focus inst) 0)
-  (set (app/app-name inst) 0)
-  (set (app/app-mode inst) 0)
-  ((app/-ft-init functions) inst arg1 arg2 arg3 arg4 arg5)
+(struct app/shell-instance
+  (:base app/instance))
+
+(struct app/shell-instance-function-table-type
+  (:base ui/element-function-table-type)
+  -sft-global-input
+  -sft-goto-link)
+
+(fun (app/shell-instance-init inst)
+  (app/instance-init inst))
+
+(fun (app/shell-instance-fini inst)
+  (app/instance-fini inst))
+
+(def (app/shell-functions ?name ?init ?cleanup ?paint ?input ?global-input ?goto-link)
+  (book/funtab ?name ?init ?cleanup ?paint ?input ?global-input ?goto-link))
+@
+
+@* The root element
+
+All applications are maintained as sub-elements of the single,
+global root element. We derive a new kind of root element that
+implements all the sate and logic needed for switching between
+applications and managing the keyboard focus.
+
+@=
+(struct app/root
+  (:base ui/root-element)
+  r-current
+  r-shell)
+
+(fun (app/root-init inst)
+  (ui/root-element-init inst)
+  (set (app/r-current inst) 0)
+  (set (app/r-shell inst) 0))
+
+(fun (app/root-fini inst)
+  (ui/root-element-fini inst))
+
+(fun (app/root-paint inst))
+
+(fun (app/root-input inst state input x y))
+
+(fun (app/root-global-input inst state input x y)
+  (var app (app/r-current inst))
+  (var shell (app/r-shell inst))
+  ((app/-sft-global-input (ui/-elt-functions shell)) shell app state input x y))
+
+(ui/root-element-functions app/root-function-table
+  app/root-init
+  app/root-fini
+  app/root-paint
+  app/root-input
+  app/root-global-input)
+
+(fun (app/init)
+  (ui/set-root (ui/new app/root app/root-function-table)))
+@
+
+All applications occupy the same area of the screen, but only
+the current one is visible. Switching between applications just
+hides and shows them, as necessary, and keeps the focus updated.
+
+@=
+(fun (app/switch-to-inst inst)
+  (var root (ui/root))
+  (ui/show inst)
+  (if ((app/r-current root)
+       (ui/hide (app/r-current root))))
+  (set (app/r-current root) inst)
+  (ui/set-focus inst))
+@
+
+Quitting an application removes it from the root and frees the
+instance with [code ui /free]. Most of the work consists of finding
+the next element that should get the keyboard focus.
+
+@=
+(fun (app/quit inst)
+  (var root (ui/root))
+  (ui/remove inst)
+  (if ((== (app/r-shell root) inst)
+       (set (app/r-shell root) 0)
+       (ui/set-focus (app/r-current root)))
+      (else
+       (if ((== (app/r-current root) inst)
+            (set (app/r-current root) 0)
+            (var n (ui/-elt-subs root))
+            (while (and n (== n (app/r-shell root)))
+              (set n (ui/-elt-next n)))
+            (if (n
+                 (app/switch-to-inst n)))))))
+  (ui/free inst))
+@
+
+And here is a function for finding an application instance for
+the given name and mode, and a convencient function fo switching
+to an application by name and mode.
+
+@=
+(fun (app/find name mode)
+  (var root (ui/root))
+  (var inst (ui/-elt-subs root))
+  (while inst
+    (if ((and (str/eq (app/app-name inst) name)
+              (str/eq (app/app-mode inst) mode)
+              (!= inst (app/r-shell root)))
+         (goto done)))
+    (set inst (ui/-elt-next inst)))
+  (label done)
   inst)
 
+(fun (app/switch name mode)
+  (var inst (app/find name mode))
+  (if (inst
+       (app/switch-to-inst inst))))
+@
+
+We also need the [code app/focus-shell] function for switching
+the keyboard focus between the current application and the shell.
+It is used to implement [code C-x C-x], for example.
+
+@=
+(fun (app/focus-shell flag)
+  (var root (ui/root))
+  (if (flag
+       (ui/set-focus (app/r-shell root)))
+      (else
+       (ui/set-focus (app/r-current root)))))
+
+@* Launching
+
+Launching an application is pretty easy now: Just add it to our
+root element with [code ui/add] and switch to it.
+
+@=
 (fun (app/-init-name-and-mode inst name mode)
   (set (app/app-name inst) (str/dup name))
   (set (app/app-mode inst) (str/dup mode)))
-
-(fun (app/-init-window inst x y w h)
-  (set (app/-app-x inst) x)
-  (set (app/-app-y inst) y)
-  (set (app/app-width inst) w)
-  (set (app/app-height inst) h))
 
 (fun (app/launch inst name mode)
   (var old (app/find name mode))
   (if (old
        (app/quit old)))
-  (var gfx (ctxt/gfx context))
   (app/-init-name-and-mode inst name mode)
-  (app/-init-window inst 0 0 (gfx/gfx-screen-height gfx) (gfx/gfx-screen-height gfx))
-  (app/paint-needed inst)
-  (set (app/-app-link inst) (app/-ac-apps (ctxt/app context)))
-  (set (app/-ac-apps (ctxt/app context)) inst))
+  (var root (ui/root))
+  (ui/add inst root 0 0 (ui/elt-height root) (ui/elt-height root))
+  (app/switch-to-inst inst))
 @
-To switch to an application, its instance is simply moved to the
-front of the list.
-@=
-(fun (app/switch name mode)
-  (var c (ctxt/app context))
-  (var ptr (loc (app/-ac-apps c)))
-  (var found 0)
-  (while (u64 ptr)
-    (var app (u64 ptr))
-    (if ((and (str/eq (app/app-name app) name)
-              (str/eq (app/app-mode app) mode))
-         (set (u64 ptr) (app/-app-link app))
-         (set (app/-app-link app) (app/-ac-apps c))
-         (set (app/-ac-apps c) app)
-         (app/paint-needed app)
-         (set found 1)
-         (goto done))
-        (else
-         (set ptr (loc (app/-app-link app))))))
-  (label done)
-  found)
 
-@* The shell
-
-There is a special application that has special duties: the shell.
-It is always visible in a small sidebar next to the current "real"
-application, and it also handles the global input events such
-as [code C-x q].
-
-The shell extends the function table of a normal application with
-two more entries: the "global input" function and the "goto link"
-function.
-
-It has its own launching function, [code app/launch-shell]. Unsurprisingly,
-the only call to this function is in the [book shell] book.
+Launching the shell is almost the same. It is placed in a different
+location of the screen, of course.
 
 @=
-(struct app/-shell-functab
-  (:base app/-functab)
-  -sft-global-input
-  -sft-goto-link)
-
-(def (app/shell-functions ?name ?init ?cleanup ?paint ?input ?global-input ?goto-link)
-  (book/funtab ?name ?init ?cleanup ?paint ?input ?global-input ?goto-link))
-
 (fun (app/launch-shell inst)
-  (var c (ctxt/app context))
-  (if ((app/-ac-shell c)
-       (app/quit (app/-ac-shell c))))
-  (var gfx (ctxt/gfx context))
+  (var root (ui/root))
+  (if ((app/r-shell root)
+       (app/quit (app/r-shell root))))
   (app/-init-name-and-mode inst "shell" "main")
-  (app/-init-window inst
-                    (gfx/gfx-screen-height gfx) 0
-                    (- (gfx/gfx-screen-width gfx) (gfx/gfx-screen-height gfx))
-                    (gfx/gfx-screen-height gfx))
-  (app/paint-needed inst)
-  (set (app/-ac-shell c) inst))
+  (ui/add inst root
+          (ui/elt-height root) 0
+          (- (ui/elt-width root) (ui/elt-height root)) (ui/elt-height root))
+  (set (app/r-shell root) inst)
+  (ui/set-focus inst))
 
+@* Links
+
+Requests to navigate to a link are simply handed to the current shell.
+
+@=
 (fun (app/goto-link link)
-  (var c (ctxt/app context))
-  (if ((var shell (app/-ac-shell c))
-       ((app/-sft-goto-link (app/-app-functions shell)) shell link))))
-@
-Since there are two applications on the screen at all times, we
-need to decide which one should get input events. This is done
-with the [code app/focus-shell] function and a flag in the "app"
-context. The event loop looks at that flag to decide where to
-deliver input events to.
-
-@=
-(fun (app/focus-shell flag)
-  (var c (ctxt/app context))
-  (set (app/-ac-shell-has-focus c) flag)
-  (if ((app/-ac-shell c)
-       (app/paint-needed (app/-ac-shell c))))
-  (if ((app/-ac-apps c)
-       (app/paint-needed (app/-ac-apps c)))))
-
-@* Event loop
-
-The event loop is a literal loop that reads an event with [code
-gfx/read-event], dispatches it to the current application, and
-repeats. It only stops when there are no applications left, or
-when the shell has quit.
-
-Most events are input events that are passed on directly to the
-current application, but some are [emph global input events].
-The event loop intercepts the [code C-x] key itself and passes
-the next input event to the shell. For example, typing [code
-C-x e] will cause the event for [code e] to be passed to the
-[emph global input] function of the shell instance. That function
-will then open the editor for the source code of the current
-application.
-
-@=
-(fun (app/-paint-if-needed inst)
-  (if ((app/-app-needs-paint inst)
-       (gfx/set-window (app/-app-x inst) (app/-app-y inst) (app/app-width inst) (app/app-height inst))
-       ((app/-ft-paint (app/-app-functions inst)) inst)
-       (set (app/-app-needs-paint inst) 0))))
-
-(fun (app/loop)
-  (var c (ctxt/app context))
-  (var c-x-prefix 0)
-  (while (and (app/-ac-shell c) (app/-ac-apps c))
-    (var shell (app/-ac-shell c))
-    (var app (app/-ac-apps c))
-    (set (app/app-focus shell) (app/-ac-shell-has-focus c))
-    (set (app/app-focus app) (not (app/-ac-shell-has-focus c)))
-    (app/-paint-if-needed shell)
-    (app/-paint-if-needed app)
-    (gfx/show-and-get)
-    (mem event gfx/event)
-    (gfx/read-event event)
-    (if ((== (gfx/ev-type event) 1)
-         (sys/exit 0))
-        ((== (gfx/ev-type event) 3)
-         (gfx/resize (gfx/ev-x event) (gfx/ev-y event)))
-        ((== (gfx/ev-type event) 2)
-         (var state (gfx/ev-state event))
-         (var input (gfx/ev-input event))
-         (var x (gfx/ev-x event))
-         (var y (gfx/ev-y event))
-         (if ((and (not c-x-prefix) (== state gfx/ev-state-control) (== input ch/x))
-              (set c-x-prefix 1))
-             (else
-              (var target (if ((app/app-focus shell) shell) (else app)))
-              (if (c-x-prefix
-                   ((app/-sft-global-input (app/-app-functions shell)) shell target state input x y))
-                  (else
-                   ((app/-ft-input (app/-app-functions target)) target state input x y)))
-              (set c-x-prefix 0)))))))
+  (var root (ui/root))
+  (if ((var shell (app/r-shell root))
+       ((app/-sft-goto-link (ui/-elt-functions shell)) shell link))))

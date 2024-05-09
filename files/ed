@@ -166,9 +166,9 @@ file can be larger than one page...
   (ed/textbuf-set-char (ed/buf ed) pos char)
   (if ((not (ed/dirty ed))
        (set (ed/dirty ed) 1)
-       (if ((var shell (app/-ac-shell (ctxt/app context)))
-            (app/paint-needed shell))))))
-  
+       (if ((var shell (app/r-shell (ui/root)))
+            (ui/paint-needed shell))))))
+
 (defset (ed/char ?ed ?pos) char
   (ed/set-char ?ed ?pos ?char))
 
@@ -199,11 +199,6 @@ file can be larger than one page...
 
 @* Display
 @=
-
-(fun (ed/clear ed)
-  (gfx/rect (ed/lft ed) (ed/top ed)
-            (- (ed/rgt ed) (ed/lft ed)) (- (ed/bot ed) (ed/top ed))
-            (gfx/color 255 255 255)))
 
 (fun (ed/paint-lines ed pos start-row n-rows focus)
   (var w (ed/col-width ed))
@@ -300,7 +295,6 @@ file can be larger than one page...
 (fun (ed/paint ed x y w h focus)
   (ed/resize ed x y w h)
   (ed/frame ed)
-  (ed/clear ed)
   (ed/paint-lines ed (ed/window-top ed) 0 (ed/rows ed) focus)
   (if ((ed/title ed)
        (ed/paint-status-line ed))))

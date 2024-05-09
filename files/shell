@@ -1,7 +1,7 @@
 @=
 
 (struct shell/instance
-  (:base app/instance)
+  (:base app/shell-instance)
   cur
   cur-name
   max
@@ -42,6 +42,7 @@
   ed-ed)
 
 (fun (shell/ed-init inst name rbuf)
+  (app/instance-init inst)
   (set (shell/ed-name inst) (str/dup name))
   (set (shell/ed-text inst) (ed/textbuf-new))
   (set (shell/ed-ed inst) (ed/new (shell/ed-name inst) (shell/ed-text inst)))
@@ -54,37 +55,38 @@
   (ed/textbuf-write-file (shell/ed-text inst) wbuf)
   (fs/commit wbuf (shell/ed-name inst))
   (set (ed/dirty (shell/ed-ed inst)) 0)
-  (app/paint-needed inst))
+  (ui/paint-needed inst))
 
 (fun (shell/ed-save inst)
   (if ((ed/dirty (shell/ed-ed inst))
        (shell/ed-write inst))))
 
 (fun (shell/ed-save-all)
-  (var app (app/-ac-apps (ctxt/app context)))
+  (var app (ui/-elt-subs (ui/root)))
   (while app
     (if ((str/eq (app/app-mode app) "ed")
          (shell/ed-save app)))
-    (set app (app/-app-link app))))
+    (set app (ui/-elt-next app))))
 
-(fun (shell/ed-cleanup inst)
+(fun (shell/ed-fini inst)
   (if ((ed/dirty (shell/ed-ed inst))
        (shell/ed-write inst)))
   (ed/free (shell/ed-ed inst))
   (ed/textbuf-free (shell/ed-text inst))
-  (mem/free (shell/ed-name inst)))
+  (mem/free (shell/ed-name inst))
+  (app/instance-fini inst))
 
 (fun (shell/ed-paint inst)
-  (ed/paint-with-border (shell/ed-ed inst) 0 0 (app/app-width inst) (app/app-height inst) (app/app-focus inst)))
+  (ed/paint-with-border (shell/ed-ed inst) 0 0 (ui/elt-width inst) (ui/elt-height inst) (ui/elt-has-focus inst)))
 
 (fun (shell/ed-input inst state input)
   (set (ed/title (shell/ed-ed inst)) (shell/ed-name inst))
-  (app/paint-needed inst)
+  (ui/paint-needed inst)
   (ed/input (shell/ed-ed inst) state input))
 
-(app/functions shell/ed-funcs
+(app/instance-functions shell/ed-funcs
   shell/ed-init
-  shell/ed-cleanup
+  shell/ed-fini
   shell/ed-paint
   shell/ed-input)
 
@@ -93,7 +95,7 @@
   (if ((app/switch name "ed")
        (begin))
       ((fs/open rbuf name)
-       (app/launch (app/new shell/ed-app shell/ed-funcs name rbuf) name "ed"))))
+       (app/launch (ui/new shell/ed-app shell/ed-funcs name rbuf) name "ed"))))
 
 (fun (shell/save name)
   (var inst (app/find name "ed"))
@@ -109,7 +111,8 @@
   (set (shell/output-ptr inst) (shell/output inst))
   (shell/capture-output "Shell keys:\n  RET - switch to app\n    e - edit source\n    r - restart\n    X - delete\n\nGlobal keys:\nC-x b - switch to shell\nC-x r - restart\nC-x e - edit source\nC-x q - quit\n\n  M-< - previous app\n  M-> - next app" inst))
 
-(fun (shell/init inst)
+(fun (shell/instance-init inst)
+  (app/shell-instance-init inst)
   (set (shell/cur inst) 0)
   (set (shell/cur-name inst) (mem/alloc 512))
   (set (u8 (shell/cur-name inst)) 0)
@@ -118,9 +121,10 @@
   (set (shell/create-textbuf inst) 0)
   (set (shell/create-ed inst) 0))
 
-(fun (shell/cleanup inst)
+(fun (shell/instance-fini inst)
   (mem/free (shell/output inst))
-  (mem/free (shell/cur-name inst)))
+  (mem/free (shell/cur-name inst))
+  (app/instance-fini inst))
 
 (fun (shell/compute-flags node buf)
   (var name (fs/node-name node))
@@ -135,7 +139,7 @@
                        ch/@)
                       (else ch/spc)))
   (set (u8 buf 2) (if ((and app bk
-                            (!= (app/-ft-book (app/-app-functions app)) bk))
+                            (!= (ui/-eltf-book (ui/-elt-functions app)) bk))
                        ch/#)
                       (else ch/spc)))
   (set (u8 buf 3) 0))
@@ -147,7 +151,7 @@
   (gfx/draw-string flags)
   (gfx/advance-to (+ x 25))
   (if ((>= (shell/cur inst) 0)
-       (if ((and (== index (shell/cur inst)) (app/app-focus inst))
+       (if ((and (== index (shell/cur inst)) (ui/elt-has-focus inst))
             (gfx/set-inverse 1)
             (str/cpy (shell/cur-name inst) node))))
       ((str/eq (shell/cur-name inst) node)
@@ -173,17 +177,17 @@
   (set (u64 nodes i) node)
   (set (u64 nodes (+ i 1)) 0))
 
-(fun (shell/paint inst)
+(fun (shell/instance-paint inst)
   (var x 0)
   (var y 0)
-  (var w (app/app-width inst))
-  (var h (app/app-height inst))
+  (var w (ui/elt-width inst))
+  (var h (ui/elt-height inst))
   (mem nodes (* 128 u64))
   (set (u64 nodes 0) 0)
   (book/reset-out-of-date)
   (fs/list shell/insert-node nodes)
   (gfx/draw-init x y w h)
-  (gfx/rect 0 0 2 (app/app-height inst) (gfx/color 0 0 0))
+  (gfx/rect 0 0 1 (ui/elt-height inst) (gfx/color 0 0 0))
   (gfx/set-font fonts/sans-l)
   (gfx/set-x (+ x 20))
   (gfx/mark-left)
@@ -195,7 +199,9 @@
     (set i (+ i 1)))
   (set (shell/max inst) i)
   (if ((shell/create-ed inst)
-       (ed/paint (shell/create-ed inst) (+ (gfx/get-left) 30) (gfx/get-y) 200 (gfx/get-line-height) (app/app-focus inst)))
+       (ed/paint (shell/create-ed inst)
+                 (+ (gfx/get-left) 30) (gfx/get-y) 200 (gfx/get-line-height)
+                    (ui/elt-has-focus inst)))
       (else
        (var xx (gfx/get-x))
        (gfx/advance-to (+ xx 25))
@@ -216,18 +222,19 @@
   ta-text)
 
 (fun (shell/text-init inst output)
+  (app/instance-init inst)
   (set (shell/ta-text inst) output))
 
-(fun (shell/text-cleanup inst)
-  (sys/page-put (shell/ta-text inst)))
+(fun (shell/text-fini inst)
+  (sys/page-put (shell/ta-text inst))
+  (app/instance-fini inst))
 
 (fun (shell/text-paint inst)
   (var x 4)
   (var y 4)
-  (var w (app/app-width inst))
-  (var h (app/app-height inst))
+  (var w (ui/elt-width inst))
+  (var h (ui/elt-height inst))
   (var str (shell/ta-text inst))
-  (gfx/rect 0 0 w h (gfx/color 255 255 255))
   (while (and (u8 str)
               (< y (- h 16)))
     (if ((== (u8 str) ch/nl)
@@ -242,9 +249,9 @@
 
 (fun (shell/text-input inst state input))
 
-(app/functions shell/text-funcs
+(app/instance-functions shell/text-funcs
   shell/text-init
-  shell/text-cleanup
+  shell/text-fini
   shell/text-paint
   shell/text-input)
 
@@ -266,7 +273,7 @@
             (shell/text-capture-output "no main function\n" output)))
        (book/unref book)))
   (if (fail
-       (app/launch (app/new shell/text-app shell/text-funcs output) "compile" "log"))
+       (app/launch (ui/new shell/text-app shell/text-funcs output) "compile" "log"))
       (else
        (sys/page-put output))))
 
@@ -275,8 +282,8 @@
             (not (app/switch (shell/cur-name inst) "main")))
        (shell/launch-book (shell/cur-name inst)))))
 
-(fun (shell/input inst state input)
-  (app/paint-needed inst)
+(fun (shell/instance-input inst state input)
+  (ui/paint-needed inst)
   (var ed (shell/create-ed inst))
   (if ((== state 0)
        (if ((== input gfx/ev-key-return)
@@ -296,54 +303,44 @@
                  (set (shell/cur inst) (+ (shell/cur inst) 1)))))
            ((== input ch/e)
             (if ((shell/cur-name inst)
-                 (shell/launch-ed (shell/cur-name inst))
-                 (app/focus-shell 0))))
+                 (shell/launch-ed (shell/cur-name inst)))))
            ((== input ch/v)
             (if ((shell/cur-name inst)
                  (shell/ed-save-all)
-                 (tx/launch (shell/cur-name inst))
-                 (app/focus-shell 0))))
+                 (tx/launch (shell/cur-name inst)))))
            ((== input ch/s)
             (if ((shell/cur-name inst)
                  (shell/save (shell/cur-name inst)))))
            ((== input ch/r)
             (if ((shell/cur-name inst)
                  (shell/ed-save-all)
-                 (shell/launch-book (shell/cur-name inst))
-                 (app/focus-shell 0))))
+                 (shell/launch-book (shell/cur-name inst)))))
            ((== input ch/S)
             (shell/ed-save-all))
            ((== input ch/X)
             (shell/remove inst))
            ((== input ch/Q)
             (shell/ed-save-all)
-            (app/quit inst))
+            (ui/quit))
            ((== input ch/h)
             (shell/help inst))))))
 
-(fun (shell/global-input inst app state input)
+(fun (shell/instance-global-input inst app state input)
   (var dup-name)
   (if ((== state 0)
-       (if  ((== input ch/a)
-             (app/focus-shell 0))
-            ((== input ch/b)
-             (app/focus-shell 1))
-            ((== input ch/e)
-             (app/focus-shell 0)
+       (if  ((== input ch/e)
              (set dup-name (str/dup (app/app-name app)))
              (shell/launch-ed (app/app-name app))
              (mem/free dup-name))
             ((== input ch/v)
              (shell/ed-save-all)
-             (app/paint-needed inst)
-             (app/focus-shell 0)
+             (ui/paint-needed inst)
              (set dup-name (str/dup (app/app-name app)))
              (tx/launch dup-name)
              (mem/free dup-name))
             ((== input ch/r)
              (shell/ed-save-all)
-             (app/paint-needed inst)
-             (app/focus-shell 0)
+             (ui/paint-needed inst)
              (set dup-name (str/dup (app/app-name app)))
              (shell/launch-book dup-name)
              (mem/free dup-name))
@@ -354,20 +351,19 @@
                   (app/quit app))))))
       ((== state gfx/ev-state-control)
        (if ((== input ch/x)
-            (app/focus-shell (not (app/app-focus inst))))))))
+            (app/focus-shell (not (ui/elt-has-focus inst))))))))
 
-(fun (shell/goto-link inst link)
+(fun (shell/instance-goto-link inst link)
   (if ((not (app/switch link "tx"))
        (tx/launch link))))
 
 (app/shell-functions shell/funcs
-  shell/init
-  shell/cleanup
-  shell/paint
-  shell/input
-  shell/global-input
-  shell/goto-link)
+  shell/instance-init
+  shell/instance-fini
+  shell/instance-paint
+  shell/instance-input
+  shell/instance-global-input
+  shell/instance-goto-link)
 
 (fun (shell/main)
-  (tx/launch "intro")
-  (app/launch-shell (app/new shell/instance shell/funcs)))
+  (app/launch-shell (ui/new shell/instance shell/funcs)))

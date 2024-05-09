@@ -1,0 +1,356 @@
+@** User interfaces
+
+The user interface of Zollern is constructed from nested, non-overlapping,
+rectangular areas of the screen, called [emph elements]. There
+are different kinds of elements, such as buttons or text inputs.
+In fact, each application is implemented as a new kind of element.
+
+Elements form a tree: One element is the root and covers the whole
+screen, the sub-elements of that are the applications and the
+navigation panel, and then there might be buttons etc within
+those.
+
+@* Element objects
+
+Although there are many different kinds of concrete user interface
+elements, they all share common features and behavior. Namely,
+a element knows where it is on the screen, whether it is currently
+visible, what its relations are in the tree of elements, and
+some other bits of information. This state of an element is stored
+in its [emph fields]. For example, the size of an element is
+stored in the [code ui/elt-width] and [code ui/elt-height] fields.
+
+Each element also has a fixed number of things that you can do
+with it, called its [emph methods]: You can draw it by invoking
+its [emph paint] method, and you can send an input event to it
+with the [emph input] method. And although each element can do
+these things, each kind does it differently.
+
+New kinds of elements are defined by [emph deriving] from the
+[emph base element]. While doing this, you need to provide concrete
+functions that implement each of the methods of the base element.
+It is very common to add more fields when defining a new kind
+of element, to store the state that is needed to do its job.
+You can also add more methods, but this is less common (and more
+cumbersome).
+
+The [book app] book explains how to derive a new application kind
+in detail.
+
+Creating a new instance is then done with [code ui/new]. The method
+functions will be called at appropriate times with that instance
+as their first argument.
+
+There are some rules: A [emph init] method function must call
+the [emph init] method of the base first thing, and likewise,
+a [emph fini] function must call the base [emph fini] function
+as the last thing.
+
+Thus, there is some boilerplate here, and some mild naming conventions,
+and maybe Zollern will grow some basic object orientation support
+in [book lang]. At the very least, we probably should have [code
+ui/object] that has only the fields and methods needed for the
+object oriented aspects, and a [code u/element] that derives
+from it. The naming conventions should be hidden behind some
+macros. But this isn't so bad for now.
+
+@* Base elements
+
+Let's start with the [code ui/element] structure that is shared
+by all elements. It's pretty big as far as Zollern is concerned.
+
+@=
+(struct ui/element
+  -elt-functions
+  -elt-up
+  -elt-next
+  -elt-subs
+  -elt-x
+  -elt-y
+  (-elt-visible u8)
+  (-elt-needs-paint u8)
+  (-elt-flag3 u8)
+  (-elt-flag4 u8)
+  (elt-can-focus u8)
+  (elt-has-focus u8)
+  (-elt-flag7 u8)
+  (-elt-flag8 u8)
+  elt-width
+  elt-height)
+@
+
+You can find the links in it that form the tree of elements, and
+the fields that store where the element is positioned on the
+screen. The first field, [code -elt-functions], contains a pointer
+to the table of method functions, created by [code book/funtab].
+
+@=
+(struct ui/element-function-table-type
+  -eltf-book
+  -eltf-init
+  -eltf-fini
+  -eltf-paint
+  -eltf-input)
+@
+
+Function tables are supposed to be defined with the [code ui/element-functions]
+macro instead of with [code book/funtab] directly. This way,
+you get a syntax error when you forget a function.
+
+@=
+(def (ui/element-functions ?name ?init ?fini ?paint ?input)
+  (book/funtab ?name ?init ?fini ?paint ?input))
+@
+
+Creating new element instances is done with [code ui/new]. We
+need some memory for the new instance and then call the [emph
+init] method to turn the raw memory into the instance. Initialization
+often needs some arguments, so [code ui/new] takes five arbitrary
+ones and passes them on to the [emph init] method. You only need
+to really pass as many as you need. Pointers, numbers, anything
+is fine. The Z1 language doesn't check anything.
+
+The given table of method functions is installed in the new instance,
+of course. The reference count of its book is increased to make
+sure that the functions actually stay around as long as the instance
+does.
+
+@=
+(fun (ui/new size functions arg1 arg2 arg3 arg4 arg5)
+  (var inst (mem/alloc size))
+  (book/funtab-ref functions)
+  (set (ui/-elt-functions inst) functions)
+  ((ui/-eltf-init functions) inst arg1 arg2 arg3 arg4 arg5)
+  inst)
+@
+
+Freeing is the exact reverse.
+
+@=
+(fun (ui/free inst)
+  ((ui/-eltf-fini (ui/-elt-functions inst)) inst)
+  (book/funtab-unref (ui/-elt-functions inst))
+  (mem/free inst))
+@
+
+And here are the functions for the [emph init] and [emph fini]
+methods of the base element. Initialization sets (almost) all
+fields to zero, and finalization does actually quite a bit more:
+Before letting the given instance be returned to the memory pool,
+all its sub-elements are freed first. The idea is that a element
+instance [emph owns] its sub-elements and if it is deleted, all
+its sub-elements must be deleted as well. If you want to take
+ownership of a instance, just call [code ui/remove] on that instance.
+Then it is no longer a sub-element of any other element and wont
+be freed automatically.
+
+@=
+(fun (ui/element-init inst)
+  (set (ui/-elt-up inst) 0)
+  (set (ui/-elt-next inst) 0)
+  (set (ui/-elt-subs inst) 0)
+  (set (ui/-elt-visible inst) 0)
+  (set (ui/elt-has-focus inst) 0))
+
+(fun (ui/element-fini inst)
+  (var sub (ui/-elt-subs inst))
+  (var next)
+  (while sub
+    (set next (ui/-elt-next sub))
+    (ui/free sub)
+    (set sub next)))
+
+@* Element manipulations
+
+Elements are put into action by making them part of the global
+user interface element tree. They can be added to it with [code
+ui/add] and removed again with [code ui/remove]. While they are
+part of the tree, they can be made visible and invisible.
+
+Adding an element to a parent element transfers the [emph ownership]
+of that element to the parent. The owner of an element is responsible
+for calling [code ui/free] on it at the right time. Removing
+an element from its parent transfers the ownership back to the
+caller of [code ui/remove].
+
+@=
+(fun (ui/paint-needed inst)
+  (set (ui/-elt-needs-paint inst) 1))
+
+(fun (ui/show inst)
+  (set (ui/-elt-visible inst) 1)
+  (ui/paint-needed inst))
+
+(fun (ui/hide inst)
+  (set (ui/-elt-visible inst) 0)
+  (if ((ui/-elt-up inst)
+       (ui/paint-needed (ui/-elt-up inst)))))
+
+(fun (ui/add inst up x y w h)
+  (set (ui/-elt-up inst) up)
+  (set (ui/-elt-next inst) (ui/-elt-subs up))
+  (set (ui/-elt-subs up) inst)
+  (set (ui/-elt-x inst) (+ (ui/-elt-x up) x))
+  (set (ui/-elt-y inst) (+ (ui/-elt-y up) y))
+  (set (ui/elt-width inst) w)
+  (set (ui/elt-height inst) h)
+  (ui/show inst))
+
+(fun (ui/remove inst)
+  (ui/hide inst)
+  (var ptr (loc (ui/-elt-subs (ui/-elt-up inst))))
+  (while (u64 ptr)
+    (if ((== (u64 ptr) inst)
+         (set (u64 ptr) (ui/-elt-next inst)))
+        (else
+         (set ptr (loc (ui/-elt-next (u64 ptr)))))))
+  (set (ui/-elt-up inst) 0))
+
+@* The root element
+
+The root element is the size of the whole screen and also processes
+the special [emph global events] such as [code C-x e]. To implement
+this, we derive a special element kind, and the [book app] book
+creates a single instance of it, and installs it in the global
+state with [code ui/set-root].
+
+@=
+(struct ui/root-element
+  (:base ui/element))
+
+(fun (ui/root-element-init inst)
+  (ui/element-init inst)
+  (var gfx (ctxt/gfx context))
+  (set (ui/-elt-x inst) 0)
+  (set (ui/-elt-y inst) 0)
+  (set (ui/elt-width inst) (gfx/gfx-screen-width gfx))
+  (set (ui/elt-height inst) (gfx/gfx-screen-height gfx)))
+
+(fun (ui/root-element-fini inst)
+  (ui/element-fini inst))
+
+(struct ui/root-element-function-table-type
+  (:base ui/element-function-table-type)
+  -reltft-global-input)
+
+(def (ui/root-element-functions ?name ?init ?fini ?paint ?input ?global-input)
+  (book/funtab ?name ?init ?fini ?paint ?input ?global-input))
+
+@* Global state
+
+The global state consists of the root and focus elements.
+
+@=
+(struct ui/context
+  c-root
+  c-focus)
+
+(fun (ui/init)
+  (var c (mem/alloc ui/context))
+  (set (ctxt/ui context) c)
+  (set (ui/c-root c) 0)
+  (set (ui/c-focus c) 0))
+@
+
+Setting a root element will free the previous root. That's how
+one can [emph warm reboot] Zollern.
+
+@=
+(fun (ui/set-root inst)
+  (var c (ctxt/ui context))
+  (if ((ui/c-root c)
+       (ui/free (ui/c-root c))))
+  (set (ui/c-root c) inst)
+  (if (inst
+       (ui/show inst))))
+  
+(fun (ui/root)
+  (ui/c-root (ctxt/ui context)))
+@
+
+The event loop quits when there is no root element. That's how
+one can shutdown Zollern.
+
+@=
+(fun (ui/quit)
+  (ui/set-root 0))
+@
+
+@* Keyboard focus
+
+Keyboard events are delivered to the [emph focus] element. This
+element must be explicitly managed with [code ui/set-focus].
+One must be especially careful not to free the element that currently
+has the focus.
+
+@=
+(fun (ui/set-focus inst)
+  (var c (ctxt/ui context))
+  (if ((ui/c-focus c)
+       (set (ui/elt-has-focus (ui/c-focus c)) 0)
+       (ui/paint-needed (ui/c-focus c))))
+  (set (ui/c-focus c) inst)
+  (if (inst
+       (set (ui/elt-has-focus inst) 1)
+       (ui/paint-needed inst))))
+
+@* Painting
+
+Painting is done recursively by first calling the paint method
+of an element, and then painting all its sub-elements. An element
+is only actually painted when its [emph paint needed] flag is
+set, or if its parent element has just been painted.
+
+@=
+(fun (ui/-paint-if-needed inst sub)
+  (if ((ui/-elt-visible inst)
+       (if ((or sub (ui/-elt-needs-paint inst))
+            (gfx/set-window (ui/-elt-x inst) (ui/-elt-y inst) (ui/elt-width inst) (ui/elt-height inst))
+            (if ((not sub)
+                 (gfx/clear)))
+            ((ui/-eltf-paint (ui/-elt-functions inst)) inst)
+            (set (ui/-elt-needs-paint inst) 0)
+            (set sub 1)))
+       (var s (ui/-elt-subs inst))
+       (while s
+         (ui/-paint-if-needed s sub)
+         (set s (ui/-elt-next s))))))
+
+(fun (ui/paint root)
+  (ui/-paint-if-needed root 0))
+
+@* Event loop
+
+The event loop is an actual loop that reads a input event and
+passes it on to the [emph input] method of the currently focused
+element. It also paints all elements when necessary and pushes
+the framebuffer out to the display.
+
+@=
+(fun (ui/loop)
+  (var control-x-prefix 0)
+  (while (ui/root)
+    (var root (ui/root))
+    (ui/paint (ui/root))
+    (gfx/show-and-get)
+    (mem event gfx/event)
+    (gfx/read-event event)
+    (if ((== (gfx/ev-type event) 1)
+         (sys/exit 0))
+        ((== (gfx/ev-type event) 3)
+         (gfx/resize (gfx/ev-x event) (gfx/ev-y event)))
+        ((== (gfx/ev-type event) 2)
+         (var state (gfx/ev-state event))
+         (var input (gfx/ev-input event))
+         (var x (gfx/ev-x event))
+         (var y (gfx/ev-y event))
+         (if ((and (not control-x-prefix) (== state gfx/ev-state-control) (== input ch/x))
+              (set control-x-prefix 1))
+             (else
+              (if (control-x-prefix
+                   ((ui/-reltft-global-input (ui/-elt-functions root)) root state input x y))
+                  (else
+                   (var target (ui/c-focus (ctxt/ui context)))
+                   (if (target
+                        ((ui/-eltf-input (ui/-elt-functions target)) target state input x y)))))
+              (set control-x-prefix 0)))))))
