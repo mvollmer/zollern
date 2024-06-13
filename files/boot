@@ -21,4 +21,12 @@ to [code boot/start].
   (shell/main)
   (tx/launch "intro")
   (ui/loop)
-  (dbg/out "HALT\n"))
+  0)
+@
+
+Running this book will trigger a reboot. This is done with a magic
+exit code recognized by [code zfb].
+
+@=
+(fun (boot/main)
+  (sys/exit 77))

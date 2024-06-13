@@ -129,8 +129,6 @@
     (set p q)
     (set q (mem/ar-link p))
     (if ((== p avail)
-         ;; XXX - get more mem
-         (dbg/out "MORE MEMORY\n")
          (var page (sys/page-get))
          (set (u64 page) size)
          (set r (+ page 8))

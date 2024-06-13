@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
 #include <poll.h>
 
 #include <SDL.h>
@@ -181,12 +182,14 @@ setup_window ()
     exitf (1, "%s\n", SDL_GetError());
 
   renderer = SDL_CreateRenderer (window, -1, 0);
-  send_event(EV_SIZE, 1280, 1024, 0, 0);
 }
 
 void
 configure (int width, int height)
 {
+  if (width == tx_width && height == tx_height)
+    return;
+
   if (texture)
     {
       SDL_DestroyTexture (texture);
@@ -377,11 +380,13 @@ read_command (struct command *cmd)
 {
   int n = read (commands_in_fd, cmd, sizeof (*cmd));
   if (n == 0)
-    exitf (0, "done");
+    return 0;
   else if (n < 0)
     exitf (1, "read: %m");
   else if (n != sizeof (*cmd))
     exitf (1, "short read: %d", n);
+  else
+    return 1;
 }
 
 void
@@ -402,7 +407,6 @@ main (int argc, char **argv)
   setenv ("SDL_VIDEODRIVER", "x11", 0);
 
   init_pixels ();
-  init_pipes ();
 
   if (SDL_Init (SDL_INIT_VIDEO) < 0)
     {
@@ -442,6 +446,11 @@ main (int argc, char **argv)
       args = (char **)argv;
     }
 
+  setup_window ();
+
+ again:
+  init_pipes ();
+
   int pid = fork ();
   if (pid < 0)
     exitf (1, "fork: %m");
@@ -458,15 +467,22 @@ main (int argc, char **argv)
   close (EVENTS_FD);
   close (COMMANDS_FD);
 
-  setup_window ();
+  send_event(EV_SIZE, 1280, 1024, 0, 0);
 
   while (1)
     {
       struct command cmd;
       SDL_Event event;
-      int n;
+      int n, status;
 
-      read_command (&cmd);
+      if (!read_command (&cmd)) {
+        close (events_out_fd);
+        close (commands_in_fd);
+        waitpid (pid, &status, 0);
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 77)
+          goto again;
+        return;
+      }
 
       if (cmd.op == OP_CONF) {
         configure (cmd.arg1, cmd.arg2);
