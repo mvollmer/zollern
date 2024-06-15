@@ -179,10 +179,10 @@ hides and shows them, as necessary, and keeps the focus updated.
 @=
 (fun (app/switch-to-inst inst)
   (var root (ui/root))
-  (ui/show inst)
   (if ((app/r-current root)
        (ui/hide (app/r-current root))))
   (set (app/r-current root) inst)
+  (ui/show inst)
   (ui/set-focus inst))
 @
 
