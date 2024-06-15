@@ -263,7 +263,7 @@ one can [emph warm reboot] Zollern.
   (set (ui/c-root c) inst)
   (if (inst
        (ui/show inst))))
-  
+
 (fun (ui/root)
   (ui/c-root (ctxt/ui context)))
 @
@@ -293,6 +293,29 @@ has the focus.
   (if (inst
        (set (ui/elt-has-focus inst) 1)
        (ui/paint-needed inst))))
+
+@* Pointer events
+
+Mouse events such as button presses and releases are delivered to the
+element under the mouse. We need a function to find that element.
+
+@=
+(fun (ui/query-xy inst x y)
+  (if ((and (>= x (ui/-elt-x inst))
+            (>= y (ui/-elt-y inst))
+            (< x (+ (ui/-elt-x inst) (ui/elt-width inst)))
+            (< y (+ (ui/-elt-y inst) (ui/elt-height inst))))
+       (var sub (ui/-elt-subs inst))
+       (while sub
+         (var e (ui/query-xy sub x y))
+         (if (e
+              (set inst e)
+              (goto done)))
+         (set sub (ui/-elt-next sub)))
+       (label done)
+       inst)
+      (else
+       0)))
 
 @* Painting
 
@@ -344,7 +367,15 @@ the framebuffer out to the display.
          (var input (gfx/ev-input event))
          (var x (gfx/ev-x event))
          (var y (gfx/ev-y event))
-         (if ((and (not control-x-prefix) (== state gfx/ev-state-control) (== input ch/x))
+         (if ((and (<= input gfx/ev-button-1-press)
+                   (>= input gfx/ev-scroll-down))
+              (var elt (ui/query-xy root x y))
+              (if (elt
+                   (if ((== input gfx/ev-button-1-press)
+                        (ui/set-focus elt)))
+                   ((ui/-eltf-input (ui/-elt-functions elt))
+                    elt state input (- x (ui/-elt-x elt)) (- y (ui/-elt-y elt))))))
+             ((and (not control-x-prefix) (== state gfx/ev-state-control) (== input ch/x))
               (set control-x-prefix 1))
              (else
               (if (control-x-prefix
