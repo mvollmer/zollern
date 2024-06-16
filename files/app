@@ -92,6 +92,7 @@ for the name and mode.
 
 (fun (app/instance-init inst)
   (ui/element-init inst)
+  (set (ui/elt-can-focus inst) 1)
   (set (app/app-name inst) 0)
   (set (app/app-mode inst) 0))
 
@@ -139,26 +140,49 @@ implements all the sate and logic needed for switching between
 applications and managing the keyboard focus.
 
 @=
+(struct app/app-link
+  al-app
+  al-next)
+
 (struct app/root
   (:base ui/root-element)
+  r-apps
   r-current
   r-shell)
 
 (fun (app/root-init inst)
   (ui/root-element-init inst)
+  (set (app/r-apps inst) 0)
   (set (app/r-current inst) 0)
   (set (app/r-shell inst) 0))
 
 (fun (app/root-fini inst)
+  (var l (app/r-apps inst))
+  (var n)
+  (while l
+    (set n (app/al-next l))
+    (ui/free (app/al-app l))
+    (mem/free l)
+    (set l n))
+  (if ((app/r-shell inst)
+       (ui/free (app/r-shell inst))))
   (ui/root-element-fini inst))
 
-(fun (app/root-paint inst))
+(fun (app/root-paint inst)
+  (if ((app/r-current inst)
+       (ui/paint inst (app/r-current inst) 0 0 (ui/elt-height inst) (ui/elt-height inst))))
+  (if ((app/r-shell inst)
+       (ui/paint inst (app/r-shell inst)
+                 (ui/elt-height inst) 0
+                 (- (ui/elt-width inst) (ui/elt-height inst)) (ui/elt-height inst)))))
 
 (fun (app/root-input inst state input x y))
 
 (fun (app/root-global-input inst state input x y)
   (var app (app/r-current inst))
   (var shell (app/r-shell inst))
+  (if ((ui/elt-has-focus shell) ;; XXX - also sub elements
+       (set app shell)))
   ((app/-sft-global-input (ui/-elt-functions shell)) shell app state input x y))
 
 (ui/root-element-functions app/root-function-table
@@ -179,33 +203,39 @@ hides and shows them, as necessary, and keeps the focus updated.
 @=
 (fun (app/switch-to-inst inst)
   (var root (ui/root))
-  (if ((app/r-current root)
-       (ui/hide (app/r-current root))))
   (set (app/r-current root) inst)
-  (ui/show inst)
-  (ui/set-focus inst))
+  (ui/set-focus inst)
+  (ui/paint-needed root))
 @
 
 Quitting an application removes it from the root and frees the
-instance with [code ui /free]. Most of the work consists of finding
+instance with [code ui/free]. Most of the work consists of finding
 the next element that should get the keyboard focus.
 
 @=
 (fun (app/quit inst)
   (var root (ui/root))
-  (ui/remove inst)
+  (var ptr (loc (app/r-apps root)))
+  (while (u64 ptr)
+    (var l (u64 ptr))
+    (if ((== (app/al-app l) inst)
+         (set (u64 ptr) (app/al-next l))
+         (mem/free l))
+        (else
+         (set ptr (loc (app/al-next l))))))
   (if ((== (app/r-shell root) inst)
        (set (app/r-shell root) 0)
        (ui/set-focus (app/r-current root)))
       (else
        (if ((== (app/r-current root) inst)
             (set (app/r-current root) 0)
-            (var n (ui/-elt-subs root))
-            (while (and n (== n (app/r-shell root)))
-              (set n (ui/-elt-next n)))
+            (var n (app/r-apps root))
+            (while (and n (== (app/al-app n) (app/r-shell root)))
+              (set n (app/al-next n)))
             (if (n
-                 (app/switch-to-inst n)))))))
-  (ui/free inst))
+                 (app/switch-to-inst (app/al-app n))))))))
+  (ui/free inst)
+  (ui/paint-needed root))
 @
 
 And here is a function for finding an application instance for
@@ -215,15 +245,16 @@ to an application by name and mode.
 @=
 (fun (app/find name mode)
   (var root (ui/root))
-  (var inst (ui/-elt-subs root))
-  (while inst
+  (var l (app/r-apps root))
+  (while l
+    (var inst (app/al-app l))
     (if ((and (str/eq (app/app-name inst) name)
               (str/eq (app/app-mode inst) mode)
               (!= inst (app/r-shell root)))
          (goto done)))
-    (set inst (ui/-elt-next inst)))
+    (set l (app/al-next l)))
   (label done)
-  inst)
+  (and l (app/al-app l)))
 
 (fun (app/switch name mode)
   (var inst (app/find name mode))
@@ -259,7 +290,10 @@ root element with [code ui/add] and switch to it.
        (app/quit old)))
   (app/-init-name-and-mode inst name mode)
   (var root (ui/root))
-  (ui/add inst root 0 0 (ui/elt-height root) (ui/elt-height root))
+  (var l (mem/alloc app/app-link))
+  (set (app/al-app l) inst)
+  (set (app/al-next l) (app/r-apps root))
+  (set (app/r-apps root) l)
   (app/switch-to-inst inst))
 @
 
@@ -272,11 +306,9 @@ location of the screen, of course.
   (if ((app/r-shell root)
        (app/quit (app/r-shell root))))
   (app/-init-name-and-mode inst "shell" "main")
-  (ui/add inst root
-          (ui/elt-height root) 0
-          (- (ui/elt-width root) (ui/elt-height root)) (ui/elt-height root))
   (set (app/r-shell root) inst)
-  (ui/set-focus inst))
+  (ui/set-focus inst)
+  (ui/paint-needed root))
 
 @* Links
 
