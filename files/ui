@@ -1,9 +1,9 @@
 @** User interfaces
 
-The user interface of Zollern is constructed from nested, non-overlapping,
-rectangular areas of the screen, called [emph elements]. There
-are different kinds of elements, such as buttons or text inputs.
-In fact, each application is implemented as a new kind of element.
+The user interface of Zollern is constructed from rectangular
+areas of the screen, called [emph elements]. There are different
+kinds of elements, such as buttons or text inputs. In fact, each
+application is implemented as a new kind of element.
 
 Elements form a tree: One element is the root and covers the whole
 screen, the sub-elements of that are the applications and the
@@ -26,33 +26,16 @@ its [emph paint] method, and you can send an input event to it
 with the [emph input] method. And although each element can do
 these things, each kind does it differently.
 
-New kinds of elements are defined by [emph deriving] from the
-[emph base element]. While doing this, you need to provide concrete
-functions that implement each of the methods of the base element.
-It is very common to add more fields when defining a new kind
-of element, to store the state that is needed to do its job.
-You can also add more methods, but this is less common (and more
-cumbersome).
+New kinds of elements are defined by [emph deriving] a new kind
+from an existing [emph base] kind. While doing this, you need
+to provide concrete functions that implement each of the methods
+of the base element. It is very common to add more fields when
+defining a new kind of element, to store the state that is needed
+to do its job. You can also add more methods, but this is less
+common (and more cumbersome).
 
 The [book app] book explains how to derive a new application kind
 in detail.
-
-Creating a new instance is then done with [code ui/new]. The method
-functions will be called at appropriate times with that instance
-as their first argument.
-
-There are some rules: A [emph init] method function must call
-the [emph init] method of the base first thing, and likewise,
-a [emph fini] function must call the base [emph fini] function
-as the last thing.
-
-Thus, there is some boilerplate here, and some mild naming conventions,
-and maybe Zollern will grow some basic object orientation support
-in [book lang]. At the very least, we probably should have [code
-ui/object] that has only the fields and methods needed for the
-object oriented aspects, and a [code u/element] that derives
-from it. The naming conventions should be hidden behind some
-macros. But this isn't so bad for now.
 
 @* Base elements
 
@@ -62,12 +45,11 @@ by all elements. It's pretty big as far as Zollern is concerned.
 @=
 (struct ui/element
   -elt-functions
-  -elt-up
   -elt-next
   -elt-subs
   -elt-x
   -elt-y
-  (-elt-visible u8)
+  (-elt-flag1 u8)
   (-elt-needs-paint u8)
   (-elt-flag3 u8)
   (-elt-flag4 u8)
@@ -124,7 +106,11 @@ does.
   inst)
 @
 
-Freeing is the exact reverse.
+Freeing is the exact reverse. Note that there is no help here
+regarding when to free an element. You must make sure that the
+element is not part of the tree when it is freed, and also not
+referenced in other ways, such as being the one that currently
+has the keyboard focus.
 
 @=
 (fun (ui/free inst)
@@ -135,155 +121,108 @@ Freeing is the exact reverse.
 
 And here are the functions for the [emph init] and [emph fini]
 methods of the base element. Initialization sets (almost) all
-fields to zero, and finalization does actually quite a bit more:
-Before letting the given instance be returned to the memory pool,
-all its sub-elements are freed first. The idea is that a element
-instance [emph owns] its sub-elements and if it is deleted, all
-its sub-elements must be deleted as well. If you want to take
-ownership of a instance, just call [code ui/remove] on that instance.
-Then it is no longer a sub-element of any other element and wont
-be freed automatically.
+fields to zero, and finalization actually does nothing.
 
 @=
 (fun (ui/element-init inst)
-  (set (ui/-elt-up inst) 0)
   (set (ui/-elt-next inst) 0)
   (set (ui/-elt-subs inst) 0)
-  (set (ui/-elt-visible inst) 0)
+  (set (ui/elt-can-focus inst) 0)
   (set (ui/elt-has-focus inst) 0))
 
-(fun (ui/element-fini inst)
-  (var sub (ui/-elt-subs inst))
-  (var next)
-  (while sub
-    (set next (ui/-elt-next sub))
-    (ui/free sub)
-    (set sub next)))
+(fun (ui/element-fini inst))
 
-@* Element manipulations
+@* The element tree
 
 Elements are put into action by making them part of the global
-user interface element tree. They can be added to it with [code
-ui/add] and removed again with [code ui/remove]. While they are
-part of the tree, they can be made visible and invisible.
+user interface element tree. This tree is constructed anew every
+time the event loop draws all elements to the screen, starting
+with the root.
 
-Adding an element to a parent element transfers the [emph ownership]
-of that element to the parent. The owner of an element is responsible
-for calling [code ui/free] on it at the right time. Removing
-an element from its parent transfers the ownership back to the
-caller of [code ui/remove].
+The function for the [emph paint] method of an element draws whatever
+it needs, and also constructs the element tree below it by calling
+[code ui/paint] for all its sub-elements. The sub-elements are
+usually created in the [emph init] method function and freed
+in the [emph fini] method function, but they can of course also
+be created dynamically in response to input events, etc.
+
+After the painting is done, the event loop reads the next input
+event and uses the tree that has been constructed during the
+previous painting phase to decide to which element to deliver
+the event.
+
+@=
+(fun (ui/paint inst sub x y w h)
+  (if (inst
+       (set (ui/-elt-next sub) (ui/-elt-subs inst))
+       (set (ui/-elt-subs inst) sub)
+       (set x (+ x (ui/-elt-x inst)))
+       (set y (+ y (ui/-elt-y inst)))))
+  (set (ui/-elt-x sub) x)
+  (set (ui/-elt-y sub) y)
+  (set (ui/elt-width sub) w)
+  (set (ui/elt-height sub) h)
+  (set (ui/-elt-subs sub) 0)
+  (gfx/set-window x y w h)
+  ((ui/-eltf-paint (ui/-elt-functions sub)) sub)
+  (set (ui/-elt-needs-paint sub) 0))
+@
+
+Actually, painting does not always start with the root, but with
+those elements of the current tree that have the [emph paint-needed]
+flag set. Thus, if a button element receives a button press event
+and wants to be rendered in a depressed state, it will set its
+own [emph paint-needed] flag and the next paint phase will only
+draw the button.
 
 @=
 (fun (ui/paint-needed inst)
   (set (ui/-elt-needs-paint inst) 1))
+@
 
-(fun (ui/show inst)
-  (set (ui/-elt-visible inst) 1)
-  (ui/paint-needed inst))
-
-(fun (ui/hide inst)
-  (set (ui/-elt-visible inst) 0)
-  (if ((ui/-elt-up inst)
-       (ui/paint-needed (ui/-elt-up inst)))))
-
-(fun (ui/add inst up x y w h)
-  (set (ui/-elt-up inst) up)
-  (set (ui/-elt-next inst) (ui/-elt-subs up))
-  (set (ui/-elt-subs up) inst)
-  (set (ui/-elt-x inst) (+ (ui/-elt-x up) x))
-  (set (ui/-elt-y inst) (+ (ui/-elt-y up) y))
-  (set (ui/elt-width inst) w)
-  (set (ui/elt-height inst) h)
-  (ui/show inst))
-
-(fun (ui/remove inst)
-  (ui/hide inst)
-  (var ptr (loc (ui/-elt-subs (ui/-elt-up inst))))
-  (while (u64 ptr)
-    (if ((== (u64 ptr) inst)
-         (set (u64 ptr) (ui/-elt-next inst)))
-        (else
-         (set ptr (loc (ui/-elt-next (u64 ptr)))))))
-  (set (ui/-elt-up inst) 0))
-
-@* The root element
-
-The root element is the size of the whole screen and also processes
-the special [emph global events] such as [code C-x e]. To implement
-this, we derive a special element kind, and the [book app] book
-creates a single instance of it, and installs it in the global
-state with [code ui/set-root].
+And here is the function that the event loop calls to find the
+elements that need painting.
 
 @=
-(struct ui/root-element
-  (:base ui/element))
+(fun (ui/paint-if-needed inst)
+  (if ((ui/-elt-needs-paint inst)
+       (gfx/set-window (ui/-elt-x inst) (ui/-elt-y inst)
+                       (ui/elt-width inst) (ui/elt-height inst))
+       (gfx/clear)
+       (set (ui/-elt-subs inst) 0)
+       ((ui/-eltf-paint (ui/-elt-functions inst)) inst)
+       (set (ui/-elt-needs-paint inst) 0))
+      (else
+       (var sub (ui/-elt-subs inst))
+       (while sub
+         (ui/paint-if-needed sub)
+         (set sub (ui/-elt-next sub))))))
+@
 
-(fun (ui/root-element-init inst)
-  (ui/element-init inst)
-  (var gfx (ctxt/gfx context))
-  (set (ui/-elt-x inst) 0)
-  (set (ui/-elt-y inst) 0)
-  (set (ui/elt-width inst) (gfx/gfx-screen-width gfx))
-  (set (ui/elt-height inst) (gfx/gfx-screen-height gfx)))
+@* Keyboard focus
 
-(fun (ui/root-element-fini inst)
-  (ui/element-fini inst))
+Keyboard events are delivered to the [emph focus] element. When
+the event loop reads a press event of the first mouse button,
+the element under the mouse pointer becomes the focus element,
+if it has the [emph can-focus] flag set. If not, its closest
+parent in the element tree that has this flag set, will become
+the focus element. You can also call [code ui/set-focus] to manage
+it explicitly.
 
-(struct ui/root-element-function-table-type
-  (:base ui/element-function-table-type)
-  -reltft-global-input)
-
-(def (ui/root-element-functions ?name ?init ?fini ?paint ?input ?global-input)
-  (book/funtab ?name ?init ?fini ?paint ?input ?global-input))
-
-@* Global state
-
-The global state consists of the root and focus elements.
+The [code ui/set-focus] function communicates with the event loop
+via some global state in the context. This needs to work also
+before the event loop has actually started running, so we initialize
+it early enough during boot.
 
 @=
 (struct ui/context
-  c-root
   c-focus)
 
 (fun (ui/init)
   (var c (mem/alloc ui/context))
   (set (ctxt/ui context) c)
-  (set (ui/c-root c) 0)
   (set (ui/c-focus c) 0))
-@
 
-Setting a root element will free the previous root. That's how
-one can [emph warm reboot] Zollern.
-
-@=
-(fun (ui/set-root inst)
-  (var c (ctxt/ui context))
-  (if ((ui/c-root c)
-       (ui/free (ui/c-root c))))
-  (set (ui/c-root c) inst)
-  (if (inst
-       (ui/show inst))))
-
-(fun (ui/root)
-  (ui/c-root (ctxt/ui context)))
-@
-
-The event loop quits when there is no root element. That's how
-one can shutdown Zollern.
-
-@=
-(fun (ui/quit)
-  (ui/set-root 0))
-@
-
-@* Keyboard focus
-
-Keyboard events are delivered to the [emph focus] element. This
-element must be explicitly managed with [code ui/set-focus].
-One must be especially careful not to free the element that currently
-has the focus.
-
-@=
 (fun (ui/set-focus inst)
   (var c (ctxt/ui context))
   (if ((ui/c-focus c)
@@ -293,68 +232,83 @@ has the focus.
   (if (inst
        (set (ui/elt-has-focus inst) 1)
        (ui/paint-needed inst))))
+@
+
+As you can see above, the current focus element has the [emph
+has-focus] flag set. It's [emph paint] method function should
+use this to indicate this fact to the user by drawing a cursor,
+for example.
+
+All parents of the focus element in the element tree have their
+[emph contains-focus] flag set. This is used to determine whether
+the shell or the current application has the focus, for example.
+
+@=
+(fun (ui/elt-contains-focus inst)
+  (if ((ui/elt-has-focus inst)
+       1)
+      (else
+       (var sub (ui/-elt-subs inst))
+       (while sub
+         (if ((ui/elt-contains-focus sub)
+              (goto done)))
+         (set sub (ui/-elt-next sub)))
+       (label done)
+       (if (sub 1) (else 0)))))
 
 @* Pointer events
 
-Mouse events such as button presses and releases are delivered to the
-element under the mouse. We need a function to find that element.
+Mouse button presses are delivered to the element under the mouse.
+We need a function to find that element. It will also find the
+closest element that can get the keyboard focus,
 
 @=
-(fun (ui/query-xy inst x y)
+(struct ui/query-result
+  qr-focus
+  qr-top)
+
+(fun (ui/query-xy inst x y res)
   (if ((and (>= x (ui/-elt-x inst))
             (>= y (ui/-elt-y inst))
             (< x (+ (ui/-elt-x inst) (ui/elt-width inst)))
             (< y (+ (ui/-elt-y inst) (ui/elt-height inst))))
+       (if ((ui/elt-can-focus inst)
+            (set (ui/qr-focus res) inst)))
+       (set (ui/qr-top res) inst)
        (var sub (ui/-elt-subs inst))
-       (while sub
-         (var e (ui/query-xy sub x y))
-         (if (e
-              (set inst e)
-              (goto done)))
+       (while (and sub (not (ui/query-xy sub x y res)))
          (set sub (ui/-elt-next sub)))
-       (label done)
-       inst)
+       1)
       (else
        0)))
-
-@* Painting
-
-Painting is done recursively by first calling the paint method
-of an element, and then painting all its sub-elements. An element
-is only actually painted when its [emph paint needed] flag is
-set, or if its parent element has just been painted.
-
-@=
-(fun (ui/-paint-if-needed inst sub)
-  (if ((ui/-elt-visible inst)
-       (if ((or sub (ui/-elt-needs-paint inst))
-            (gfx/set-window (ui/-elt-x inst) (ui/-elt-y inst) (ui/elt-width inst) (ui/elt-height inst))
-            (if ((not sub)
-                 (gfx/clear)))
-            ((ui/-eltf-paint (ui/-elt-functions inst)) inst)
-            (set (ui/-elt-needs-paint inst) 0)
-            (set sub 1)))
-       (var s (ui/-elt-subs inst))
-       (while s
-         (ui/-paint-if-needed s sub)
-         (set s (ui/-elt-next s))))))
-
-(fun (ui/paint root)
-  (ui/-paint-if-needed root 0))
+@
 
 @* Event loop
 
-The event loop is an actual loop that reads a input event and
-passes it on to the [emph input] method of the currently focused
-element. It also paints all elements when necessary and pushes
-the framebuffer out to the display.
+The event loop has been mention a couple of times already. It
+is an actual loop that reads a input event and passes it on to
+the [emph input] method of the appropriate element. It also paints
+all elements when necessary and pushes the framebuffer out to
+the display.
+
+The event loop also recognizes simple [emph mouse gestures]. A
+button press will [emph grab] the element under the mouse, and
+all subsequent mouse events continue to be delivered to that
+element until the button is released again. If the pointer is
+actually in the grab element, the event state will have the [code
+gfx/ev-state-inside] flag set.
+
+The [code ui/button] element uses this, for example.
 
 @=
-(fun (ui/loop)
+(fun (ui/loop root global-input-handler global-input-data)
   (var control-x-prefix 0)
-  (while (ui/root)
-    (var root (ui/root))
-    (ui/paint (ui/root))
+  (var grab 0)
+  (var gfx (ctxt/gfx context))
+  (gfx/reset-win gfx)
+  (gfx/clear)
+  (ui/paint 0 root 0 0 (gfx/gfx-screen-width gfx) (gfx/gfx-screen-height gfx))
+  (while 1
     (gfx/show-and-get)
     (mem event gfx/event)
     (gfx/read-event event)
@@ -369,19 +323,150 @@ the framebuffer out to the display.
          (var y (gfx/ev-y event))
          (if ((and (<= input gfx/ev-button-1-press)
                    (>= input gfx/ev-scroll-down))
-              (var elt (ui/query-xy root x y))
-              (if (elt
+              (mem res ui/query-result)
+              (set (ui/qr-focus res) 0)
+              (set (ui/qr-top res) 0)
+              (if ((ui/query-xy root x y res)
+                   (var top (ui/qr-top res))
+                   (var c (ctxt/ui context))
                    (if ((== input gfx/ev-button-1-press)
-                        (ui/set-focus elt)))
-                   ((ui/-eltf-input (ui/-elt-functions elt))
-                    elt state input (- x (ui/-elt-x elt)) (- y (ui/-elt-y elt))))))
+                        (ui/set-focus (ui/qr-focus res))
+                        (set grab top))
+                       (else
+                        (if ((== top grab)
+                             (set state (bit-or state gfx/ev-state-inside))))
+                        (if (grab
+                             (set top grab)))
+                        (if ((== input gfx/ev-button-1-release)
+                             (set grab 0)))))
+                   ((ui/-eltf-input (ui/-elt-functions top))
+                    top state input (- x (ui/-elt-x top)) (- y (ui/-elt-y top))))))
              ((and (not control-x-prefix) (== state gfx/ev-state-control) (== input ch/x))
               (set control-x-prefix 1))
              (else
               (if (control-x-prefix
-                   ((ui/-reltft-global-input (ui/-elt-functions root)) root state input x y))
+                   (global-input-handler global-input-data state input x y))
                   (else
                    (var target (ui/c-focus (ctxt/ui context)))
                    (if (target
                         ((ui/-eltf-input (ui/-elt-functions target)) target state input x y)))))
-              (set control-x-prefix 0)))))))
+              (set control-x-prefix 0)))))
+    (ui/paint-if-needed root)))
+@
+
+@* Buttons
+
+Buttons are user interface elements that call a given function
+when they are "clicked". A "click" is a mouse gesture where the
+mouse button is pressed in the button element and the pointer
+is still (or again) in the same element. If the mouse button
+is released while the pointer is outside of the element, no "click"
+is registered and the callback function is not called.
+
+@=
+(struct ui/button
+  (:base ui/element)
+  btn-label
+  btn-pressed
+  btn-click-handler
+  btn-click-handler-data)
+
+(fun (ui/button-init inst labl handler handler-data)
+  (ui/element-init inst)
+  (set (ui/btn-label inst) (str/dup labl))
+  (set (ui/btn-pressed inst) 0)
+  (set (ui/btn-click-handler inst) handler)
+  (set (ui/btn-click-handler-data inst) handler-data))
+
+(fun (ui/button-fini inst)
+  (mem/free (ui/btn-label inst))
+  (ui/element-fini inst))
+
+(fun (ui/button-paint inst)
+  (var off (if ((ui/btn-pressed inst) 1) (else 0)))
+  (gfx/draw-string-at (+ 5 off) (+ 5 off) fonts/sans (ui/btn-label inst))
+  (gfx/tint-rect 0 0 (ui/elt-width inst) (ui/elt-height inst) 220 250 255))
+
+(fun (ui/button-input inst state input x y)
+  (if ((== input gfx/ev-button-1-press)
+       (set (ui/btn-pressed inst) 1)
+       (ui/paint-needed inst))
+      ((== input gfx/ev-button-1-release)
+       (set (ui/btn-pressed inst) 0)
+       (ui/paint-needed inst)
+       (if ((== state gfx/ev-state-inside)
+            ((ui/btn-click-handler inst) (ui/btn-click-handler-data inst)))))))
+
+(ui/element-functions ui/button-funcs
+  ui/button-init
+  ui/button-fini
+  ui/button-paint
+  ui/button-input)
+
+(fun (ui/button-new labl handler handler-data)
+  (ui/new ui/button ui/button-funcs labl handler handler-data))
+
+@* Text input
+
+Text inputs are user interface elements that allow the editing
+of a single line of text. When the [code RET] key is pressed,
+a given function is called.
+
+The editing is implemented by the [book ed] book.
+
+@=
+(struct ui/textinput
+  (:base ui/element)
+  tin-textbuf
+  tin-ed
+  tin-enter-handler
+  tin-enter-handler-data)
+
+(fun (ui/textinput-init inst handler handler-data)
+  (ui/element-init inst)
+  (set (ui/elt-can-focus inst) 1)
+  (set (ui/tin-textbuf inst) (ed/textbuf-new))
+  (set (ui/tin-ed inst) (ed/new 0 (ui/tin-textbuf inst)))
+  (ed/highlight (ui/tin-ed inst))
+  (set (ui/tin-enter-handler inst) handler)
+  (set (ui/tin-enter-handler-data inst) handler-data))
+  
+(fun (ui/textinput-fini inst)
+  (ed/free (ui/tin-ed inst))
+  (ed/textbuf-free (ui/tin-textbuf inst))
+  (ui/element-fini inst))
+
+(fun (ui/textinput-paint inst)
+  (gfx/rect 0 0 (ui/elt-width inst) (ui/elt-height inst)
+            (gfx/color 220 250 255))
+  (gfx/rect 4 4 (- (ui/elt-width inst) 8) (- (ui/elt-height inst) 8) (gfx/color 255 255 255))
+  (ed/paint (ui/tin-ed inst) 4 4 (- (ui/elt-width inst) 8) (- (ui/elt-height inst) 8) (ui/elt-has-focus inst)))
+
+(fun (ui/textinput-input inst state input x y)
+  (if ((== input gfx/ev-key-return)
+       ((ui/tin-enter-handler inst) (ui/tin-enter-handler-data inst)
+        (ed/textbuf-maybe-as-string (ui/tin-textbuf inst))))
+      (else       
+       (ui/paint-needed inst)
+       (ed/input (ui/tin-ed inst) state input x y))))
+
+(ui/element-functions ui/textinput-funcs
+  ui/textinput-init
+  ui/textinput-fini
+  ui/textinput-paint
+  ui/textinput-input)
+
+(fun (ui/textinput-new handler handler-data)
+  (ui/new ui/textinput ui/textinput-funcs handler handler-data))
+
+(fun (ui/textinput-set inst str)
+  (var ed (ui/tin-ed inst))
+  (set (ed/point ed) 0)
+  (set (ed/mark ed) -1)
+  (var n 0)
+  (while (u8 str n)
+    (set (ed/char ed n) (u8 str))
+    (set n (+ n 1)))
+  (set (ed/len ed) n)
+  (ed/highlight ed)
+  (ui/paint-needed inst))

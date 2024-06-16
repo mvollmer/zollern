@@ -67,6 +67,8 @@ And this also works in the right window, the one with the book
 list: Pressing [code C-x e] in that window will let you edit
 the source code that produces that list. Try it!
 
+(And you can also use the mouse. Nothing wrong with the mouse.)
+
 @* How to read a book
 
 Books can contain source code, both as examples and as [emph real]

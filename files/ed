@@ -133,6 +133,8 @@ file can be larger than one page...
   (search-buf u8 ed/search-len-max)
   ;; Editing state
   (dirty u32)
+  dirty-callback
+  dirty-callback-data
   (window-top u64)
   (mark u64)
   (highlight-1 u64)
@@ -151,6 +153,7 @@ file can be larger than one page...
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
   (set (ed/dirty ed) 0)
+  (set (ed/dirty-callback ed) 0)
   ed)
 
 (fun (ed/free ed)
@@ -166,8 +169,8 @@ file can be larger than one page...
   (ed/textbuf-set-char (ed/buf ed) pos char)
   (if ((not (ed/dirty ed))
        (set (ed/dirty ed) 1)
-       (if ((var shell (app/r-shell (ui/root)))
-            (ui/paint-needed shell))))))
+       (if ((ed/dirty-callback ed)
+            ((ed/dirty-callback ed) (ed/dirty-callback-data ed)))))))
 
 (defset (ed/char ?ed ?pos) char
   (ed/set-char ?ed ?pos ?char))

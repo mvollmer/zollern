@@ -15,6 +15,12 @@
 (fun (sys/exit code)
   (.sys/call 60 code))
 
+(fun (sys/halt)
+  (sys/exit 0))
+
+(fun (sys/restart)
+  (sys/exit 77))
+
 (def sys/prot-read  1)
 (def sys/prot-write 2)
 

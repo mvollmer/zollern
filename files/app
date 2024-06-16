@@ -24,10 +24,10 @@ the Soko game, there will be an application named "soko" in mode
 
 @* Application instances
 
-Each application instance structure is a [code ui/element] and
-should be derived from [code app/instance]. It needs to provide
-implementations of the element methods in a table created by
-[code app/instance-functions].
+Each application instance structure should be derived from [code
+app/instance], which is in turn derived from [code ui/element].
+It needs to provide implementations of the element methods in
+a table created by [code app/instance-functions].
 
 Deriving from [code app/instance] is done by defining a new structure
 type that has [code app/instance] as its first element. Then
@@ -77,8 +77,8 @@ Then, whenever this application needs to be shown, the [code my/paint]
 function will be called with the instance structure as its argument.
 The paint function can retrieve from the instance structure whatever
 state is needed to draw the application. It can also treat its
-argument as a [code app/instance] structure and access a couple
-of [emph its] fields.
+argument as a [code app/instance] or [code ui/element] structure
+and access a couple of [emph their] fields.
 
 Let's look at the actual definition of [code app/instance]. As
 mentioned, it's a [code ui/element], and it has two extra fields
@@ -92,6 +92,7 @@ for the name and mode.
 
 (fun (app/instance-init inst)
   (ui/element-init inst)
+  (set (ui/elt-can-focus inst) 1)
   (set (app/app-name inst) 0)
   (set (app/app-mode inst) 0))
 
@@ -108,9 +109,9 @@ for the name and mode.
 
 In addition to the applications, there is also the [emph shell].
 This is a special application, derived from [code app/shell-instance].
-It will always be displayed at the right in a narrow column and
-will receive the global input events and is responsible for links.
-(And it will be renamed "the navigator" soon, I guess.)
+It will always be displayed at the right in a narrow column,
+will receive the global input events, and is responsible for
+links. (And it will be renamed "the navigator" soon, I guess.)
 
 @=
 (struct app/shell-instance
@@ -135,77 +136,138 @@ will receive the global input events and is responsible for links.
 
 All applications are maintained as sub-elements of the single,
 global root element. We derive a new kind of root element that
-implements all the sate and logic needed for switching between
-applications and managing the keyboard focus.
+implements all the state and logic needed for switching between
+applications.
 
 @=
-(struct app/root
-  (:base ui/root-element)
+(struct app/app-link
+  al-app
+  al-next)
+
+(struct app/root-instance
+  (:base ui/element)
+  r-apps
   r-current
   r-shell)
 
 (fun (app/root-init inst)
-  (ui/root-element-init inst)
+  (ui/element-init inst)
+  (set (app/r-apps inst) 0)
   (set (app/r-current inst) 0)
   (set (app/r-shell inst) 0))
+@
 
+The root element owns all application elements. Thus, when finalizing
+it, we call [code ui/free] for all applications (and the shell).
+
+@=
 (fun (app/root-fini inst)
-  (ui/root-element-fini inst))
+  (var l (app/r-apps inst))
+  (var n)
+  (while l
+    (set n (app/al-next l))
+    (ui/free (app/al-app l))
+    (mem/free l)
+    (set l n))
+  (if ((app/r-shell inst)
+       (ui/free (app/r-shell inst))))
+  (ui/element-fini inst))
+@
 
-(fun (app/root-paint inst))
+Painting the root places the current application on the left, and the shell on the right.
+
+@=
+(fun (app/root-paint inst)
+  (if ((app/r-current inst)
+       (ui/paint inst (app/r-current inst) 0 0 (ui/elt-height inst) (ui/elt-height inst))))
+  (if ((app/r-shell inst)
+       (ui/paint inst (app/r-shell inst)
+                 (ui/elt-height inst) 0
+                 (- (ui/elt-width inst) (ui/elt-height inst)) (ui/elt-height inst)))))
 
 (fun (app/root-input inst state input x y))
 
-(fun (app/root-global-input inst state input x y)
-  (var app (app/r-current inst))
-  (var shell (app/r-shell inst))
-  ((app/-sft-global-input (ui/-elt-functions shell)) shell app state input x y))
-
-(ui/root-element-functions app/root-function-table
+(ui/element-functions app/root-function-table
   app/root-init
   app/root-fini
   app/root-paint
-  app/root-input
-  app/root-global-input)
-
-(fun (app/init)
-  (ui/set-root (ui/new app/root app/root-function-table)))
+  app/root-input)
 @
 
-All applications occupy the same area of the screen, but only
-the current one is visible. Switching between applications just
-hides and shows them, as necessary, and keeps the focus updated.
+@* Booting
+
+The single global root element is constructed early during boot
+and made globally available for functions like [code app/launch],
+[code app/switch], and [code app/find].
+
+@=
+(fun (app/init)
+  (var root (ui/new app/root-instance app/root-function-table))
+  (set (ctxt/app context) root))
+
+(fun (app/root)
+  (ctxt/app context))
+@
+
+The last step of booting is to call [code app/loop]. This will
+get the ball rolling by calling [code ui/loop] with the global
+root element. It also takes care to route the global input events
+to the shell.
+
+@=
+(fun (app/global-input root state input x y)
+  (var app (app/r-current root))
+  (var shell (app/r-shell root))
+  (if ((ui/elt-contains-focus shell)
+       (set app shell)))
+  ((app/-sft-global-input (ui/-elt-functions shell)) shell app state input x y))
+
+(fun (app/loop)
+  (ui/loop (app/root) app/global-input (app/root)))
+@
+
+@* Managing applications
+
+Switching between applications is very easy, we just need to update
+the root and paint it again. Oh, and also switch the keyboard
+focus.
 
 @=
 (fun (app/switch-to-inst inst)
-  (var root (ui/root))
-  (if ((app/r-current root)
-       (ui/hide (app/r-current root))))
+  (var root (app/root))
   (set (app/r-current root) inst)
-  (ui/show inst)
-  (ui/set-focus inst))
+  (ui/set-focus inst)
+  (ui/paint-needed root))
 @
 
 Quitting an application removes it from the root and frees the
-instance with [code ui /free]. Most of the work consists of finding
+instance with [code ui/free]. Most of the work consists of finding
 the next element that should get the keyboard focus.
 
 @=
 (fun (app/quit inst)
-  (var root (ui/root))
-  (ui/remove inst)
+  (var root (app/root))
+  (var ptr (loc (app/r-apps root)))
+  (while (u64 ptr)
+    (var l (u64 ptr))
+    (if ((== (app/al-app l) inst)
+         (set (u64 ptr) (app/al-next l))
+         (mem/free l))
+        (else
+         (set ptr (loc (app/al-next l))))))
   (if ((== (app/r-shell root) inst)
        (set (app/r-shell root) 0)
        (ui/set-focus (app/r-current root)))
       (else
        (if ((== (app/r-current root) inst)
             (set (app/r-current root) 0)
-            (var n (ui/-elt-subs root))
-            (while (and n (== n (app/r-shell root)))
-              (set n (ui/-elt-next n)))
+            (var n (app/r-apps root))
             (if (n
-                 (app/switch-to-inst n)))))))
-  (ui/free inst))
+                 (app/switch-to-inst (app/al-app n)))
+                (else
+                 (ui/set-focus (app/r-shell root))))))))                 
+  (ui/free inst)
+  (ui/paint-needed root))
 @
 
 And here is a function for finding an application instance for
@@ -214,16 +276,16 @@ to an application by name and mode.
 
 @=
 (fun (app/find name mode)
-  (var root (ui/root))
-  (var inst (ui/-elt-subs root))
-  (while inst
+  (var root (app/root))
+  (var l (app/r-apps root))
+  (while l
+    (var inst (app/al-app l))
     (if ((and (str/eq (app/app-name inst) name)
-              (str/eq (app/app-mode inst) mode)
-              (!= inst (app/r-shell root)))
+              (str/eq (app/app-mode inst) mode))
          (goto done)))
-    (set inst (ui/-elt-next inst)))
+    (set l (app/al-next l)))
   (label done)
-  inst)
+  (and l (app/al-app l)))
 
 (fun (app/switch name mode)
   (var inst (app/find name mode))
@@ -237,7 +299,7 @@ It is used to implement [code C-x C-x], for example.
 
 @=
 (fun (app/focus-shell flag)
-  (var root (ui/root))
+  (var root (app/root))
   (if (flag
        (ui/set-focus (app/r-shell root)))
       (else
@@ -246,7 +308,7 @@ It is used to implement [code C-x C-x], for example.
 @* Launching
 
 Launching an application is pretty easy now: Just add it to our
-root element with [code ui/add] and switch to it.
+root element and switch to it.
 
 @=
 (fun (app/-init-name-and-mode inst name mode)
@@ -258,25 +320,26 @@ root element with [code ui/add] and switch to it.
   (if (old
        (app/quit old)))
   (app/-init-name-and-mode inst name mode)
-  (var root (ui/root))
-  (ui/add inst root 0 0 (ui/elt-height root) (ui/elt-height root))
+  (var root (app/root))
+  (var l (mem/alloc app/app-link))
+  (set (app/al-app l) inst)
+  (set (app/al-next l) (app/r-apps root))
+  (set (app/r-apps root) l)
   (app/switch-to-inst inst))
 @
 
-Launching the shell is almost the same. It is placed in a different
-location of the screen, of course.
+Launching the shell is almost the same, and even easier since
+we don't have a list of shells.
 
 @=
 (fun (app/launch-shell inst)
-  (var root (ui/root))
+  (var root (app/root))
   (if ((app/r-shell root)
        (app/quit (app/r-shell root))))
   (app/-init-name-and-mode inst "shell" "main")
-  (ui/add inst root
-          (ui/elt-height root) 0
-          (- (ui/elt-width root) (ui/elt-height root)) (ui/elt-height root))
   (set (app/r-shell root) inst)
-  (ui/set-focus inst))
+  (ui/set-focus inst)
+  (ui/paint-needed root))
 
 @* Links
 
@@ -284,6 +347,6 @@ Requests to navigate to a link are simply handed to the current shell.
 
 @=
 (fun (app/goto-link link)
-  (var root (ui/root))
+  (var root (app/root))
   (if ((var shell (app/r-shell root))
        ((app/-sft-goto-link (ui/-elt-functions shell)) shell link))))

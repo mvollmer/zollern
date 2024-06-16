@@ -11,5 +11,6 @@ needs some global mutable state, it can use a field...
   mem
   fs
   gfx
+  app
   ui
   tx)

@@ -26,6 +26,7 @@
 (def gfx/ev-state-shift    8)
 (def gfx/ev-state-control 16)
 (def gfx/ev-state-meta    32)
+(def gfx/ev-state-inside  64)
 
 (def gfx/ev-button-1-press   -1)
 (def gfx/ev-button-1-release -2)
@@ -227,7 +228,7 @@
 
 (fun (gfx/clear)
   (var gfx (ctxt/gfx context))
-  (gfx/rect (gfx/gfx-win-x gfx) (gfx/gfx-win-y gfx) (gfx/gfx-win-w gfx) (gfx/gfx-win-h gfx) (gfx/color 255 255 255)))
+  (gfx/rect 0 0 (gfx/gfx-win-w gfx) (gfx/gfx-win-h gfx) (gfx/color 255 255 255)))
 
 (struct gfx/font
   (font-glyphs  u64)
@@ -399,7 +400,6 @@
     (set str (+ str 1))))
 
 (fun (gfx/draw-string-at x y font str)
-  (var g (ctxt/gfx context))
   (while (and (u8 str)
               (>= x 0)
               (< x 1000)
