@@ -153,19 +153,19 @@ the event.
 
 @=
 (fun (ui/paint inst sub x y w h)
+  (mem oldclip gfx/clipstate)
   (if (inst
        (set (ui/-elt-next sub) (ui/-elt-subs inst))
-       (set (ui/-elt-subs inst) sub)
-       (set x (+ x (ui/-elt-x inst)))
-       (set y (+ y (ui/-elt-y inst)))))
+       (set (ui/-elt-subs inst) sub)))
   (set (ui/-elt-x sub) x)
   (set (ui/-elt-y sub) y)
   (set (ui/elt-width sub) w)
   (set (ui/elt-height sub) h)
   (set (ui/-elt-subs sub) 0)
-  (gfx/set-window x y w h)
+  (gfx/push-clip oldclip x y w h)
   ((ui/-eltf-paint (ui/-elt-functions sub)) sub)
-  (set (ui/-elt-needs-paint sub) 0))
+  (set (ui/-elt-needs-paint sub) 0)
+  (gfx/pop-clip oldclip))
 @
 
 Actually, painting does not always start with the root, but with
@@ -185,9 +185,11 @@ elements that need painting.
 
 @=
 (fun (ui/paint-if-needed inst)
+  (mem oldclip gfx/clipstate)
+  (gfx/push-clip oldclip
+                 (ui/-elt-x inst) (ui/-elt-y inst)
+                 (ui/elt-width inst) (ui/elt-height inst))  
   (if ((ui/-elt-needs-paint inst)
-       (gfx/set-window (ui/-elt-x inst) (ui/-elt-y inst)
-                       (ui/elt-width inst) (ui/elt-height inst))
        (gfx/clear)
        (set (ui/-elt-subs inst) 0)
        ((ui/-eltf-paint (ui/-elt-functions inst)) inst)
@@ -196,7 +198,8 @@ elements that need painting.
        (var sub (ui/-elt-subs inst))
        (while sub
          (ui/paint-if-needed sub)
-         (set sub (ui/-elt-next sub))))))
+         (set sub (ui/-elt-next sub)))))
+  (gfx/pop-clip oldclip))
 @
 
 @* Keyboard focus
@@ -225,13 +228,14 @@ it early enough during boot.
 
 (fun (ui/set-focus inst)
   (var c (ctxt/ui context))
-  (if ((ui/c-focus c)
-       (set (ui/elt-has-focus (ui/c-focus c)) 0)
-       (ui/paint-needed (ui/c-focus c))))
-  (set (ui/c-focus c) inst)
-  (if (inst
-       (set (ui/elt-has-focus inst) 1)
-       (ui/paint-needed inst))))
+  (if ((!= (ui/c-focus c) inst)
+       (if ((ui/c-focus c)
+            (set (ui/elt-has-focus (ui/c-focus c)) 0)
+            (ui/paint-needed (ui/c-focus c))))
+       (set (ui/c-focus c) inst)
+       (if (inst
+            (set (ui/elt-has-focus inst) 1)
+            (ui/paint-needed inst))))))
 @
 
 As you can see above, the current focus element has the [emph
@@ -268,15 +272,15 @@ closest element that can get the keyboard focus,
   qr-top)
 
 (fun (ui/query-xy inst x y res)
-  (if ((and (>= x (ui/-elt-x inst))
-            (>= y (ui/-elt-y inst))
-            (< x (+ (ui/-elt-x inst) (ui/elt-width inst)))
-            (< y (+ (ui/-elt-y inst) (ui/elt-height inst))))
+  (if ((and (>= x 0)
+            (>= y 0)
+            (< x (ui/elt-width inst))
+            (< y (ui/elt-height inst)))
        (if ((ui/elt-can-focus inst)
             (set (ui/qr-focus res) inst)))
        (set (ui/qr-top res) inst)
        (var sub (ui/-elt-subs inst))
-       (while (and sub (not (ui/query-xy sub x y res)))
+       (while (and sub (not (ui/query-xy sub (- x (ui/-elt-x sub)) (- y (ui/-elt-y sub)) res)))
          (set sub (ui/-elt-next sub)))
        1)
       (else
@@ -305,7 +309,7 @@ The [code ui/button] element uses this, for example.
   (var control-x-prefix 0)
   (var grab 0)
   (var gfx (ctxt/gfx context))
-  (gfx/reset-win gfx)
+  (gfx/reset-window)
   (gfx/clear)
   (ui/paint 0 root 0 0 (gfx/gfx-screen-width gfx) (gfx/gfx-screen-height gfx))
   (while 1

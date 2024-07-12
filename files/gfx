@@ -7,8 +7,10 @@
 
   gfx-win-x
   gfx-win-y
-  gfx-win-w
-  gfx-win-h
+  gfx-clip-x ;; absolute, not relative to win
+  gfx-clip-y
+  gfx-clip-w
+  gfx-clip-h
 
   gfx-x
   gfx-y
@@ -91,11 +93,14 @@
        (sys/mmap 0 bytes (+ sys/prot-read sys/prot-write) sys/map-shared 3 0))
   (gfx/cmd 1 w h))
 
-(fun (gfx/reset-win c)
+(fun (gfx/reset-window)
+  (var c (ctxt/gfx context))
   (set (gfx/gfx-win-x c) 0)
   (set (gfx/gfx-win-y c) 0)
-  (set (gfx/gfx-win-w c) (gfx/gfx-screen-width c))
-  (set (gfx/gfx-win-h c) (gfx/gfx-screen-height c)))
+  (set (gfx/gfx-clip-x c) 0)
+  (set (gfx/gfx-clip-y c) 0)
+  (set (gfx/gfx-clip-w c) (gfx/gfx-screen-width c))
+  (set (gfx/gfx-clip-h c) (gfx/gfx-screen-height c)))
 
 (fun (gfx/init)
   (var c (mem/alloc gfx/context))
@@ -106,7 +111,7 @@
            (gfx/read-event event)
            (!= (gfx/ev-type event) 3)))
   (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
-  (gfx/reset-win c))
+  (gfx/reset-window))
 
 (fun (gfx/color r g b)
   (+ (* (+ (* r 256) g) 256) b))
@@ -127,32 +132,53 @@
 
 (def (gfx/clip-rect ?gfx ?x ?y ?w ?h)
   (begin
-    (if ((< ?x 0)
-         (set ?w (+ ?w ?x))
-         (set ?x 0)))
-    (if ((< ?y 0)
-         (set ?h (+ ?h ?y))
-         (set ?y 0)))
-    (var clip-max-w (- (gfx/gfx-win-w ?gfx) ?x))
+    (var clip-min-x (gfx/gfx-clip-x ?gfx))
+    (if ((< ?x clip-min-x)
+         (set ?w (- ?w (- clip-min-x ?x)))
+         (set ?x clip-min-x)))
+    (var clip-min-y (gfx/gfx-clip-y ?gfx))
+    (if ((< ?y clip-min-y)
+         (set ?h (- ?h (- clip-min-y ?y)))
+         (set ?y clip-min-y)))
+    (var clip-max-w (- (gfx/gfx-clip-w ?gfx) (- ?x clip-min-x)))
     (if ((> ?w clip-max-w)
          (set ?w clip-max-w)))
-    (var clip-max-h (- (gfx/gfx-win-h ?gfx) ?y))
+    (var clip-max-h (- (gfx/gfx-clip-h ?gfx) (- ?y clip-min-y)))
     (if ((> ?h clip-max-h)
          (set ?h clip-max-h)))))
 
-(fun (gfx/set-window x y w h)
-  (var gfx (ctxt/gfx context))
-  (gfx/reset-win gfx)
-  (gfx/clip-rect gfx x y w h)
-  (set (gfx/gfx-win-x gfx) x)
-  (set (gfx/gfx-win-y gfx) y)
-  (set (gfx/gfx-win-w gfx) w)
-  (set (gfx/gfx-win-h gfx) h))
+(struct gfx/clipstate cs-w-x cs-w-y cs-x cs-y cs-w cs-h)
+
+(fun (gfx/push-clip old x y w h)
+  (var c (ctxt/gfx context))
+  (set (gfx/cs-w-x old) (gfx/gfx-win-x c))
+  (set (gfx/cs-w-y old) (gfx/gfx-win-y c))
+  (set (gfx/cs-x old) (gfx/gfx-clip-x c))
+  (set (gfx/cs-y old) (gfx/gfx-clip-y c))
+  (set (gfx/cs-w old) (gfx/gfx-clip-w c))
+  (set (gfx/cs-h old) (gfx/gfx-clip-h c))
+  (gfx/win-to-screen c x y)
+  (set (gfx/gfx-win-x c) x)
+  (set (gfx/gfx-win-y c) y)
+  (gfx/clip-rect c x y w h)
+  (set (gfx/gfx-clip-x c) x)
+  (set (gfx/gfx-clip-y c) y)
+  (set (gfx/gfx-clip-w c) w)
+  (set (gfx/gfx-clip-h c) h))
+
+(fun (gfx/pop-clip old)
+  (var c (ctxt/gfx context))
+  (set (gfx/gfx-win-x c) (gfx/cs-w-x old))
+  (set (gfx/gfx-win-y c) (gfx/cs-w-y old))
+  (set (gfx/gfx-clip-x c) (gfx/cs-x old))
+  (set (gfx/gfx-clip-y c) (gfx/cs-y old))
+  (set (gfx/gfx-clip-w c) (gfx/cs-w old))
+  (set (gfx/gfx-clip-h c) (gfx/cs-h old)))
 
 (fun (gfx/rect x y w h c)
   (var gfx (ctxt/gfx context))
-  (gfx/clip-rect gfx x y w h)
   (gfx/win-to-screen gfx x y)
+  (gfx/clip-rect gfx x y w h)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/gfx-screen-width gfx) w) u32))
   (var i)
@@ -169,8 +195,8 @@
 
 (fun (gfx/invert-rect x y w h)
   (var gfx (ctxt/gfx context))
-  (gfx/clip-rect gfx x y w h)
   (gfx/win-to-screen gfx x y)
+  (gfx/clip-rect gfx x y w h)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/width) w) u32))
   (var white (gfx/color 255 255 255))
@@ -188,8 +214,8 @@
 
 (fun (gfx/tint-rect x y w h r g b)
   (var gfx (ctxt/gfx context))
-  (gfx/clip-rect gfx x y w h)
   (gfx/win-to-screen gfx x y)
+  (gfx/clip-rect gfx x y w h)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/width) w) u32))
   (var i)
@@ -208,8 +234,8 @@
 
 (fun (gfx/tint-rect-2 x y w h fg-r fg-g fg-b bg-r bg-g bg-b)
   (var gfx (ctxt/gfx context))
-  (gfx/clip-rect gfx x y w h)
   (gfx/win-to-screen gfx x y)
+  (gfx/clip-rect gfx x y w h)
   (var pixels (+ (gfx/gfx-pixels gfx) (* (+ x (* y (gfx/width))) u32)))
   (var skip (* (- (gfx/width) w) u32))
   (var i)
@@ -228,7 +254,7 @@
 
 (fun (gfx/clear)
   (var gfx (ctxt/gfx context))
-  (gfx/rect 0 0 (gfx/gfx-win-w gfx) (gfx/gfx-win-h gfx) (gfx/color 255 255 255)))
+  (gfx/rect (gfx/gfx-clip-x gfx) (gfx/gfx-clip-y gfx) (gfx/gfx-clip-w gfx) (gfx/gfx-clip-h gfx) (gfx/color 255 255 255)))
 
 (struct gfx/font
   (font-glyphs  u64)
@@ -276,9 +302,9 @@
 
 (fun (gfx/put-pixel x y c)
   (var gfx (ctxt/gfx context))
-  (if ((and (>= x 0) (>= y 0)
-            (< x (gfx/gfx-win-w gfx)) (< y (gfx/gfx-win-h gfx)))
-       (gfx/win-to-screen gfx x y)
+  (gfx/win-to-screen gfx x y)
+  (if ((and (>= x (gfx/gfx-clip-x gfx)) (>= y (gfx/gfx-clip-y gfx))
+            (< x (+ (gfx/gfx-clip-x gfx) (gfx/gfx-clip-w gfx))) (< y (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
        (set (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)) c))))
 
 (fun (gfx/min a b)
@@ -286,9 +312,9 @@
 
 (fun (gfx/put-pixel-compose x y c)
   (var gfx (ctxt/gfx context))
-  (if ((and (>= x 0) (>= y 0)
-            (< x (gfx/gfx-win-w gfx)) (< y (gfx/gfx-win-h gfx)))
-       (gfx/win-to-screen gfx x y)
+  (gfx/win-to-screen gfx x y)
+  (if ((and (>= x (gfx/gfx-clip-x gfx)) (>= y (gfx/gfx-clip-y gfx))
+            (< x (+ (gfx/gfx-clip-x gfx) (gfx/gfx-clip-w gfx))) (< y (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
        (var ptr (+ (gfx/gfx-pixels gfx) (* (+ (* y (gfx/width)) x) u32)))
        (var sc (u32 ptr))
        (set (u32 ptr) (gfx/color (gfx/min (gfx/color-r c) (gfx/color-r sc))
@@ -297,9 +323,9 @@
 
 (fun (gfx/get-pixel x y)
   (var gfx (ctxt/gfx context))
-  (if ((and (>= x 0) (>= y 0)
-            (< x (gfx/gfx-win-w gfx)) (< y (gfx/gfx-win-h gfx)))
-       (gfx/win-to-screen gfx x y)
+  (gfx/win-to-screen gfx x y)
+  (if ((and (>= x (gfx/gfx-clip-x gfx)) (>= y (gfx/gfx-clip-y gfx))
+            (< x (+ (gfx/gfx-clip-x gfx) (gfx/gfx-clip-w gfx))) (< y (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
        (u32 (gfx/gfx-pixels gfx) (+ (* y (gfx/width)) x)))
       (else
        0)))
@@ -315,8 +341,8 @@
   (var h (gfx/glyph-height glyph))
   (set x (+ x (gfx/glyph-offset-x glyph)))
   (set y (+ y (gfx/glyph-offset-y glyph)))
-  (if ((or (< (+ x w) 0) (>= x (gfx/gfx-win-w gfx))
-           (< (+ y h) 0) (>= y (gfx/gfx-win-h gfx)))
+  (if ((or (< (+ x w (gfx/gfx-win-x gfx)) (gfx/gfx-clip-x gfx)) (>= x (+ (gfx/gfx-clip-x gfx) (gfx/gfx-clip-w gfx)))
+           (< (+ y h (gfx/gfx-win-x gfx)) (gfx/gfx-clip-y gfx)) (>= y (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
        (gfx/glyph-advance glyph))
       (else
        (var src-p (+ glyph gfx/glyph-header))

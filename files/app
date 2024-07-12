@@ -265,7 +265,7 @@ the next element that should get the keyboard focus.
             (if (n
                  (app/switch-to-inst (app/al-app n)))
                 (else
-                 (ui/set-focus (app/r-shell root))))))))                 
+                 (ui/set-focus (app/r-shell root))))))))
   (ui/free inst)
   (ui/paint-needed root))
 @
