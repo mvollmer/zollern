@@ -254,7 +254,9 @@
 
 (fun (gfx/clear)
   (var gfx (ctxt/gfx context))
-  (gfx/rect (gfx/gfx-clip-x gfx) (gfx/gfx-clip-y gfx) (gfx/gfx-clip-w gfx) (gfx/gfx-clip-h gfx) (gfx/color 255 255 255)))
+  (gfx/rect (- (gfx/gfx-clip-x gfx) (gfx/gfx-win-x gfx)) (- (gfx/gfx-clip-y gfx) (gfx/gfx-win-y gfx))
+            (gfx/gfx-clip-w gfx) (gfx/gfx-clip-h gfx)
+            (gfx/color 255 255 255)))
 
 (struct gfx/font
   (font-glyphs  u64)
