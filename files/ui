@@ -47,7 +47,7 @@ by all elements. It's pretty big as far as Zollern is concerned.
   -elt-functions
   -elt-next
   -elt-subs
-  -elt-x
+  -elt-x ;; absolute
   -elt-y
   (-elt-flag1 u8)
   (-elt-needs-paint u8)
@@ -156,7 +156,9 @@ the event.
   (mem oldclip gfx/clipstate)
   (if (inst
        (set (ui/-elt-next sub) (ui/-elt-subs inst))
-       (set (ui/-elt-subs inst) sub)))
+       (set (ui/-elt-subs inst) sub)
+       (set x (+ x (ui/-elt-x inst)))
+       (set y (+ y (ui/-elt-y inst)))))
   (set (ui/-elt-x sub) x)
   (set (ui/-elt-y sub) y)
   (set (ui/elt-width sub) w)
@@ -272,15 +274,15 @@ closest element that can get the keyboard focus,
   qr-top)
 
 (fun (ui/query-xy inst x y res)
-  (if ((and (>= x 0)
-            (>= y 0)
-            (< x (ui/elt-width inst))
-            (< y (ui/elt-height inst)))
+  (if ((and (>= x (ui/-elt-x inst))
+            (>= y (ui/-elt-y inst))
+            (< x (+ (ui/-elt-x inst) (ui/elt-width inst)))
+            (< y (+ (ui/-elt-y inst) (ui/elt-height inst))))
        (if ((ui/elt-can-focus inst)
             (set (ui/qr-focus res) inst)))
        (set (ui/qr-top res) inst)
        (var sub (ui/-elt-subs inst))
-       (while (and sub (not (ui/query-xy sub (- x (ui/-elt-x sub)) (- y (ui/-elt-y sub)) res)))
+       (while (and sub (not (ui/query-xy sub x y res)))
          (set sub (ui/-elt-next sub)))
        1)
       (else
@@ -325,7 +327,7 @@ The [code ui/button] element uses this, for example.
          (var input (gfx/ev-input event))
          (var x (gfx/ev-x event))
          (var y (gfx/ev-y event))
-         (if ((and (<= input gfx/ev-button-1-press)
+         (if ((and (<= input gfx/ev-move)
                    (>= input gfx/ev-scroll-down))
               (mem res ui/query-result)
               (set (ui/qr-focus res) 0)
@@ -387,12 +389,17 @@ is registered and the callback function is not called.
   (ui/element-fini inst))
 
 (fun (ui/button-paint inst)
-  (var off (if ((ui/btn-pressed inst) 1) (else 0)))
+  (var off (if ((ui/btn-pressed inst) 2) (else 0)))
   (gfx/draw-string-at (+ 5 off) (+ 5 off) fonts/sans (ui/btn-label inst))
   (gfx/tint-rect 0 0 (ui/elt-width inst) (ui/elt-height inst) 220 250 255))
 
 (fun (ui/button-input inst state input x y)
-  (if ((== input gfx/ev-button-1-press)
+  (if ((== input gfx/ev-move)
+       (var pressed (!= (bit-and state gfx/ev-state-inside) 0))
+       (if ((!= pressed (ui/btn-pressed inst))
+            (set (ui/btn-pressed inst) pressed)
+            (ui/paint-needed inst))))
+      ((== input gfx/ev-button-1-press)
        (set (ui/btn-pressed inst) 1)
        (ui/paint-needed inst))
       ((== input gfx/ev-button-1-release)

@@ -30,6 +30,7 @@
 (def gfx/ev-state-meta    32)
 (def gfx/ev-state-inside  64)
 
+(def gfx/ev-move              0)
 (def gfx/ev-button-1-press   -1)
 (def gfx/ev-button-1-release -2)
 (def gfx/ev-button-2-press   -3)
@@ -157,7 +158,6 @@
   (set (gfx/cs-y old) (gfx/gfx-clip-y c))
   (set (gfx/cs-w old) (gfx/gfx-clip-w c))
   (set (gfx/cs-h old) (gfx/gfx-clip-h c))
-  (gfx/win-to-screen c x y)
   (set (gfx/gfx-win-x c) x)
   (set (gfx/gfx-win-y c) y)
   (gfx/clip-rect c x y w h)

@@ -371,6 +371,13 @@ handle_event (SDL_Event *e)
         return true;
       }
     }
+  else if (e->type == SDL_MOUSEMOTION)
+    {
+      if (e->motion.state & SDL_BUTTON(SDL_BUTTON_LEFT)) {
+        send_input_event (-EV_MOVE, SDL_GetModState());
+        return true;
+      }
+    }
 
   return false;
 }
@@ -494,7 +501,9 @@ main (int argc, char **argv)
         while (true) {
           n = SDL_PeepEvents (&event, 1,
                               SDL_PEEKEVENT, SDL_KEYDOWN, SDL_KEYDOWN);
-          if (n > 0 && event.type == SDL_KEYDOWN && event.key.repeat) {
+          if (n > 0 &&
+              ((event.type == SDL_KEYDOWN && event.key.repeat)
+               || (event.type == SDL_MOUSEMOTION))) {
             SDL_PeepEvents (&event, 1,
                             SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT);
           } else
