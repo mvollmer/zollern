@@ -2631,7 +2631,12 @@ keep the viewer in about the right possition.
   inst-ink
   inst-y-off
   inst-y-max
-  inst-draw-tag-index)
+  inst-draw-tag-index
+  inst-sb)
+
+(fun (tx/scroll inst y)
+  (set (tx/inst-y-off inst) y)
+  (ui/paint-needed inst))
 
 (fun (tx/init inst name offset)
   (app/instance-init inst)
@@ -2640,16 +2645,19 @@ keep the viewer in about the right possition.
   (tx/process-file name)
   (set (tx/inst-ink inst) (tx/stop-session))
   (set (tx/inst-y-max inst) (tx/is-y (tx/c-ink-state (ctxt/tx context))))
-  (set (tx/inst-draw-tag-index inst) 0))
+  (set (tx/inst-draw-tag-index inst) 0)
+  (set (tx/inst-sb inst) (ui/scrollbar-new 0 (tx/inst-y-max inst) tx/scroll inst)))
 
 (fun (tx/fini inst)
   (tx/free-ink (tx/inst-ink inst))
+  (ui/free (tx/inst-sb inst))
   (app/instance-fini inst))
 
 (fun (tx/paint inst)
   (tx/draw-ink (tx/inst-ink inst)
                (/ (- (ui/elt-width inst) 700) 2) (- (tx/inst-y-off inst))
-               (tx/inst-draw-tag-index inst)))
+               (tx/inst-draw-tag-index inst))
+  (ui/paint inst (tx/inst-sb inst) (- (ui/elt-width inst) 10) 0 10 (ui/elt-height inst)))
 
 (fun (tx/input inst state input x y)
   (var old-off (tx/inst-y-off inst))
@@ -2689,6 +2697,7 @@ keep the viewer in about the right possition.
        (set (tx/inst-y-off inst) (tx/inst-y-max inst))))
   (if ((!= old-off (tx/inst-y-off inst))
        (set (tx/inst-draw-tag-index inst) 0)
+       (ui/scrollbar-set (tx/inst-sb inst) (tx/inst-y-off inst) (tx/inst-y-max inst))
        (ui/paint-needed inst))))
 
 (app/instance-functions tx/funcs
