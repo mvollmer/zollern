@@ -190,7 +190,7 @@ elements that need painting.
   (mem oldclip gfx/clipstate)
   (gfx/push-clip oldclip
                  (ui/-elt-x inst) (ui/-elt-y inst)
-                 (ui/elt-width inst) (ui/elt-height inst))  
+                 (ui/elt-width inst) (ui/elt-height inst))
   (if ((ui/-elt-needs-paint inst)
        (gfx/clear)
        (set (ui/-elt-subs inst) 0)
@@ -360,6 +360,28 @@ The [code ui/button] element uses this, for example.
     (ui/paint-if-needed root)))
 @
 
+@* User interface style
+
+@=
+(defconst ui/active-red   255)
+(defconst ui/active-green 147)
+(defconst ui/active-blue    0)
+(defconst ui/active-color (gfx/const-color ui/active-red ui/active-green ui/active-blue))
+
+(defconst ui/link-red   255)
+(defconst ui/link-green 197)
+(defconst ui/link-blue  119)
+(defconst ui/link-color (gfx/const-color ui/link-red ui/link-green ui/link-blue))
+
+(defconst ui/gap               7)
+(defconst ui/button-height    25)
+(defconst ui/textinput-height 25)
+(defconst ui/scrollbar-width  15)
+
+(fun (ui/tint-active x y w h)
+  (gfx/tint-rect-2 x y w h 0 0 0 ui/active-red ui/active-green ui/active-blue))
+@
+
 @* Buttons
 
 Buttons are user interface elements that call a given function
@@ -391,7 +413,7 @@ is registered and the callback function is not called.
 (fun (ui/button-paint inst)
   (var off (if ((ui/btn-pressed inst) 2) (else 0)))
   (gfx/draw-string-at (+ 5 off) (+ 5 off) fonts/sans (ui/btn-label inst))
-  (gfx/tint-rect 0 0 (ui/elt-width inst) (ui/elt-height inst) 220 250 255))
+  (ui/tint-active 0 0 (ui/elt-width inst) (ui/elt-height inst)))
 
 (fun (ui/button-input inst state input x y)
   (if ((== input gfx/ev-move)
@@ -441,23 +463,22 @@ The editing is implemented by the [book ed] book.
   (ed/highlight (ui/tin-ed inst))
   (set (ui/tin-enter-handler inst) handler)
   (set (ui/tin-enter-handler-data inst) handler-data))
-  
+
 (fun (ui/textinput-fini inst)
   (ed/free (ui/tin-ed inst))
   (ed/textbuf-free (ui/tin-textbuf inst))
   (ui/element-fini inst))
 
 (fun (ui/textinput-paint inst)
-  (gfx/rect 0 0 (ui/elt-width inst) (ui/elt-height inst)
-            (gfx/color 220 250 255))
-  (gfx/rect 4 4 (- (ui/elt-width inst) 8) (- (ui/elt-height inst) 8) (gfx/color 255 255 255))
+  (gfx/rect 0 0 (ui/elt-width inst) (ui/elt-height inst) ui/active-color)
+  (gfx/rect 2 2 (- (ui/elt-width inst) 4) (- (ui/elt-height inst) 4) (gfx/color 255 255 255))
   (ed/paint (ui/tin-ed inst) 4 4 (- (ui/elt-width inst) 8) (- (ui/elt-height inst) 8) (ui/elt-has-focus inst)))
 
 (fun (ui/textinput-input inst state input x y)
   (if ((== input gfx/ev-key-return)
        ((ui/tin-enter-handler inst) (ui/tin-enter-handler-data inst)
         (ed/textbuf-maybe-as-string (ui/tin-textbuf inst))))
-      (else       
+      (else
        (ui/paint-needed inst)
        (ed/input (ui/tin-ed inst) state input x y))))
 
@@ -499,14 +520,14 @@ The editing is implemented by the [book ed] book.
   (set (ui/sb-total inst) total)
   (set (ui/sb-scroll-handler inst) handler)
   (set (ui/sb-scroll-handler-data inst) handler-data))
-  
+
 (fun (ui/scrollbar-fini inst)
   (ui/element-fini inst))
 
 (fun (ui/scrollbar-paint inst)
   (var h (/ (* (ui/elt-height inst) (ui/elt-height inst)) (ui/sb-total inst)))
   (var p (/ (* (ui/sb-pos inst) (ui/elt-height inst)) (ui/sb-total inst)))
-  (gfx/rect 0 p (ui/elt-width inst) h (gfx/color 220 250 255)))
+  (gfx/rect 2 (+ p 2) (- (ui/elt-width inst) 4) (- h 4) ui/active-color))
 
 (fun (ui/scrollbar-input inst state input x y)
   (if ((== input gfx/ev-button-1-press)

@@ -114,6 +114,9 @@
   (gfx/resize (gfx/ev-x event) (gfx/ev-y event))
   (gfx/reset-window))
 
+(def (gfx/const-color ?r ?g ?b)
+  (+ (* (+ (* ?r 256) ?g) 256) ?b))
+
 (fun (gfx/color r g b)
   (+ (* (+ (* r 256) g) 256) b))
 

@@ -1112,7 +1112,7 @@ Nested lists are turned into nested invocations of [code syntax-parse].
                                (exp/syntax))))
     (goto loop)
     (label done)
-    (set result (exp/make-pair 
+    (set result (exp/make-pair
                  (syntax-expand (parse-eol ?ptr))
                  result))
     (label done-no-eol-check)
@@ -1696,7 +1696,7 @@ and the general pattern of macros that define a set of macros.
 
 @= <add whole-structure accessor>
 (set defs (exp/make-pair
-           (syntax-expand 
+           (syntax-expand
             (def (?name ??ptr ??(idx))
                  ??(if (idx
                         (syntax-expand (+ ??ptr (* ?(exp/make-number offset) ??idx))))

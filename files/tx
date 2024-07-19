@@ -1220,7 +1220,7 @@ function above.
      (var ty (+ y-off (- y (/ th 2))))
      (gfx/rect (- tx 15) (- ty 15) 30 30 (gfx/color 255 255 255))
      (gfx/glyph fonts/sans-l (- tx 6) (- ty 10) (+ ch/d1 tag-index))
-     (gfx/tint-rect-2 (- tx 15) (- ty 15) 30 30 255 255 255 40 40 40)
+     (ui/tint-active (- tx 15) (- ty 15) 30 30)
      (set tag-index (+ tag-index 1))))
 @
 
@@ -2298,7 +2298,7 @@ Links to other books ...
   (tx/set-vbox-height 14)
   (tx/end)
   (tx/skip 3)
-  (tx/set-box-bg-color (gfx/color 220 250 255))
+  (tx/set-box-bg-color ui/link-color)
   (var t (tx/c-cur-token (ctxt/tx context)))
   (tx/set-box-tag t)
   (tx/parse-text)
@@ -2657,7 +2657,7 @@ keep the viewer in about the right possition.
   (tx/draw-ink (tx/inst-ink inst)
                (/ (- (ui/elt-width inst) 700) 2) (- (tx/inst-y-off inst))
                (tx/inst-draw-tag-index inst))
-  (ui/paint inst (tx/inst-sb inst) (- (ui/elt-width inst) 10) 0 10 (ui/elt-height inst)))
+  (ui/paint inst (tx/inst-sb inst) (- (ui/elt-width inst) ui/scrollbar-width) 0 ui/scrollbar-width (ui/elt-height inst)))
 
 (fun (tx/input inst state input x y)
   (var old-off (tx/inst-y-off inst))
