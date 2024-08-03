@@ -328,7 +328,7 @@ The [code ui/button] element uses this, for example.
          (var x (gfx/ev-x event))
          (var y (gfx/ev-y event))
          (if ((and (<= input gfx/ev-move)
-                   (>= input gfx/ev-scroll-down))
+                   (>= input gfx/ev-button-3-release))
               (mem res ui/query-result)
               (set (ui/qr-focus res) 0)
               (set (ui/qr-top res) 0)
