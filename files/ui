@@ -376,7 +376,7 @@ The [code ui/button] element uses this, for example.
 (defconst ui/gap               7)
 (defconst ui/button-height    25)
 (defconst ui/textinput-height 25)
-(defconst ui/scrollbar-width  15)
+(defconst ui/scrollbar-width   7)
 
 (fun (ui/tint-active x y w h)
   (gfx/tint-rect-2 x y w h 0 0 0 ui/active-red ui/active-green ui/active-blue))
