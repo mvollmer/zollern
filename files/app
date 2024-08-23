@@ -111,7 +111,7 @@ In addition to the applications, there is also the [emph shell].
 This is a special application, derived from [code app/shell-instance].
 It will always be displayed at the right in a narrow column,
 will receive the global input events, and is responsible for
-links. (And it will be renamed "the navigator" soon, I guess.)
+links.
 
 @=
 (struct app/shell-instance
@@ -350,3 +350,4 @@ Requests to navigate to a link are simply handed to the current shell.
   (var root (app/root))
   (if ((var shell (app/r-shell root))
        ((app/-sft-goto-link (ui/-elt-functions shell)) shell link))))
+@
