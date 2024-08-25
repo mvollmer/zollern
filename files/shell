@@ -2,11 +2,7 @@
 
 (struct shell/instance
   (:base app/shell-instance)
-  files
-  cur
-  max
-  output
-  output-ptr
+  files cur max
   find-tin
   read-btn
   write-btn
@@ -17,10 +13,6 @@
   (var root (app/root))
   (if ((var shell (app/r-shell root))
        ((app/-sft-global-input (ui/-elt-functions shell)) shell 0 gfx/ev-state-control ch/l))))
-
-(fun (shell/capture-output str inst)
-  (str/cpy (shell/output-ptr inst) str)
-  (set (shell/output-ptr inst) (+ (shell/output-ptr inst) (str/len str))))
 
 (struct shell/ed-app
   (:base app/instance)
@@ -94,10 +86,6 @@
   (var inst (app/find name "ed"))
   (if (inst
        (shell/ed-save inst))))
-
-(fun (shell/help inst)
-  (set (shell/output-ptr inst) (shell/output inst))
-  (shell/capture-output "Shell keys:\n  RET - switch to app\n    e - edit source\n    r - restart\n    X - delete\n\nGlobal keys:\nC-x b - switch to shell\nC-x r - restart\nC-x e - edit source\nC-x q - quit\n\n  M-< - previous app\n  M-> - next app" inst))
 
 (struct shell/text-app
   (:base app/instance)
@@ -276,8 +264,6 @@
   (app/shell-instance-init inst)
   (set (shell/files inst) 0)
   (shell/update inst)
-  (set (shell/output inst) (mem/alloc 2048))
-  (set (u8 (shell/output inst)) 0)
   (set (shell/find-tin inst) (ui/textinput-new shell/cmd-find inst))
   (set (shell/read-btn inst) (ui/button-new "Read" shell/cmd-read inst))
   (set (shell/write-btn inst) (ui/button-new "Write" shell/cmd-write inst))
@@ -285,7 +271,6 @@
   (set (shell/quit-btn inst) (ui/button-new "Quit" shell/cmd-quit inst)))
 
 (fun (shell/instance-fini inst)
-  (mem/free (shell/output inst))
   (shell/free-file-data (shell/files inst))
   (ui/free (shell/find-tin inst))
   (ui/free (shell/read-btn inst))
@@ -325,10 +310,6 @@
   (while (shell/fd-name (shell/file-data files i))
     (shell/draw-file inst i (shell/file-data files i))
     (set i (+ i 1)))
-  (gfx/newline)
-  (gfx/set-font fonts/mono)
-  (gfx/newline)
-  (gfx/draw-string (shell/output inst))
   (var bw (/ (- (ui/elt-width inst) (* 4 ui/gap)) 3))
   (var bh ui/button-height)
   (var ui-top (- (ui/elt-height inst) bh ui/gap bh ui/gap))
@@ -375,9 +356,7 @@
            ((== input ch/X)
             (shell/cmd-remove inst))
            ((== input ch/Q)
-            (shell/cmd-quit inst))
-           ((== input ch/h)
-            (shell/help inst))))))
+            (shell/cmd-quit inst))))))
 
 (fun (shell/instance-global-input inst app state input)
   (var dup-name)
