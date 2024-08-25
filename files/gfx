@@ -363,86 +363,8 @@
          (set j (+ j 1)))
        (gfx/glyph-advance glyph))))
 
-;; Drawing (deprecated)
-
-(fun (gfx/draw-init x y w h)
-  (var g (ctxt/gfx context))
-  (gfx/rect x y w h (gfx/color 255 255 255))
-  (set (gfx/gfx-x g) x)
-  (set (gfx/gfx-y g) y)
-  (set (gfx/gfx-left g) x)
-  (set (gfx/gfx-font g) fonts/mono)
-  (set (gfx/gfx-inverse g) 0))
-
-(fun (gfx/get-x)
-  (var g (ctxt/gfx context))
-  (gfx/gfx-x g))
-
-(fun (gfx/get-y)
-  (var g (ctxt/gfx context))
-  (gfx/gfx-y g))
-
-(fun (gfx/get-left)
-  (var g (ctxt/gfx context))
-  (gfx/gfx-left g))
-
-(fun (gfx/set-x x)
-  (var g (ctxt/gfx context))
-  (set (gfx/gfx-x g) x))
-
-(fun (gfx/set-y y)
-  (var g (ctxt/gfx context))
-  (set (gfx/gfx-y g) y))
-
-(fun (gfx/mark-left)
-  (var g (ctxt/gfx context))
-  (set (gfx/gfx-left g) (gfx/gfx-x g)))
-
-(fun (gfx/set-inverse inv)
-  (var g (ctxt/gfx context))
-  (set (gfx/gfx-inverse g) inv))
-
-(fun (gfx/set-font font)
-  (var g (ctxt/gfx context))
-  (set (gfx/gfx-font g) font))
-
-(fun (gfx/get-line-height)
-  (var g (ctxt/gfx context))
-  (- (gfx/font-ascent (gfx/gfx-font g))
-     (gfx/font-descent (gfx/gfx-font g))))
-
-(fun (gfx/newline)
-  (var g (ctxt/gfx context))
-  (set (gfx/gfx-x g) (gfx/gfx-left g))
-  (set (gfx/gfx-y g) (+ (gfx/gfx-y g) (gfx/get-line-height) 2)))
-
-(fun (gfx/draw-string str)
-  (var g (ctxt/gfx context))
+(fun (gfx/string x y font str)
   (while (u8 str)
-    (if ((== (u8 str) ch/nl)
-         (gfx/newline))
-        (else
-         (var x (gfx/gfx-x g))
-         (var y (gfx/gfx-y g))
-         (var dx (gfx/glyph (gfx/gfx-font g) x y (u8 str)))
-         (if ((gfx/gfx-inverse g)
-              (gfx/invert-rect x y dx (gfx/get-line-height))))
-         (set (gfx/gfx-x g) (+ x dx))))
-    (set str (+ str 1))))
-
-(fun (gfx/draw-string-at x y font str)
-  (while (and (u8 str)
-              (>= x 0)
-              (< x 1000)
-              (>= y 0)
-              (< y 750))
     (var dx (gfx/glyph font x y (u8 str)))
     (set x (+ x dx))
     (set str (+ str 1))))
-
-(fun (gfx/advance-to x)
-  (var g (ctxt/gfx context))
-  (if ((and (gfx/gfx-inverse g)
-            (> x (gfx/gfx-x g)))
-       (gfx/invert-rect (gfx/gfx-x g) (gfx/gfx-y g) (- x (gfx/gfx-x g)) (gfx/get-line-height))))
-  (set (gfx/gfx-x g) x))

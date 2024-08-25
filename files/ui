@@ -412,7 +412,7 @@ is registered and the callback function is not called.
 
 (fun (ui/button-paint inst)
   (var off (if ((ui/btn-pressed inst) 2) (else 0)))
-  (gfx/draw-string-at (+ 5 off) (+ 5 off) fonts/sans (ui/btn-label inst))
+  (gfx/string (+ 5 off) (+ 5 off) fonts/sans (ui/btn-label inst))
   (ui/tint-active 0 0 (ui/elt-width inst) (ui/elt-height inst)))
 
 (fun (ui/button-input inst state input x y)
