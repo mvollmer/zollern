@@ -177,6 +177,13 @@
   (or (shell/is-unsaved name)
       (and bk (book/is-out-of-date bk shell/is-unsaved 0))))
 
+(fun (shell/free-file-data files)
+  (var i 0)
+  (while (shell/fd-name (shell/file-data files i))
+    (mem/free (shell/fd-name (shell/file-data files i)))
+    (set i (+ i 1)))
+  (mem/free files))
+
 (fun (shell/insert-file node files)
   (var i 0)
   (var tmp)
@@ -216,12 +223,8 @@
          (if ((== (str/cmp cur-name (shell/fd-name (shell/file-data files i))) 0)
               (set (shell/cur inst) i)))
          (set i (+ i 1)))
-       (var old (shell/files inst))
-       (set (shell/files inst) files)
-       (while (shell/fd-name (shell/file-data old i))
-         (mem/free (shell/fd-name (shell/file-data old i)))
-         (set i (+ i 1)))
-       (mem/free old))
+       (shell/free-file-data (shell/files inst))
+       (set (shell/files inst) files))
       (else
        (set (shell/cur inst) 0)))
   (set (shell/files inst) files)
@@ -283,7 +286,7 @@
 
 (fun (shell/instance-fini inst)
   (mem/free (shell/output inst))
-  (mem/free (shell/cur-name inst))
+  (shell/free-file-data (shell/files inst))
   (ui/free (shell/find-tin inst))
   (ui/free (shell/read-btn inst))
   (ui/free (shell/write-btn inst))
