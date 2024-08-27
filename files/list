@@ -1,0 +1,23 @@
+@** Lists
+
+Lists are useful data structures.
+
+@=
+(struct list/node
+  next
+  data)
+
+(fun (list/cons data lst)
+  (var n (mem/alloc list/node))
+  (set (list/data n) data)
+  (set (list/next n) lst)
+  n)
+
+(fun (list/insert data lst cmp cmp-data)
+  ...)
+
+(fun (list/remove lst data)
+  ...)
+
+(fun (list/free lst)
+  ...)

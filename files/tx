@@ -1816,8 +1816,7 @@ The session state has a [emph read buffer] for the book that is
 being processed. See the [code fs] book for an explanation.
 
 @=
-(fun (tx/get-char)
-  (var r (tx/c-rbuf (ctxt/tx context)))
+(fun (tx/get-char-from-rbuf r)
   (if ((== (fs/rbuf-size r) 0)
        (if ((not (fs/read r))
             (set (fs/rbuf-size r) 0)))))
@@ -1828,6 +1827,9 @@ being processed. See the [code fs] book for an explanation.
        (set (fs/rbuf-start r) (+ (fs/rbuf-start r) 1))
        (set (fs/rbuf-size r) (- (fs/rbuf-size r) 1))
        c)))
+
+(fun (tx/get-char)
+  (tx/get-char-from-rbuf (tx/c-rbuf (ctxt/tx context))))
 @
 
 Sometimes we read too far and have to put the last character back.
@@ -2715,6 +2717,45 @@ keep the viewer in about the right possition.
 @
 
 Happy [emph type] [bold setting]!
+
+Oh, one more thing!
+
+@* Parsing headers
+
+When constructing the navigation UI, we want to quickly scan a
+file for headers, without doing any actual typesetting.
+
+@=
+(fun (tx/list-headers name func func-data)
+  (mem r fs/rbuf)
+  (mem line 512)
+  (if ((fs/open r name)
+       (var at-bol 1)
+       (var c)
+       (var in-header 0)
+       (var ptr)
+       (set (fs/rbuf-size r) 0)
+       (while (>= (set c (tx/get-char-from-rbuf r)) 0)
+         (if ((and at-bol (== c ch/@))
+              (set ptr line)
+              (set in-header 1)))
+         (if ((== c ch/nl)
+              (set at-bol 1)
+              (if (in-header
+                   (set (u8 ptr) 0)
+                   (if ((and (> ptr (+ line 1)) (== (u8 line 1) ch/*))
+                        (var level (if ((and (> ptr (+ line 2)) (== (u8 line 2) ch/*)) 1) (else 0)))
+                        (var header (+ line level 2))
+                        (while (== (u8 header) ch/spc)
+                          (set header (+ header 1)))
+                        (func (- 1 level) header "XXX" func-data)))
+                   (set in-header 0))))
+             (else
+              (set at-bol 0)
+              (if (in-header
+                   (set (u8 ptr) c)
+                   (set ptr (+ ptr 1)))))))
+       (fs/close r))))
 
 @* Ideas for improvements
 

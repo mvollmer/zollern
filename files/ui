@@ -373,6 +373,11 @@ The [code ui/button] element uses this, for example.
 (defconst ui/link-blue  119)
 (defconst ui/link-color (gfx/const-color ui/link-red ui/link-green ui/link-blue))
 
+(defconst ui/selected-red   147)
+(defconst ui/selected-green 255)
+(defconst ui/selected-blue    0)
+(defconst ui/selected-color (gfx/const-color ui/selected-red ui/selected-green ui/selected-blue))
+
 (defconst ui/gap               7)
 (defconst ui/button-height    25)
 (defconst ui/textinput-height 25)
@@ -380,6 +385,9 @@ The [code ui/button] element uses this, for example.
 
 (fun (ui/tint-active x y w h)
   (gfx/tint-rect-2 x y w h 0 0 0 ui/active-red ui/active-green ui/active-blue))
+
+(fun (ui/tint-selected x y w h)
+  (gfx/tint-rect-2 x y w h 0 0 0 ui/selected-red ui/selected-green ui/selected-blue))
 @
 
 @* Buttons
@@ -396,6 +404,7 @@ is registered and the callback function is not called.
   (:base ui/element)
   btn-label
   btn-pressed
+  btn-selected
   btn-click-handler
   btn-click-handler-data)
 
@@ -403,6 +412,7 @@ is registered and the callback function is not called.
   (ui/element-init inst)
   (set (ui/btn-label inst) (str/dup labl))
   (set (ui/btn-pressed inst) 0)
+  (set (ui/btn-selected inst) 0)
   (set (ui/btn-click-handler inst) handler)
   (set (ui/btn-click-handler-data inst) handler-data))
 
@@ -413,7 +423,10 @@ is registered and the callback function is not called.
 (fun (ui/button-paint inst)
   (var off (if ((ui/btn-pressed inst) 2) (else 0)))
   (gfx/string (+ 5 off) (+ 5 off) fonts/sans (ui/btn-label inst))
-  (ui/tint-active 0 0 (ui/elt-width inst) (ui/elt-height inst)))
+  (if ((ui/btn-selected inst)
+       (ui/tint-selected 0 0 (ui/elt-width inst) (ui/elt-height inst)))
+      (else
+       (ui/tint-active 0 0 (ui/elt-width inst) (ui/elt-height inst)))))
 
 (fun (ui/button-input inst state input x y)
   (if ((== input gfx/ev-move)
@@ -438,6 +451,11 @@ is registered and the callback function is not called.
 
 (fun (ui/button-new labl handler handler-data)
   (ui/new ui/button ui/button-funcs labl handler handler-data))
+
+(fun (ui/button-set-selected inst flag)
+  (if ((!= (ui/btn-selected inst) flag)
+       (set (ui/btn-selected inst) flag)
+       (ui/paint-needed inst))))
 
 @* Text inputs
 

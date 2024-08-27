@@ -1,6 +1,6 @@
 The INTERNET WIRETAP First Electronic Edition of
 
-[title The Adventures of Tom Sawyer]
+@** The Adventures of Tom Sawyer
 
 by MARK TWAIN (Samuel Langhorne Clemens)
 
@@ -10,7 +10,7 @@ by MARK TWAIN (Samuel Langhorne Clemens)
 
 
 
-[section Preface]
+@* Preface
 
 MOST of the adventures recorded in this book
 really occurred; one or two were experiences of
@@ -38,10 +38,10 @@ HARTFORD, 1876.
 
 
 
-[title TOM SAWYER]
+@** TOM SAWYER
 
 
-[section CHAPTER I]
+@* CHAPTER I
 
 "TOM!"
 
@@ -439,7 +439,7 @@ to turn his Saturday holiday into captivity at hard
 labor became adamantine in its firmness.
 
 
-[section CHAPTER II]
+@* CHAPTER II
 
 SATURDAY morning was come, and all
 the summer world was bright and fresh,
@@ -699,7 +699,7 @@ which had taken place in his worldly circumstances,
 and then wended toward headquarters to report.
 
 
-[section CHAPTER III]
+@* CHAPTER III
 
 TOM presented himself before Aunt Polly,
 who was sitting by an open window in a
@@ -958,7 +958,7 @@ Tom turned in without the added vexation of prayers,
 and Sid made mental note of the omission.
 
 
-[section CHAPTER IV]
+@* CHAPTER IV
 
 THE sun rose upon a tranquil world, and
 beamed down upon the peaceful village
@@ -1392,7 +1392,7 @@ Let us draw the curtain of charity over the rest of
 the scene.
 
 
-[section CHAPTER V]
+@* CHAPTER V
 
 ABOUT half-past ten the cracked bell of
 the small church began to ring, and presently the people began to gather for the
@@ -1593,7 +1593,7 @@ the dog should play with his pinchbug, but he did not
 think it was upright in him to carry it off.
 
 
-[section CHAPTER VI]
+@* CHAPTER VI
 
 MONDAY morning found Tom Sawyer
 miserable. Monday morning always
@@ -2168,7 +2168,7 @@ the foot and yielded up the pewter medal which he had
 worn with ostentation for months.
 
 
-[section CHAPTER VII]
+@* CHAPTER VII
 
 THE harder Tom tried to fasten his mind
 on his book, the more his ideas wandered.
@@ -2473,7 +2473,7 @@ afternoon, with none among the strangers about her
 to exchange sorrows with.
 
 
-[section CHAPTER VIII]
+@* CHAPTER VIII
 
 TOM dodged hither and thither through
 lanes until he was well out of the track
@@ -2697,7 +2697,7 @@ in Sherwood Forest than President of the United
 States forever.
 
 
-[section CHAPTER IX]
+@* CHAPTER IX
 
 
 AT half-past nine, that night, Tom and
@@ -3013,7 +3013,7 @@ blanketed corpse, the lidless coffin, and the open grave
 were under no inspection but the moon's. The stillness was complete again, too.
 
 
-[section CHAPTER X]
+@* CHAPTER X
 
 THE two boys flew on and on, toward the
 village, speechless with horror. They
@@ -3332,7 +3332,7 @@ broke. It was his brass andiron knob!
 This final feather broke the camel's back.
 
 
-[section CHAPTER XI]
+@* CHAPTER XI
 
 CLOSE upon the hour of noon the whole
 village was suddenly electrified with the
@@ -3531,7 +3531,7 @@ it was deemed wisest not to try the case in the courts
 at present.
 
 
-[section CHAPTER XII]
+@* CHAPTER XII
 
 ONE of the reasons why Tom's mind had
 drifted away from its secret troubles was,
@@ -3745,7 +3745,7 @@ Tom's cheeks burned. He gathered himself up and
 sneaked off, crushed and crestfallen.
 
 
-[section CHAPTER XIII]
+@* CHAPTER XIII
 
 TOM'S mind was made up now. He was
 gloomy and desperate. He was a forsaken, friendless boy, he said; nobody
@@ -4088,7 +4088,7 @@ these curiously inconsistent pirates fell peacefully to
 sleep.
 
 
-[section CHAPTER XIV]
+@* CHAPTER XIV
 
 WHEN Tom awoke in the morning, he
 wondered where he was. He sat up and
@@ -4331,7 +4331,7 @@ till he felt that he was out of hearing, and straightway
 broke into a keen run in the direction of the sandbar.
 
 
-[section CHAPTER XV]
+@* CHAPTER XV
 
 A FEW minutes later Tom was in the shoal
 water of the bar, wading toward the
@@ -4526,7 +4526,7 @@ nook to sleep till noon, and the other pirates got ready
 to fish and explore.
 
 
-[section CHAPTER XVI]
+@* CHAPTER XVI
 
 AFTER dinner all the gang turned out to
 hunt for turtle eggs on the bar. They
@@ -4924,7 +4924,7 @@ Six Nations. We will leave them to smoke and chatter and brag, since we have no 
 present.
 
 
-[section CHAPTER XVII]
+@* CHAPTER XVII
 
 BUT there was no hilarity in the little town
 that same tranquil Saturday afternoon.
@@ -5069,7 +5069,7 @@ before in a year; and he hardly knew which expressed
 the most gratefulness to God and affection for himself.
 
 
-[section CHAPTER XVIII]
+@* CHAPTER XVIII
 
 THAT was Tom's great secret -- the scheme
 to return home with his brother pirates
@@ -5470,7 +5470,7 @@ the damaged spelling-book's account, and to hate him
 forever, into the bargain.
 
 
-[section CHAPTER XIX]
+@* CHAPTER XIX
 
 TOM arrived at home in a dreary mood,
 and the first thing his aunt said to him
@@ -5586,7 +5586,7 @@ through flowing tears and saying: "I could forgive the
 boy, now, if he'd committed a million sins!"
 
 
-[section CHAPTER XX]
+@* CHAPTER XX
 
 THERE was something about Aunt Polly's
 manner, when she kissed Tom, that swept
@@ -5796,7 +5796,7 @@ with Becky's latest words lingering dreamily in his ear -
 "Tom, how COULD you be so noble!"
 
 
-[section CHAPTER XXI]
+@* CHAPTER XXI
 
 VACATION was approaching. The schoolmaster, always severe, grew severer and
 more exacting than ever, for he wanted
@@ -6061,7 +6061,7 @@ Vacation had come.
    happier than any mere imitations could be.
 
 
-[section CHAPTER XXII]
+@* CHAPTER XXII
 
 TOM joined the new order of Cadets of
 Temperance, being attracted by the showy
@@ -6181,7 +6181,7 @@ Finn up an alley eating a stolen melon. Poor lads!
 they -- like Tom -- had suffered a relapse.
 
 
-[section CHAPTER XXIII]
+@* CHAPTER XXIII
 
 AT last the sleepy atmosphere was stirred -and vigorously: the murder trial came on
 in the court. It became the absorbing
@@ -6477,7 +6477,7 @@ for a window, tore his way through all opposers, and
 was gone!
 
 
-[section CHAPTER XXIV]
+@* CHAPTER XXIV
 
 TOM was a glittering hero once more -- the
 pet of the old, the envy of the young.
@@ -6535,7 +6535,7 @@ The slow days drifted on, and each left behind it
 a slightly lightened weight of apprehension.
 
 
-[section CHAPTER XXV]
+@* CHAPTER XXV
 
 THERE comes a time in every rightlyconstructed boy's life when he has a
 raging desire to go somewhere and dig
@@ -6898,7 +6898,7 @@ way homeward through the woods that adorned the
 rearward side of Cardiff Hill.
 
 
-[section CHAPTER XXVI]
+@* CHAPTER XXVI
 
 ABOUT noon the next day the boys arrived at the dead tree; they had come
 for their tools. Tom was impatient
@@ -7281,7 +7281,7 @@ Very, very small comfort it was to Tom to be alone
 in danger! Company would be a palpable improvement, he thought.
 
 
-[section CHAPTER XXVII]
+@* CHAPTER XXVII
 
 THE adventure of the day mightily tormented Tom's dreams that night. Four
 times he had his hands on that rich
@@ -7414,7 +7414,7 @@ jingoes!"
 Huck, and I won't."
 
 
-[section CHAPTER XXVIII]
+@* CHAPTER XXVIII
 
 THAT night Tom and Huck were ready
 for their adventure. They hung about
@@ -7575,7 +7575,7 @@ time you see something's up, in the night, just skip
 right around and maow."
 
 
-[section CHAPTER XXIX]
+@* CHAPTER XXIX
 
 THE first thing Tom heard on Friday
 morning was a glad piece of news -Judge Thatcher's family had come back
@@ -7896,7 +7896,7 @@ and sped down the hill as fast as his legs could carry
 him.
 
 
-[section CHAPTER XXX]
+@* CHAPTER XXX
 
 AS the earliest suspicion of dawn appeared
 on Sunday morning, Huck came groping
@@ -8321,7 +8321,7 @@ Ah, there ain't many left, now, that's got hope enough,
 or strength enough, either, to go on searching."
 
 
-[section CHAPTER XXXI]
+@* CHAPTER XXXI
 
 NOW to return to Tom and Becky's share
 in the picnic. They tripped along the
@@ -8715,7 +8715,7 @@ one of the passages on his hands and knees, distressed
 with hunger and sick with bodings of coming doom.
 
 
-[section CHAPTER XXXII]
+@* CHAPTER XXXII
 
 TUESDAY afternoon came, and waned to
 the twilight. The village of St. Petersburg still mourned. The lost children
@@ -8842,7 +8842,7 @@ with you, Tom?"
 "Oh, Judge, Injun Joe's in the cave!"
 
 
-[section CHAPTER XXXIII]
+@* CHAPTER XXXIII
 
 WITHIN a few minutes the news had
 spread, and a dozen skiff-loads of men
@@ -9329,7 +9329,7 @@ you are slicked up enough."
 Then she left.
 
 
-[section CHAPTER XXXIV]
+@* CHAPTER XXXIV
 
 HUCK said: "Tom, we can slope, if we
 can find a rope. The window ain't high
@@ -9461,7 +9461,7 @@ though several persons were there who were worth
 considerably more than that in property.
 
 
-[section CHAPTER XXXV]
+@* CHAPTER XXXV
 
 THE reader may rest satisfied that Tom's
 and Huck's windfall made a mighty stir

@@ -1,18 +1,36 @@
+@** The shell
+
+The shell is the root [book ui] element. It maintains the narrow
+navigation column at the right, and also the main application
+area.
+
 @=
 
 (struct shell/instance
   (:base app/shell-instance)
+  mode
+  ;; state for the "read" mode
+  cur-view-name
+  books books-max
+  ;; state for the "write" mode
   files cur max
-  find-tin
+  ;; state for the "run" mode
+  cur-run-name
+  ;; ui elements
   read-btn
   write-btn
   run-btn
+  find-tin
   quit-btn)
 
 (fun (shell/refresh)
   (var root (app/root))
   (if ((var shell (app/r-shell root))
        ((app/-sft-global-input (ui/-elt-functions shell)) shell 0 gfx/ev-state-control ch/l))))
+@
+
+@* Writing
+@=
 
 (struct shell/ed-app
   (:base app/instance)
@@ -87,6 +105,8 @@
   (if (inst
        (shell/ed-save inst))))
 
+@* Running
+@=
 (struct shell/text-app
   (:base app/instance)
   ta-text)
@@ -147,6 +167,10 @@
       (else
        (sys/page-put output)))
   (shell/refresh))
+@
+
+@* ...
+@=
 
 (struct shell/file-data
   fd-name
@@ -192,7 +216,7 @@
   (set (shell/fd-flags (shell/file-data files i)) flags)
   (set (shell/fd-name (shell/file-data files (+ i 1))) 0))
 
-(fun (shell/update inst)
+(fun (shell/update-files inst)
   (var files (mem/alloc (* 128 shell/file-data)))
   (set (shell/fd-name (shell/file-data files 0)) 0)
   (book/reset-out-of-date)
@@ -218,6 +242,102 @@
   (set (shell/files inst) files)
   (ui/paint-needed inst))
 
+(struct shell/book-data
+  bd-title
+  bd-name)
+
+(fun (shell/free-book-data books)
+  (var i 0)
+  (while (shell/bd-title (shell/book-data books i))
+    (mem/free (shell/bd-title (shell/book-data books i)))
+    (mem/free (shell/bd-name (shell/book-data books i)))
+    (set i (+ i 1)))
+  (mem/free books))
+
+(fun (shell/set-book-title level header link book-data)
+  (if ((and (== level 0) (not (shell/bd-title book-data)))
+       (set (shell/bd-title book-data) (str/dup header)))))
+
+(fun (shell/insert-book node books)
+  (var i 0 )
+  (while (shell/bd-title (shell/book-data books i))
+    (set i (+ i 1)))
+  (tx/list-headers (fs/node-name node) shell/set-book-title (shell/book-data books i))
+  (if ((shell/bd-title (shell/book-data books i))
+       (set (shell/bd-name (shell/book-data books i)) (str/dup (fs/node-name node)))
+       (set (shell/bd-title (shell/book-data books (+ i 1))) 0))))
+
+(fun (shell/update-books inst)
+  (var books (mem/alloc (* 128 shell/book-data)))
+  (set (shell/bd-title (shell/book-data books 0)) 0)
+  (fs/list shell/insert-book books)
+  ;; (dbg/out "BOOKS\n")
+  (var i 0)
+  (while (shell/bd-title (shell/book-data books i))
+    ;; (dbg/str " title" (shell/bd-title (shell/book-data books i)))
+    ;; (dbg/str " name" (shell/bd-name (shell/book-data books i)))
+    (set i (+ i 1)))
+  (set (shell/books-max inst) i)
+  (if ((shell/books inst)
+       (shell/free-book-data (shell/books inst))))
+  (set (shell/books inst) books)
+  (ui/paint-needed inst))
+
+(fun (shell/update inst)
+  (shell/update-files inst)
+  (shell/update-books inst))
+
+@* Commands
+@=
+
+(fun (shell/cmd-view inst name)
+  (if (name
+       (ui/button-set-selected (shell/read-btn inst) 1)
+       (ui/button-set-selected (shell/write-btn inst) 0)
+       (ui/button-set-selected (shell/run-btn inst) 0)
+       (if ((!= name (shell/cur-view-name inst))
+            (if ((shell/cur-view-name inst)
+                 (mem/free (shell/cur-view-name inst))))
+            (set (shell/cur-view-name inst) (str/dup name))))
+       (shell/ed-save-all)
+       (tx/launch (shell/cur-view-name inst))
+       (ui/paint-needed inst))))
+
+(fun (shell/cmd-read inst)
+  (shell/cmd-view inst (shell/cur-view-name inst)))
+
+(fun (shell/cmd-edit inst name)
+  (if (name
+       (ui/button-set-selected (shell/read-btn inst) 0)
+       (ui/button-set-selected (shell/write-btn inst) 1)
+       (ui/button-set-selected (shell/run-btn inst) 0)
+       (var i 0)
+       (while (shell/fd-name (shell/file-data (shell/files inst) i))
+         (if ((str/eq name (shell/fd-name (shell/file-data (shell/files inst) i)))
+              (set (shell/cur inst) i)))
+         (set i (+ i 1)))
+       (shell/launch-ed name)
+       (ui/paint-needed inst))))
+
+(fun (shell/cmd-write inst)
+  (shell/cmd-edit inst (shell/cur-name inst)))
+
+(fun (shell/cmd-launch inst name)
+  (if (name
+       (ui/button-set-selected (shell/read-btn inst) 0)
+       (ui/button-set-selected (shell/write-btn inst) 0)
+       (ui/button-set-selected (shell/run-btn inst) 1)
+       (if ((!= name (shell/cur-run-name inst))
+            (if ((shell/cur-run-name inst)
+                 (mem/free (shell/cur-run-name inst))))
+            (set (shell/cur-run-name inst) (str/dup name))))
+       (shell/ed-save-all)
+       (shell/launch-book (shell/cur-run-name inst))
+       (ui/paint-needed inst))))
+
+(fun (shell/cmd-run inst)
+  (shell/cmd-launch inst (shell/cur-run-name inst)))
+
 (fun (shell/cmd-find inst str)
   (mem rbuf fs/rbuf)
   (if ((not (fs/open rbuf str))
@@ -227,29 +347,8 @@
       (else
        (fs/close rbuf)))
   (shell/update inst)
-  (var i 0)
-  (var files (shell/files inst))
-  (while (shell/fd-name (shell/file-data files i))
-    (if ((str/eq str (shell/fd-name (shell/file-data files i)))
-         (set (shell/cur inst) i)))
-    (set i (+ i 1)))
-  (ui/textinput-set (shell/find-tin inst) "")
-  (ui/set-focus inst)
-  (ui/paint-needed inst))
-
-(fun (shell/cmd-read inst)
-  (if ((shell/cur-name inst)
-       (shell/ed-save-all)
-       (tx/launch (shell/cur-name inst)))))
-
-(fun (shell/cmd-write inst)
-  (if ((shell/cur-name inst)
-       (shell/launch-ed (shell/cur-name inst)))))
-
-(fun (shell/cmd-run inst)
-  (if ((shell/cur-name inst)
-       (shell/ed-save-all)
-       (shell/launch-book (shell/cur-name inst)))))
+  (shell/cmd-edit inst str)
+  (ui/textinput-set (shell/find-tin inst) ""))
 
 (fun (shell/cmd-remove inst)
   (if ((shell/cur-name inst)
@@ -260,17 +359,26 @@
   (shell/ed-save-all)
   (sys/halt))
 
+@* Instance
+@=
+
 (fun (shell/instance-init inst)
   (app/shell-instance-init inst)
+  (set (shell/cur-view-name inst) 0)
+  (set (shell/cur-run-name inst) 0)
   (set (shell/files inst) 0)
+  (set (shell/books inst) 0)
   (shell/update inst)
   (set (shell/find-tin inst) (ui/textinput-new shell/cmd-find inst))
   (set (shell/read-btn inst) (ui/button-new "Read" shell/cmd-read inst))
   (set (shell/write-btn inst) (ui/button-new "Write" shell/cmd-write inst))
   (set (shell/run-btn inst) (ui/button-new "Run" shell/cmd-run inst))
-  (set (shell/quit-btn inst) (ui/button-new "Quit" shell/cmd-quit inst)))
+  (set (shell/quit-btn inst) (ui/button-new "Quit" shell/cmd-quit inst))
+  (ui/button-set-selected (shell/write-btn inst) 1))
 
 (fun (shell/instance-fini inst)
+  (mem/free (shell/cur-view-name inst))
+  (mem/free (shell/cur-run-name inst))
   (shell/free-file-data (shell/files inst))
   (ui/free (shell/find-tin inst))
   (ui/free (shell/read-btn inst))
@@ -279,14 +387,24 @@
   (ui/free (shell/quit-btn inst))
   (app/instance-fini inst))
 
-(fun (shell/paint-file inst index file)
+(fun (shell/paint-file inst index file cur-app)
   (var f fonts/sans)
   (var lh (- (gfx/font-ascent f) (gfx/font-descent f)))
-  (var y (+ (* index (+ lh 2)) 20))
+  (var y (+ (* index (+ lh 2)) 40))
   (gfx/string 25 y fonts/sans (if ((shell/fd-flags file) "*") (else " ")))
   (gfx/string 40 y fonts/sans (shell/fd-name file))
-  (if ((and (== index (shell/cur inst)) (ui/elt-has-focus inst))
+  (if ((and cur-app (str/eq (app/app-name cur-app) (shell/fd-name file)))
+       (ui/tint-selected 20 y (- (ui/elt-width inst) 40) lh))
+      ((and (== index (shell/cur inst)) (ui/elt-has-focus inst))
        (gfx/invert-rect 20 y (- (ui/elt-width inst) 40) lh))))
+
+(fun (shell/paint-book inst index book cur-app)
+  (var f fonts/sans)
+  (var lh (- (gfx/font-ascent f) (gfx/font-descent f)))
+  (var y (+ (* index (+ lh 2)) 40))
+  (gfx/string 20 y fonts/sans (shell/bd-title book))
+  (if ((and cur-app (str/eq (app/app-name cur-app) (shell/bd-name book)))
+       (ui/tint-selected 20 y (- (ui/elt-width inst) 40) lh))))
 
 (fun (shell/instance-paint inst)
   (var x 0)
@@ -295,18 +413,25 @@
   (var h (ui/elt-height inst))
   (gfx/rect 0 0 1 (ui/elt-height inst) (gfx/color 0 0 0))
   (var i 0)
-  (var files (shell/files inst))
-  (while (shell/fd-name (shell/file-data files i))
-    (shell/paint-file inst i (shell/file-data files i))
-    (set i (+ i 1)))
+  (var cur-app (app/r-current (app/root)))
+  (if ((ui/btn-selected (shell/read-btn inst))
+       (var books (shell/books inst))
+       (while (shell/bd-title (shell/book-data books i))
+         (shell/paint-book inst i (shell/book-data books i) cur-app)
+         (set i (+ i 1))))
+      ((ui/btn-selected (shell/write-btn inst))
+       (var files (shell/files inst))
+       (while (shell/fd-name (shell/file-data files i))
+         (shell/paint-file inst i (shell/file-data files i) cur-app)
+         (set i (+ i 1)))))
   (var bw (/ (- (ui/elt-width inst) (* 4 ui/gap)) 3))
   (var bh ui/button-height)
-  (var ui-top (- (ui/elt-height inst) bh ui/gap bh ui/gap))
-  (ui/paint inst (shell/find-tin inst) ui/gap (- ui-top 40) (- (ui/elt-width inst) ui/gap ui/gap) ui/textinput-height)
-  (ui/paint inst (shell/read-btn inst) ui/gap ui-top bw bh)
-  (ui/paint inst (shell/write-btn inst) (+ ui/gap bw ui/gap) ui-top bw bh)
-  (ui/paint inst (shell/run-btn inst) (+ ui/gap bw ui/gap bw ui/gap) ui-top bw bh)
-  (ui/paint inst (shell/quit-btn inst) ui/gap (+ ui-top bh ui/gap) (- (ui/elt-width inst) ui/gap ui/gap) bh))
+  (ui/paint inst (shell/read-btn inst) ui/gap ui/gap bw bh)
+  (ui/paint inst (shell/write-btn inst) (+ ui/gap bw ui/gap) ui/gap bw bh)
+  (ui/paint inst (shell/run-btn inst) (+ ui/gap bw ui/gap bw ui/gap) ui/gap bw bh)
+  (var ui-top (- (ui/elt-height inst) ui/textinput-height ui/gap bh ui/gap))
+  (ui/paint inst (shell/find-tin inst) ui/gap ui-top (- (ui/elt-width inst) ui/gap ui/gap) ui/textinput-height)
+  (ui/paint inst (shell/quit-btn inst) ui/gap (+ ui-top ui/textinput-height ui/gap) (- (ui/elt-width inst) ui/gap ui/gap) bh))
 
 (fun (shell/switch-to-or-run inst)
   (if ((and (u8 (shell/cur-name inst))
@@ -317,10 +442,15 @@
   (var f fonts/sans)
   (var lh (+ (- (gfx/font-ascent f) (gfx/font-descent f)) 2))
   (if ((== input gfx/ev-button-1-press)
-       (var l (/ (- y 20) lh))
-       (if ((and (>= l 0) (< l (shell/max inst)))
-            (set (shell/cur inst) l)
-            (ui/paint-needed inst))))
+       (var l (/ (- y 40) lh))
+       (if ((ui/btn-selected (shell/read-btn inst))
+            (if ((and (>= l 0) (< l (shell/books-max inst)))
+                 (shell/cmd-view inst (shell/bd-name (shell/book-data (shell/books inst) l))))))
+           ((ui/btn-selected (shell/write-btn inst))
+            (if ((and (>= l 0) (< l (shell/max inst)))
+                 (set (shell/cur inst) l)
+                 (shell/cmd-edit inst (shell/cur-name inst))
+                 (ui/paint-needed inst))))))
       ((== state 0)
        (ui/paint-needed inst)
        (if ((== input gfx/ev-key-return)
@@ -336,11 +466,11 @@
             (if ((shell/cur-name inst)
                  (shell/save (shell/cur-name inst)))))
            ((== input ch/e)
-            (shell/cmd-write inst))
+            (shell/cmd-edit inst (shell/cur-name inst)))
            ((== input ch/v)
-            (shell/cmd-read inst))
+            (shell/cmd-view inst (shell/cur-name inst)))
            ((== input ch/r)
-            (shell/cmd-run inst))
+            (shell/cmd-launch inst (shell/cur-name inst)))
            ((== input ch/S)
             (shell/ed-save-all))
            ((== input ch/X)
@@ -352,21 +482,11 @@
   (var dup-name)
   (if ((== state 0)
        (if  ((== input ch/e)
-             (set dup-name (str/dup (app/app-name app)))
-             (shell/launch-ed (app/app-name app))
-             (mem/free dup-name))
+             (shell/cmd-edit inst (app/app-name app)))
             ((== input ch/v)
-             (shell/ed-save-all)
-             (ui/paint-needed inst)
-             (set dup-name (str/dup (app/app-name app)))
-             (tx/launch dup-name)
-             (mem/free dup-name))
+             (shell/cmd-view inst (app/app-name app)))
             ((== input ch/r)
-             (shell/ed-save-all)
-             (ui/paint-needed inst)
-             (set dup-name (str/dup (app/app-name app)))
-             (shell/launch-book dup-name)
-             (mem/free dup-name))
+             (shell/cmd-launch inst (app/app-name app)))
             ((== input ch/b)
              (ui/set-focus (shell/find-tin inst)))
             ((== input ch/q)
@@ -394,4 +514,6 @@
   shell/instance-goto-link)
 
 (fun (shell/main)
-  (app/launch-shell (ui/new shell/instance shell/funcs)))
+  (var inst (ui/new shell/instance shell/funcs))
+  (app/launch-shell inst)
+  (shell/cmd-view inst "intro"))
