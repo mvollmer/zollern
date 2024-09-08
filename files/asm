@@ -1,4 +1,8 @@
-@** Z1 assembler
+@cat 1 Programming languages
+@cat 0 Z1
+@cat 0 Assembler
+
+@** Z1 Assembler
 
 This is the lower third of the compiler for the Z1 language, the
 definition of the assembler language. The middle third of the

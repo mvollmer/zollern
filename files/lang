@@ -1,4 +1,8 @@
-@** Z1 language
+@cat 1 Programming languages
+@cat 0 Z1
+@cat 2 Surface Language
+
+@** Z1 Surface Language
 
 This book defines the Zollern programming language on level one,
 called [emph Z1]. Two thirds of the compiler for this language

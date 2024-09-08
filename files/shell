@@ -1,3 +1,6 @@
+@cat 2 System stuff
+@cat 15 Shell
+
 @** The shell
 
 The shell is the root [book ui] element. It maintains the narrow
@@ -11,7 +14,7 @@ area.
   mode
   ;; state for the "read" mode
   cur-view-name
-  books books-max
+  catalog catalog-max
   ;; state for the "write" mode
   files cur max
   ;; state for the "run" mode
@@ -242,46 +245,103 @@ area.
   (set (shell/files inst) files)
   (ui/paint-needed inst))
 
-(struct shell/book-data
-  bd-title
-  bd-name)
+(struct shell/catalog-data
+  cd-title
+  cd-level
+  cd-sort
+  cd-name)
 
-(fun (shell/free-book-data books)
+(fun (shell/free-catalog-data catalog)
   (var i 0)
-  (while (shell/bd-title (shell/book-data books i))
-    (mem/free (shell/bd-title (shell/book-data books i)))
-    (mem/free (shell/bd-name (shell/book-data books i)))
+  (while (shell/cd-title (shell/catalog-data catalog i))
+    (mem/free (shell/cd-title (shell/catalog-data catalog i)))
+    (if ((shell/cd-name (shell/catalog-data catalog i))
+         (mem/free (shell/cd-name (shell/catalog-data catalog i)))))
     (set i (+ i 1)))
-  (mem/free books))
+  (mem/free catalog))
 
-(fun (shell/set-book-title level header link book-data)
-  (if ((and (== level 0) (not (shell/bd-title book-data)))
-       (set (shell/bd-title book-data) (str/dup header)))))
+(struct shell/insert-data
+  id-catalog
+  id-level
+  id-pos)
 
-(fun (shell/insert-book node books)
-  (var i 0 )
-  (while (shell/bd-title (shell/book-data books i))
-    (set i (+ i 1)))
-  (tx/list-headers (fs/node-name node) shell/set-book-title (shell/book-data books i))
-  (if ((shell/bd-title (shell/book-data books i))
-       (set (shell/bd-name (shell/book-data books i)) (str/dup (fs/node-name node)))
-       (set (shell/bd-title (shell/book-data books (+ i 1))) 0))))
+(fun (shell/dump-catalog catalog)
+  (dbg/out "CATALOG\n")
+  (var i 0)
+  (while (shell/cd-title (shell/catalog-data catalog i))
+    (dbg/str "title" (shell/cd-title (shell/catalog-data catalog i)))
+    (dbg/int " level" (shell/cd-level (shell/catalog-data catalog i)))
+    (dbg/int " name" (shell/cd-name (shell/catalog-data catalog i)))
+    (set i (+ i 1))))
+
+(fun (shell/insert-catalog-entry sort title id)
+  (var catalog (shell/id-catalog id))
+  (var level (shell/id-level id))
+  (var pos (shell/id-pos id))
+  ;(shell/dump-catalog catalog)
+  ;; Find the entry that should come after ours.
+  (while (begin
+           (while (and (shell/cd-title (shell/catalog-data catalog pos))
+                       (> (shell/cd-level (shell/catalog-data catalog pos)) level))
+             (set pos (+ pos 1)))
+           (and (shell/cd-title (shell/catalog-data catalog pos))
+                (== (shell/cd-level (shell/catalog-data catalog pos)) level)
+                (< (shell/cd-sort (shell/catalog-data catalog pos)) sort)))
+    (set pos (+ pos 1)))
+  ;; Only add our if it isn't already there
+  (if ((not (and (shell/cd-title (shell/catalog-data catalog pos))
+                 (== (shell/cd-level (shell/catalog-data catalog pos)) level)
+                 (str/eq (shell/cd-title (shell/catalog-data catalog pos)) title)))
+       (var i pos)
+       (var tmp)
+       (set title (str/dup title))
+       (var name 0)
+       (while (shell/cd-title (shell/catalog-data catalog i))
+         (set tmp (shell/cd-title (shell/catalog-data catalog i)))
+         (set (shell/cd-title (shell/catalog-data catalog i)) title)
+         (set title tmp)
+         (set tmp (shell/cd-level (shell/catalog-data catalog i)))
+         (set (shell/cd-level (shell/catalog-data catalog i)) level)
+         (set level tmp)
+         (set tmp (shell/cd-sort (shell/catalog-data catalog i)))
+         (set (shell/cd-sort (shell/catalog-data catalog i)) sort)
+         (set sort tmp)
+         (set tmp (shell/cd-name (shell/catalog-data catalog i)))
+         (set (shell/cd-name (shell/catalog-data catalog i)) name)
+         (set name tmp)
+         (set i (+ i 1)))
+       (set (shell/cd-title (shell/catalog-data catalog i)) title)
+       (set (shell/cd-level (shell/catalog-data catalog i)) level)
+       (set (shell/cd-sort (shell/catalog-data catalog i)) sort)
+       (set (shell/cd-name (shell/catalog-data catalog i)) name)
+       (set (shell/cd-title (shell/catalog-data catalog (+ i 1))) 0)))
+  ;; Continue after us on next round, one level deeper
+  (set pos (+ pos 1))
+  (set (shell/id-level id) (+ (shell/id-level id) 1))
+  (set (shell/id-pos id) pos))
+
+(fun (shell/insert-book node catalog)
+  (mem id shell/insert-data)
+  (set (shell/id-catalog id) catalog)
+  (set (shell/id-level id) 0)
+  (set (shell/id-pos id) 0)
+  (tx/list-catalog-entries (fs/node-name node) shell/insert-catalog-entry id)
+  (var pos (- (shell/id-pos id) 1))
+  (if ((not (shell/cd-name (shell/catalog-data catalog pos)))
+       (set (shell/cd-name (shell/catalog-data catalog pos)) (str/dup (fs/node-name node))))))
 
 (fun (shell/update-books inst)
-  (var books (mem/alloc (* 128 shell/book-data)))
-  (set (shell/bd-title (shell/book-data books 0)) 0)
-  (fs/list shell/insert-book books)
-  ;; (dbg/out "BOOKS\n")
+  ;; urks, this is already half a page
+  (var catalog (mem/alloc (* 256 shell/catalog-data)))
+  (set (shell/cd-title (shell/catalog-data catalog 0)) 0)
+  (fs/list shell/insert-book catalog)
   (var i 0)
-  (while (shell/bd-title (shell/book-data books i))
-    ;; (dbg/str " title" (shell/bd-title (shell/book-data books i)))
-    ;; (dbg/str " name" (shell/bd-name (shell/book-data books i)))
+  (while (shell/cd-title (shell/catalog-data catalog i))
     (set i (+ i 1)))
-  (set (shell/books-max inst) i)
-  (if ((shell/books inst)
-       (shell/free-book-data (shell/books inst))))
-  (set (shell/books inst) books)
-  (ui/paint-needed inst))
+  (if ((shell/catalog inst)
+       (shell/free-catalog-data (shell/catalog inst))))
+  (set (shell/catalog inst) catalog)
+  (set (shell/catalog-max inst) i))
 
 (fun (shell/update inst)
   (shell/update-files inst)
@@ -367,14 +427,14 @@ area.
   (set (shell/cur-view-name inst) 0)
   (set (shell/cur-run-name inst) 0)
   (set (shell/files inst) 0)
-  (set (shell/books inst) 0)
+  (set (shell/catalog inst) 0)
   (shell/update inst)
   (set (shell/find-tin inst) (ui/textinput-new shell/cmd-find inst))
   (set (shell/read-btn inst) (ui/button-new "Read" shell/cmd-read inst))
   (set (shell/write-btn inst) (ui/button-new "Write" shell/cmd-write inst))
   (set (shell/run-btn inst) (ui/button-new "Run" shell/cmd-run inst))
   (set (shell/quit-btn inst) (ui/button-new "Quit" shell/cmd-quit inst))
-  (ui/button-set-selected (shell/write-btn inst) 1))
+  (ui/button-set-selected (shell/read-btn inst) 1))
 
 (fun (shell/instance-fini inst)
   (mem/free (shell/cur-view-name inst))
@@ -398,12 +458,12 @@ area.
       ((and (== index (shell/cur inst)) (ui/elt-has-focus inst))
        (gfx/invert-rect 20 y (- (ui/elt-width inst) 40) lh))))
 
-(fun (shell/paint-book inst index book cur-app)
+(fun (shell/paint-catalog-entry inst index entry cur-app)
   (var f fonts/sans)
   (var lh (- (gfx/font-ascent f) (gfx/font-descent f)))
   (var y (+ (* index (+ lh 2)) 40))
-  (gfx/string 20 y fonts/sans (shell/bd-title book))
-  (if ((and cur-app (str/eq (app/app-name cur-app) (shell/bd-name book)))
+  (gfx/string (+ 24 (* 10 (shell/cd-level entry))) y fonts/sans (shell/cd-title entry))
+  (if ((and cur-app (shell/cd-name entry) (str/eq (app/app-name cur-app) (shell/cd-name entry)))
        (ui/tint-selected 20 y (- (ui/elt-width inst) 40) lh))))
 
 (fun (shell/instance-paint inst)
@@ -415,9 +475,9 @@ area.
   (var i 0)
   (var cur-app (app/r-current (app/root)))
   (if ((ui/btn-selected (shell/read-btn inst))
-       (var books (shell/books inst))
-       (while (shell/bd-title (shell/book-data books i))
-         (shell/paint-book inst i (shell/book-data books i) cur-app)
+       (var catalog (shell/catalog inst))
+       (while (shell/cd-title (shell/catalog-data catalog i))
+         (shell/paint-catalog-entry inst i (shell/catalog-data catalog i) cur-app)
          (set i (+ i 1))))
       ((ui/btn-selected (shell/write-btn inst))
        (var files (shell/files inst))
@@ -444,8 +504,8 @@ area.
   (if ((== input gfx/ev-button-1-press)
        (var l (/ (- y 40) lh))
        (if ((ui/btn-selected (shell/read-btn inst))
-            (if ((and (>= l 0) (< l (shell/books-max inst)))
-                 (shell/cmd-view inst (shell/bd-name (shell/book-data (shell/books inst) l))))))
+            (if ((and (>= l 0) (< l (shell/catalog-max inst)))
+                 (shell/cmd-view inst (shell/cd-name (shell/catalog-data (shell/catalog inst) l))))))
            ((ui/btn-selected (shell/write-btn inst))
             (if ((and (>= l 0) (< l (shell/max inst)))
                  (set (shell/cur inst) l)

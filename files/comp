@@ -1,4 +1,8 @@
-@** Z1 compiler
+@cat 1 Programming languages
+@cat 0 Z1
+@cat 1 Compiler
+
+@** Z1 Compiler
 
 This is the middle third of the Z1 language implementation, the
 compiler from Z1 primitives such as [code (9 0 a b)] to machine

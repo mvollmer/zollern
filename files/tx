@@ -1,3 +1,6 @@
+@cat 2 System stuff
+@cat 14 Type setting
+
 @** Type setting
 
 This is Zollerns simple typesetter. The input to the typesetter
@@ -2514,6 +2517,17 @@ a real code section.
   (tx/need-par-skip))
 @
 
+There is also a function to ignore headers. This is used for meta
+data lines like [code @cat].
+
+@=
+(fun (tx/cmd-head-ignore)
+  (var c (ctxt/tx context))
+  (var t (tx/c-cur-token c))
+  (while (not (str/eq t "]"))
+    (tx/next-token)))
+@
+
 And here is the main entry point to the "tx" grammar, [code tx/parse-section].
 
 It resets session values to their defaults, figures out which
@@ -2561,9 +2575,17 @@ for [code cmd].
   ((str/eq cmd "c")
    (set cmd-head tx/cmd-head-example)
    (set cmd-body tx/cmd-body-example))
-  (else
+  ((str/eq cmd "")
    (set cmd-head tx/cmd-head-text)
+   (set cmd-body tx/cmd-body-text))
+  ((str/eq cmd "cat")
+   (set cmd-head tx/cmd-head-ignore)
+   (set cmd-body tx/cmd-body-text))
+  (else
+   (dbg/str "UNKNOWN SECTION" cmd)
+   (set cmd-head tx/cmd-head-ignore)
    (set cmd-body tx/cmd-body-text)))
+
 @
 
 Alright, time to wrap up the markup parsing. We only need to open
@@ -2749,6 +2771,46 @@ file for headers, without doing any actual typesetting.
                         (while (== (u8 header) ch/spc)
                           (set header (+ header 1)))
                         (func (- 1 level) header "XXX" func-data)))
+                   (set in-header 0))))
+             (else
+              (set at-bol 0)
+              (if (in-header
+                   (set (u8 ptr) c)
+                   (set ptr (+ ptr 1)))))))
+       (fs/close r))))
+
+(fun (tx/list-catalog-entries name func func-data)
+  (mem r fs/rbuf)
+  (mem line 512)
+  (if ((fs/open r name)
+       (var at-bol 1)
+       (var c)
+       (var in-header 0)
+       (var ptr)
+       (set (fs/rbuf-size r) 0)
+       (while (>= (set c (tx/get-char-from-rbuf r)) 0)
+         (if ((and at-bol (== c ch/@))
+              (set ptr line)
+              (set in-header 1)))
+         (if ((== c ch/nl)
+              (set at-bol 1)
+              (if (in-header
+                   (set (u8 ptr) 0)
+                   (if ((and (> ptr (+ line 4))
+                             (== (u8 line 1) ch/c)
+                             (== (u8 line 2) ch/a)
+                             (== (u8 line 3) ch/t)
+                             (== (u8 line 4) ch/spc))
+                        (var header (+ line 4))
+                        (while (== (u8 header) ch/spc)
+                          (set header (+ header 1)))
+                        (var sort 0)
+                        (while (and (>= (u8 header) ch/d0) (<= (u8 header) ch/d9))
+                          (set sort (+ (* 10 sort) (- (u8 header) ch/d0)))
+                          (set header (+ header 1)))
+                        (while (== (u8 header) ch/spc)
+                          (set header (+ header 1)))
+                        (func sort header func-data)))
                    (set in-header 0))))
              (else
               (set at-bol 0)
