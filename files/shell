@@ -1,6 +1,3 @@
-@cat 2 System stuff
-@cat 15 Shell
-
 @** The shell
 
 The shell is the root [book ui] element. It maintains the narrow
@@ -248,7 +245,6 @@ area.
 (struct shell/catalog-data
   cd-title
   cd-level
-  cd-sort
   cd-name)
 
 (fun (shell/free-catalog-data catalog)
@@ -262,7 +258,6 @@ area.
 
 (struct shell/insert-data
   id-catalog
-  id-level
   id-pos)
 
 (fun (shell/dump-catalog catalog)
@@ -271,81 +266,86 @@ area.
   (while (shell/cd-title (shell/catalog-data catalog i))
     (dbg/str "title" (shell/cd-title (shell/catalog-data catalog i)))
     (dbg/int " level" (shell/cd-level (shell/catalog-data catalog i)))
-    (dbg/int " name" (shell/cd-name (shell/catalog-data catalog i)))
+    (if ((shell/cd-name (shell/catalog-data catalog i))
+         (dbg/str " name" (shell/cd-name (shell/catalog-data catalog i)))))
     (set i (+ i 1))))
 
-(fun (shell/insert-catalog-entry sort title id)
-  (var catalog (shell/id-catalog id))
-  (var level (shell/id-level id))
-  (var pos (shell/id-pos id))
-  ;(shell/dump-catalog catalog)
-  ;; Find the entry that should come after ours.
-  (while (begin
-           (while (and (shell/cd-title (shell/catalog-data catalog pos))
-                       (> (shell/cd-level (shell/catalog-data catalog pos)) level))
-             (set pos (+ pos 1)))
-           (and (shell/cd-title (shell/catalog-data catalog pos))
-                (== (shell/cd-level (shell/catalog-data catalog pos)) level)
-                (< (shell/cd-sort (shell/catalog-data catalog pos)) sort)))
-    (set pos (+ pos 1)))
-  ;; Only add our if it isn't already there
-  (if ((not (and (shell/cd-title (shell/catalog-data catalog pos))
-                 (== (shell/cd-level (shell/catalog-data catalog pos)) level)
-                 (str/eq (shell/cd-title (shell/catalog-data catalog pos)) title)))
-       (var i pos)
-       (var tmp)
-       (set title (str/dup title))
-       (var name 0)
-       (while (shell/cd-title (shell/catalog-data catalog i))
-         (set tmp (shell/cd-title (shell/catalog-data catalog i)))
-         (set (shell/cd-title (shell/catalog-data catalog i)) title)
-         (set title tmp)
-         (set tmp (shell/cd-level (shell/catalog-data catalog i)))
-         (set (shell/cd-level (shell/catalog-data catalog i)) level)
-         (set level tmp)
-         (set tmp (shell/cd-sort (shell/catalog-data catalog i)))
-         (set (shell/cd-sort (shell/catalog-data catalog i)) sort)
-         (set sort tmp)
-         (set tmp (shell/cd-name (shell/catalog-data catalog i)))
-         (set (shell/cd-name (shell/catalog-data catalog i)) name)
-         (set name tmp)
-         (set i (+ i 1)))
-       (set (shell/cd-title (shell/catalog-data catalog i)) title)
-       (set (shell/cd-level (shell/catalog-data catalog i)) level)
-       (set (shell/cd-sort (shell/catalog-data catalog i)) sort)
-       (set (shell/cd-name (shell/catalog-data catalog i)) name)
-       (set (shell/cd-title (shell/catalog-data catalog (+ i 1))) 0)))
-  ;; Continue after us on next round, one level deeper
-  (set pos (+ pos 1))
-  (set (shell/id-level id) (+ (shell/id-level id) 1))
-  (set (shell/id-pos id) pos))
+(fun (shell/parse-catalog-line line id)
+  (var ptr line)
+  (while (== (u8 ptr) ch/spc)
+    (set ptr (+ ptr 1)))
+  (var name 0)
+  (if ((!= (u8 ptr) ch/.)
+       (set name ptr)
+       (while (not (or (== (u8 ptr) 0)
+                       (== (u8 ptr) ch/spc)
+                       (== (u8 ptr) ch/.)))
+         (set ptr (+ ptr 1)))
+       (if ((!= (u8 ptr) 0)
+            (set (u8 ptr) 0)
+            (set ptr (+ ptr 1))))
+       (while (== (u8 ptr) ch/spc)
+         (set ptr (+ ptr 1)))))
+  (var level -1)
+  (while (== (u8 ptr) ch/.)
+    (set level (+ level 1))
+    (set ptr (+ ptr 1)))
+  (while (== (u8 ptr) ch/spc)
+    (set ptr (+ ptr 1)))
+  (if ((u8 ptr)
+       (var entry (shell/catalog-data (shell/id-catalog id) (shell/id-pos id)))
+       (set (shell/cd-title entry) (str/dup ptr))
+       (set (shell/cd-level entry) level)
+       (if (name
+            (set (shell/cd-name entry) (str/dup name)))
+           (else
+            (set (shell/cd-name entry) 0)))
+       (set (shell/id-pos id) (+ (shell/id-pos id) 1)))))
 
-(fun (shell/insert-book node catalog)
+(fun (shell/read-char rbuf)
+  (if ((== (fs/rbuf-size rbuf) 0)
+       (if ((not (fs/read rbuf))
+            (set (fs/rbuf-size rbuf) 0)))))
+  (if ((== (fs/rbuf-size rbuf) 0)
+       -1)
+      (else
+       (var c (u8 (fs/rbuf-start rbuf)))
+       (set (fs/rbuf-start rbuf) (+ (fs/rbuf-start rbuf) 1))
+       (set (fs/rbuf-size rbuf) (- (fs/rbuf-size rbuf) 1))
+       c)))
+
+(fun (shell/read-line rbuf line)
+  (var ptr line)
+  (var c)
+  (while (and (>= (set c (shell/read-char rbuf)) 0)
+              (!= c ch/nl))
+    (set (u8 ptr) c)
+    (set ptr (+ ptr 1)))
+  (set (u8 ptr) 0)
+  (or (> ptr line) (>= c 0)))
+
+(fun (shell/update-catalog inst)
+  (mem rbuf fs/rbuf)
+  (mem line 512)
+  (var catalog (mem/alloc (* 256 shell/catalog-data)))
   (mem id shell/insert-data)
   (set (shell/id-catalog id) catalog)
-  (set (shell/id-level id) 0)
   (set (shell/id-pos id) 0)
-  (tx/list-catalog-entries (fs/node-name node) shell/insert-catalog-entry id)
-  (var pos (- (shell/id-pos id) 1))
-  (if ((not (shell/cd-name (shell/catalog-data catalog pos)))
-       (set (shell/cd-name (shell/catalog-data catalog pos)) (str/dup (fs/node-name node))))))
-
-(fun (shell/update-books inst)
-  ;; urks, this is already half a page
-  (var catalog (mem/alloc (* 256 shell/catalog-data)))
-  (set (shell/cd-title (shell/catalog-data catalog 0)) 0)
-  (fs/list shell/insert-book catalog)
-  (var i 0)
-  (while (shell/cd-title (shell/catalog-data catalog i))
-    (set i (+ i 1)))
+  (if ((fs/open rbuf "cat")
+       (set (fs/rbuf-size rbuf) 0)
+       (while (shell/read-line rbuf line)
+         (shell/parse-catalog-line line id))
+       (fs/close rbuf)))
+  (set (shell/cd-title (shell/catalog-data catalog (shell/id-pos id))) 0)
+  ;; (shell/dump-catalog catalog)
   (if ((shell/catalog inst)
        (shell/free-catalog-data (shell/catalog inst))))
   (set (shell/catalog inst) catalog)
-  (set (shell/catalog-max inst) i))
+  (set (shell/catalog-max inst) (shell/id-pos id)))
 
 (fun (shell/update inst)
   (shell/update-files inst)
-  (shell/update-books inst))
+  (shell/update-catalog inst))
 
 @* Commands
 @=

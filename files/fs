@@ -1,6 +1,3 @@
-@cat 2 System stuff
-@cat 9 Filesystem
-
 @** Files
 
 Files never change once they have been completely written. Files

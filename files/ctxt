@@ -1,8 +1,3 @@
-@cat 1 Programming languages
-@cat 0 Z1
-@cat 10 Runtime
-@cat 0 Dynamic context
-
 @** The global context
 
 Zollern books can only contain read-only code and data. If a book

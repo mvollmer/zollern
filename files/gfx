@@ -1,6 +1,3 @@
-@cat 2 System stuff
-@cat 11 Graphics
-
 @=
 
 (struct gfx/context
