@@ -4,9 +4,9 @@ This is the lower third of the compiler for the Z1 language, the
 definition of the assembler language. The middle third of the
 compiler is written in this assembler language (see the [book
 comp] book), and uses the instructions defined here when emitting
-machine code. (The upper third of the compiler is the [book lang]
+machine code. The upper third of the compiler is the [book lang]
 book, and is written in the primitive version of Z1 understood
-by the [book comp] book.)
+by the [book comp] book.
 
 This asssembler here is written in the input language of the [emph
 Z0] binary macro processor. Z0 is a program running outside of

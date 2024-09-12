@@ -1,5 +1,5 @@
 intro      . Introduction
-           . Programming languages
+prog       . Programming languages
 z1-intro   .. Z1
 asm        ... Assembler
 comp       ... Compiler
