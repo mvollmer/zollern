@@ -16,6 +16,7 @@ area.
   files cur max
   ;; state for the "run" mode
   cur-run-name
+  run-catalog run-catalog-max
   ;; ui elements
   read-btn
   write-btn
@@ -324,28 +325,40 @@ area.
   (set (u8 ptr) 0)
   (or (> ptr line) (>= c 0)))
 
-(fun (shell/update-catalog inst)
+(fun (shell/read-catalog name id)
   (mem rbuf fs/rbuf)
   (mem line 512)
   (var catalog (mem/alloc (* 256 shell/catalog-data)))
-  (mem id shell/insert-data)
   (set (shell/id-catalog id) catalog)
   (set (shell/id-pos id) 0)
-  (if ((fs/open rbuf "cat")
+  (if ((fs/open rbuf name)
        (set (fs/rbuf-size rbuf) 0)
        (while (shell/read-line rbuf line)
          (shell/parse-catalog-line line id))
        (fs/close rbuf)))
-  (set (shell/cd-title (shell/catalog-data catalog (shell/id-pos id))) 0)
-  ;; (shell/dump-catalog catalog)
+  (set (shell/cd-title (shell/catalog-data catalog (shell/id-pos id))) 0))
+
+(fun (shell/update-catalog inst)
+  (mem id shell/insert-data)
+  (shell/read-catalog "cat" id)
   (if ((shell/catalog inst)
        (shell/free-catalog-data (shell/catalog inst))))
-  (set (shell/catalog inst) catalog)
+  (set (shell/catalog inst) (shell/id-catalog id))
   (set (shell/catalog-max inst) (shell/id-pos id)))
+
+(fun (shell/update-run-catalog inst)
+  (mem id shell/insert-data)
+  (shell/read-catalog "runcat" id)
+  (if ((shell/run-catalog inst)
+       (shell/free-catalog-data (shell/run-catalog inst))))
+  ;; (shell/dump-catalog (shell/id-catalog id))
+  (set (shell/run-catalog inst) (shell/id-catalog id))
+  (set (shell/run-catalog-max inst) (shell/id-pos id)))
 
 (fun (shell/update inst)
   (shell/update-files inst)
-  (shell/update-catalog inst))
+  (shell/update-catalog inst)
+  (shell/update-run-catalog inst))
 
 @* Commands
 @=
@@ -383,20 +396,38 @@ area.
   (shell/cmd-edit inst (shell/cur-name inst)))
 
 (fun (shell/cmd-launch inst name)
+  (ui/button-set-selected (shell/read-btn inst) 0)
+  (ui/button-set-selected (shell/write-btn inst) 0)
+  (ui/button-set-selected (shell/run-btn inst) 1)
   (if (name
-       (ui/button-set-selected (shell/read-btn inst) 0)
-       (ui/button-set-selected (shell/write-btn inst) 0)
-       (ui/button-set-selected (shell/run-btn inst) 1)
        (if ((!= name (shell/cur-run-name inst))
             (if ((shell/cur-run-name inst)
                  (mem/free (shell/cur-run-name inst))))
             (set (shell/cur-run-name inst) (str/dup name))))
        (shell/ed-save-all)
-       (shell/launch-book (shell/cur-run-name inst))
-       (ui/paint-needed inst))))
+       (shell/launch-book (shell/cur-run-name inst))))
+  (ui/paint-needed inst))
+
+(fun (shell/cmd-switch-to-or-launch inst name)
+  (var app (app/find name "main"))
+  (if (app
+       (ui/button-set-selected (shell/read-btn inst) 0)
+       (ui/button-set-selected (shell/write-btn inst) 0)
+       (ui/button-set-selected (shell/run-btn inst) 1)
+       (app/switch-to-inst app))
+      (else
+       (shell/cmd-launch inst name)))
+  (ui/paint-needed inst))
 
 (fun (shell/cmd-run inst)
-  (shell/cmd-launch inst (shell/cur-run-name inst)))
+  (ui/button-set-selected (shell/read-btn inst) 0)
+  (ui/button-set-selected (shell/write-btn inst) 0)
+  (ui/button-set-selected (shell/run-btn inst) 1)
+  (if ((shell/cur-run-name inst)
+       (app/switch-to-inst (app/find (shell/cur-run-name inst) "main")))
+      (else
+       (app/switch-to-inst 0)))
+  (ui/paint-needed inst))
 
 (fun (shell/cmd-find inst str)
   (mem rbuf fs/rbuf)
@@ -428,6 +459,7 @@ area.
   (set (shell/cur-run-name inst) 0)
   (set (shell/files inst) 0)
   (set (shell/catalog inst) 0)
+  (set (shell/run-catalog inst) 0)
   (shell/update inst)
   (set (shell/find-tin inst) (ui/textinput-new shell/cmd-find inst))
   (set (shell/read-btn inst) (ui/button-new "Read" shell/cmd-read inst))
@@ -483,6 +515,11 @@ area.
        (var files (shell/files inst))
        (while (shell/fd-name (shell/file-data files i))
          (shell/paint-file inst i (shell/file-data files i) cur-app)
+         (set i (+ i 1))))
+      ((ui/btn-selected (shell/run-btn inst))
+       (var rcatalog (shell/run-catalog inst))
+       (while (shell/cd-title (shell/catalog-data rcatalog i))
+         (shell/paint-catalog-entry inst i (shell/catalog-data rcatalog i) cur-app)
          (set i (+ i 1)))))
   (var bw (/ (- (ui/elt-width inst) (* 4 ui/gap)) 3))
   (var bh ui/button-height)
@@ -510,7 +547,10 @@ area.
             (if ((and (>= l 0) (< l (shell/max inst)))
                  (set (shell/cur inst) l)
                  (shell/cmd-edit inst (shell/cur-name inst))
-                 (ui/paint-needed inst))))))
+                 (ui/paint-needed inst))))
+           ((ui/btn-selected (shell/run-btn inst))
+            (if ((and (>= l 0) (< l (shell/run-catalog-max inst)))
+                 (shell/cmd-switch-to-or-launch inst (shell/cd-name (shell/catalog-data (shell/run-catalog inst) l))))))))
       ((== state 0)
        (ui/paint-needed inst)
        (if ((== input gfx/ev-key-return)
