@@ -22,7 +22,8 @@ area.
   write-btn
   run-btn
   find-tin
-  quit-btn)
+  quit-btn
+  restart-btn)
 
 (fun (shell/refresh)
   (var root (app/root))
@@ -446,6 +447,9 @@ area.
        (fs/remove (shell/cur-name inst))
        (shell/update inst))))
 
+(fun (shell/cmd-restart inst)
+  (shell/cmd-launch inst "boot"))
+
 (fun (shell/cmd-quit inst)
   (shell/ed-save-all)
   (sys/halt))
@@ -465,6 +469,7 @@ area.
   (set (shell/read-btn inst) (ui/button-new "Read" shell/cmd-read inst))
   (set (shell/write-btn inst) (ui/button-new "Write" shell/cmd-write inst))
   (set (shell/run-btn inst) (ui/button-new "Run" shell/cmd-run inst))
+  (set (shell/restart-btn inst) (ui/button-new "Restart" shell/cmd-restart inst))
   (set (shell/quit-btn inst) (ui/button-new "Quit" shell/cmd-quit inst))
   (ui/button-set-selected (shell/read-btn inst) 1))
 
@@ -476,6 +481,7 @@ area.
   (ui/free (shell/read-btn inst))
   (ui/free (shell/write-btn inst))
   (ui/free (shell/run-btn inst))
+  (ui/free (shell/restart-btn inst))
   (ui/free (shell/quit-btn inst))
   (app/instance-fini inst))
 
@@ -527,8 +533,11 @@ area.
   (ui/paint inst (shell/write-btn inst) (+ ui/gap bw ui/gap) ui/gap bw bh)
   (ui/paint inst (shell/run-btn inst) (+ ui/gap bw ui/gap bw ui/gap) ui/gap bw bh)
   (var ui-top (- (ui/elt-height inst) ui/textinput-height ui/gap bh ui/gap))
-  (ui/paint inst (shell/find-tin inst) ui/gap ui-top (- (ui/elt-width inst) ui/gap ui/gap) ui/textinput-height)
-  (ui/paint inst (shell/quit-btn inst) ui/gap (+ ui-top ui/textinput-height ui/gap) (- (ui/elt-width inst) ui/gap ui/gap) bh))
+  (if ((ui/btn-selected (shell/write-btn inst))
+       (ui/paint inst (shell/find-tin inst) ui/gap ui-top (- (ui/elt-width inst) ui/gap ui/gap) ui/textinput-height)))
+  (var bw2 (/ (- (ui/elt-width inst) (* 3 ui/gap)) 2))
+  (ui/paint inst (shell/restart-btn inst) ui/gap (+ ui-top ui/textinput-height ui/gap) bw2 bh)
+  (ui/paint inst (shell/quit-btn inst) (+ ui/gap bw2 ui/gap) (+ ui-top ui/textinput-height ui/gap) bw2 bh))
 
 (fun (shell/switch-to-or-run inst)
   (if ((and (u8 (shell/cur-name inst))
@@ -590,10 +599,12 @@ area.
             ((== input ch/b)
              (ui/set-focus (shell/find-tin inst)))
             ((== input ch/q)
-             (if ((not (or (and (str/eq (app/app-name app) "intro")
-                                (str/eq (app/app-mode app) "tx"))
-                           (== app inst)))
-                  (app/quit app))))))
+             (if ((not (== app inst))
+                  (app/quit app))))
+            ((== input ch/R)
+             (shell/cmd-restart inst))
+            ((== input ch/Q)
+             (shell/cmd-quit inst))))             
       ((== state gfx/ev-state-control)
        (if ((== input ch/l)
             (shell/update inst)
