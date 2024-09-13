@@ -21,6 +21,8 @@ area.
   read-btn
   write-btn
   run-btn
+  remove-btn
+  remove-step
   find-tin
   quit-btn
   restart-btn)
@@ -364,7 +366,11 @@ area.
 @* Commands
 @=
 
+(fun (shell/reset-steps inst)
+  (set (shell/remove-step inst) 0))
+
 (fun (shell/cmd-view inst name)
+  (shell/reset-steps inst)
   (if (name
        (ui/button-set-selected (shell/read-btn inst) 1)
        (ui/button-set-selected (shell/write-btn inst) 0)
@@ -378,9 +384,11 @@ area.
        (ui/paint-needed inst))))
 
 (fun (shell/cmd-read inst)
+  (shell/reset-steps inst)
   (shell/cmd-view inst (shell/cur-view-name inst)))
 
 (fun (shell/cmd-edit inst name)
+  (shell/reset-steps inst)
   (if (name
        (ui/button-set-selected (shell/read-btn inst) 0)
        (ui/button-set-selected (shell/write-btn inst) 1)
@@ -394,9 +402,11 @@ area.
        (ui/paint-needed inst))))
 
 (fun (shell/cmd-write inst)
+  (shell/reset-steps inst)
   (shell/cmd-edit inst (shell/cur-name inst)))
 
 (fun (shell/cmd-launch inst name)
+  (shell/reset-steps inst)
   (ui/button-set-selected (shell/read-btn inst) 0)
   (ui/button-set-selected (shell/write-btn inst) 0)
   (ui/button-set-selected (shell/run-btn inst) 1)
@@ -410,6 +420,7 @@ area.
   (ui/paint-needed inst))
 
 (fun (shell/cmd-switch-to-or-launch inst name)
+  (shell/reset-steps inst)
   (var app (app/find name "main"))
   (if (app
        (ui/button-set-selected (shell/read-btn inst) 0)
@@ -421,6 +432,7 @@ area.
   (ui/paint-needed inst))
 
 (fun (shell/cmd-run inst)
+  (shell/reset-steps inst)
   (ui/button-set-selected (shell/read-btn inst) 0)
   (ui/button-set-selected (shell/write-btn inst) 0)
   (ui/button-set-selected (shell/run-btn inst) 1)
@@ -431,21 +443,33 @@ area.
   (ui/paint-needed inst))
 
 (fun (shell/cmd-find inst str)
-  (mem rbuf fs/rbuf)
-  (if ((not (fs/open rbuf str))
-       (mem wbuf fs/wbuf)
-       (fs/create wbuf)
-       (fs/commit wbuf str))
+  (shell/reset-steps inst)
+  (if ((u8 str)
+       (mem rbuf fs/rbuf)
+       (if ((not (fs/open rbuf str))
+            (mem wbuf fs/wbuf)
+            (fs/create wbuf)
+            (fs/commit wbuf str)
+            (shell/update inst))
+           (else
+            (fs/close rbuf)))
+       (shell/cmd-edit inst str))
       (else
-       (fs/close rbuf)))
-  (shell/update inst)
-  (shell/cmd-edit inst str)
+       (shell/cmd-write inst)))
   (ui/textinput-set (shell/find-tin inst) ""))
 
 (fun (shell/cmd-remove inst)
+  (shell/reset-steps inst)
   (if ((shell/cur-name inst)
        (fs/remove (shell/cur-name inst))
        (shell/update inst))))
+
+(fun (shell/cmd-remove-step inst)
+  (if ((== (shell/remove-step inst) 2)
+       (shell/cmd-remove inst))
+      (else
+       (set (shell/remove-step inst) (+ (shell/remove-step inst) 1))
+       (ui/paint-needed inst))))
 
 (fun (shell/cmd-restart inst)
   (shell/cmd-launch inst "boot"))
@@ -469,6 +493,8 @@ area.
   (set (shell/read-btn inst) (ui/button-new "Read" shell/cmd-read inst))
   (set (shell/write-btn inst) (ui/button-new "Write" shell/cmd-write inst))
   (set (shell/run-btn inst) (ui/button-new "Run" shell/cmd-run inst))
+  (set (shell/remove-btn inst) (ui/button-new "X" shell/cmd-remove-step inst))
+  (set (shell/remove-step inst) 0)
   (set (shell/restart-btn inst) (ui/button-new "Restart" shell/cmd-restart inst))
   (set (shell/quit-btn inst) (ui/button-new "Quit" shell/cmd-quit inst))
   (ui/button-set-selected (shell/read-btn inst) 1))
@@ -481,6 +507,7 @@ area.
   (ui/free (shell/read-btn inst))
   (ui/free (shell/write-btn inst))
   (ui/free (shell/run-btn inst))
+  (ui/free (shell/remove-btn inst))
   (ui/free (shell/restart-btn inst))
   (ui/free (shell/quit-btn inst))
   (app/instance-fini inst))
@@ -492,9 +519,7 @@ area.
   (gfx/string 25 y fonts/sans (if ((shell/fd-flags file) "*") (else " ")))
   (gfx/string 40 y fonts/sans (shell/fd-name file))
   (if ((and cur-app (str/eq (app/app-name cur-app) (shell/fd-name file)))
-       (ui/tint-selected 20 y (- (ui/elt-width inst) 40) lh))
-      ((and (== index (shell/cur inst)) (ui/elt-has-focus inst))
-       (gfx/invert-rect 20 y (- (ui/elt-width inst) 40) lh))))
+       (ui/tint-selected 20 y (- (ui/elt-width inst) 40) lh))))
 
 (fun (shell/paint-catalog-entry inst index entry cur-app)
   (var f fonts/sans)
@@ -534,6 +559,7 @@ area.
   (ui/paint inst (shell/run-btn inst) (+ ui/gap bw ui/gap bw ui/gap) ui/gap bw bh)
   (var ui-top (- (ui/elt-height inst) ui/textinput-height ui/gap bh ui/gap))
   (if ((ui/btn-selected (shell/write-btn inst))
+       (ui/paint inst (shell/remove-btn inst) (+ ui/gap (* 30 (shell/remove-step inst))) (- ui-top 50) 20 bh)
        (ui/paint inst (shell/find-tin inst) ui/gap ui-top (- (ui/elt-width inst) ui/gap ui/gap) ui/textinput-height)))
   (var bw2 (/ (- (ui/elt-width inst) (* 3 ui/gap)) 2))
   (ui/paint inst (shell/restart-btn inst) ui/gap (+ ui-top ui/textinput-height ui/gap) bw2 bh)
@@ -559,33 +585,7 @@ area.
                  (ui/paint-needed inst))))
            ((ui/btn-selected (shell/run-btn inst))
             (if ((and (>= l 0) (< l (shell/run-catalog-max inst)))
-                 (shell/cmd-switch-to-or-launch inst (shell/cd-name (shell/catalog-data (shell/run-catalog inst) l))))))))
-      ((== state 0)
-       (ui/paint-needed inst)
-       (if ((== input gfx/ev-key-return)
-            (if ((u8 (shell/cur-name inst))
-                 (shell/switch-to-or-run inst))))
-           ((== input gfx/ev-key-up)
-            (if ((> (shell/cur inst) 0)
-                 (set (shell/cur inst) (- (shell/cur inst) 1)))))
-           ((== input gfx/ev-key-down)
-            (if ((< (shell/cur inst) (- (shell/max inst) 1))
-                 (set (shell/cur inst) (+ (shell/cur inst) 1)))))
-           ((== input ch/s)
-            (if ((shell/cur-name inst)
-                 (shell/save (shell/cur-name inst)))))
-           ((== input ch/e)
-            (shell/cmd-edit inst (shell/cur-name inst)))
-           ((== input ch/v)
-            (shell/cmd-view inst (shell/cur-name inst)))
-           ((== input ch/r)
-            (shell/cmd-launch inst (shell/cur-name inst)))
-           ((== input ch/S)
-            (shell/ed-save-all))
-           ((== input ch/X)
-            (shell/cmd-remove inst))
-           ((== input ch/Q)
-            (shell/cmd-quit inst))))))
+                 (shell/cmd-switch-to-or-launch inst (shell/cd-name (shell/catalog-data (shell/run-catalog inst) l))))))))))
 
 (fun (shell/instance-global-input inst app state input)
   (var dup-name)
@@ -597,6 +597,7 @@ area.
             ((== input ch/r)
              (shell/cmd-launch inst (app/app-name app)))
             ((== input ch/b)
+             (shell/cmd-write inst)
              (ui/set-focus (shell/find-tin inst)))
             ((== input ch/q)
              (if ((not (== app inst))
