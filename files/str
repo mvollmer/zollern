@@ -5,6 +5,12 @@
     (set b (+ b 1)))
   (== (u8 a) (u8 b)))
 
+(fun (str/prefix str pre)
+  (while (and (u8 pre) (== (u8 str) (u8 pre)))
+    (set pre (+ pre 1))
+    (set str (+ str 1)))
+  (== (u8 pre) 0))
+  
 (fun (str/skip-whitespace ptr)
   (while (or (== (u8 ptr) ch/spc) (== (u8 ptr) ch/nl))
     (set ptr (+ ptr 1)))
