@@ -16,9 +16,10 @@ it depends on the operations that are used with them how those
 bits are interpreted.
 
 There is a [code +] syntax that treats them as signed integers,
-and also a [code f+] that treats them as floating point numbers.
-And then there is syntax like [code u8] that treats them as a
-memory address. It is up to the programmer to keep this all straight.
+and also a [code f+] syntax that treats them as floating point
+numbers. And then there is syntax like [code u8] that treats
+them as a memory address. It is up to the programmer to keep
+this all straight.
 
 @* Expression syntax
 
@@ -65,7 +66,7 @@ with it, then the expression is expanded into a new expression
 using that macro definition. The new expression is then compiled
 in place of the original one.
 
-If the operator is not a macro, then it is interpreted as a expression
+If the operator is not a macro, then it is interpreted as an expression
 itself, and the result of evaluating that expression is expected
 to be the memory address of some machine code. At run-time, that
 code is called as a function.
@@ -78,7 +79,7 @@ Some examples:
 (+ 1 2)
 @
 This is a macro expression since [code +] is defined as a macro
-below.
+in the [book lang] book.
 @c
 (gfx/rect x y 10 10 (gfx/color 40 40 50))
 @
@@ -90,7 +91,8 @@ Pretty straightforward.
 This reads a 64-bit value from the fifth element of the [code
 funcs] array, and calls whatever that value is as a function
 with argument [code 9]. The [code (u64 funcs 5)] part is a macro
-expression using the [code u64] accessor defined below.
+expression using the [code u64] accessor defined in the [book
+lang] book.
 
 @* Functions
 
@@ -109,8 +111,8 @@ will result in [code 22].
 
 The name of a function must include the name of the book that
 it is defined in as a prefix. When calling a function, the name
-of it's book must be included. This is Z1's way to avoid having
-a module system.
+of it's book must be included. This is Z1's way of avoiding a
+module system.
 
 Functions can only be defined at the top-level, not nested within
 other expressions.
@@ -173,7 +175,7 @@ Looping is done with [code while] in the obvious way:
   ...
   expr-n)
 @
-As long as [code cond] evaluated to true, the expressions in the
+As long as [code cond] evaluates to true, the expressions in the
 body are evaluated. If [code cond] is false on the first iteration,
 the body will not be executed at all.
 
