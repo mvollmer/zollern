@@ -1,8 +1,9 @@
 @** Z1 Surface syntax
 
-As explained in the [book comp] book, the Z1 compiler only implements
-[emph primitives], and we have to write macros to translate code
-like [code (while (foo) (bar))] into those primitives.
+As explained in the [book comp Compiler] book, the Z1 compiler
+only implements [emph primitives], and we have to write macros
+to translate code like [code (while (foo) (bar))] into those
+primitives.
 
 But we [emph only] have primitives at this point. How do we get
 started writing macros?
@@ -1091,7 +1092,7 @@ Global constants can be had via [code defconst], but [code var]
 only works inside functions.
 
 There is one exception, the global context. This is a single global
-variable which is (by convention) managed by the [book ctxt]
+variable which is (by convention) managed by the [book ctxt Context]
 book.
 
 The global context collects everything: the list of compiled books,

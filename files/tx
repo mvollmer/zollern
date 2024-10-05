@@ -2182,7 +2182,7 @@ broken into multiple lines.
 @
 
 Here is something obscure: a command to hide text. This for example
-used by the [book mandel] book to align equations.
+used by the [book mandel Mandelbrot] book to align equations.
 
 @=
 (fun (tx/cmd-hide)
@@ -2303,6 +2303,9 @@ Links to other books ...
   (tx/set-box-bg-color ui/link-color)
   (var t (tx/c-cur-token (ctxt/tx context)))
   (tx/set-box-tag t)
+  (tx/next-token)  
+  (while (tx/is-white-space (u8 t))
+    (tx/next-token))
   (tx/parse-text)
   (tx/skip 3)
   (tx/end)
@@ -2756,7 +2759,8 @@ them, change [code item] to do that.
 [item - ]Links, to places in other books.
 
 [item - ]Typeset code sections in a fancier way. Highlight symbols
-from the [book lang] book, highlight local vars, links.
+from the [book lang Surface syntax] book, highlight local vars,
+links.
 
 [item - ]Don't get into an infinite loop when the last line doesn't
 end in "\\n".

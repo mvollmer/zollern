@@ -34,8 +34,8 @@ defining a new kind of element, to store the state that is needed
 to do its job. You can also add more methods, but this is less
 common (and more cumbersome).
 
-The [book app] book explains how to derive a new application kind
-in detail.
+The [book app Applications] book explains how to derive a new
+application kind in detail.
 
 @* Base elements
 
@@ -463,7 +463,7 @@ Text inputs are user interface elements that allow the editing
 of a single line of text. When the [code RET] key is pressed,
 a given function is called.
 
-The editing is implemented by the [book ed] book.
+The editing is implemented by the [book ed Editor] book.
 
 @=
 (struct ui/textinput

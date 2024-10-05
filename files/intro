@@ -66,9 +66,9 @@ A fragment definition looks like this:
 
 Code is written using [emph s-expression] syntax, like Lisp. But
 the Z1 language is nothing like Lisp, it's more like the untyped
-predecessors to C. The [book lang] book has more details.
+predecessors to C. The [book z1-intro Z1 Introduction] has more details.
 
-The [book mandel] book is a good first read.
+The [book mandel Mandelbrot] book is a good first read.
 
 @* How to write a book
 
@@ -77,10 +77,10 @@ bold, or italics, for marking the real code sections, defining
 fragments, etc. Any of the existing books can be used as examples.
 For example, if you want to know how the previous section "How
 to read a book" was actually written, hit [code C-x e] right
-now! The ultimate details are in the [book tx] book.
+now! The ultimate details are in the [book tx Typesetting] book.
 
 The editor of course has a number of key bindings that might be
-good to know. For now, you have to read the [book ed] book to figure
+good to know. For now, you have to read the [book ed Editor] book to figure
 them out.
 
 There is usually no need to explicitly save a book.

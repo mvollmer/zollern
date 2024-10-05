@@ -4,9 +4,9 @@ The first programming language of Zollern is called "Z1". It is
 quite primitive, but already quite fun.
 
 It has a real compiler, which is written in assembler. That story
-is told in the [book asm], [book comp], and [book lang] books.
-Here we explain the Z1 language itself and how you can write
-programs in it.
+is told in the [book asm Assembler], [book comp Compiler], and
+[book lang Surface syntax] books. Here we explain the Z1 language
+itself and how you can write programs in it.
 
 @* No types
 
@@ -79,12 +79,12 @@ Some examples:
 (+ 1 2)
 @
 This is a macro expression since [code +] is defined as a macro
-in the [book lang] book.
+in the [book lang Surface syntax] book.
 @c
 (gfx/rect x y 10 10 (gfx/color 40 40 50))
 @
-This expression has two calls to functions in the [book gfx] book.
-Pretty straightforward.
+This expression has two calls to functions in the [book gfx Graphics]
+book. Pretty straightforward.
 @c
 ((u64 funcs 5) 9)
 @
@@ -92,7 +92,7 @@ This reads a 64-bit value from the fifth element of the [code
 funcs] array, and calls whatever that value is as a function
 with argument [code 9]. The [code (u64 funcs 5)] part is a macro
 expression using the [code u64] accessor defined in the [book
-lang] book.
+lang Surface syntax] book.
 
 @* Functions
 
@@ -433,8 +433,8 @@ to switch back to template-expansion-mode to construct the replacement
 expression, using the newly generated symbol for the loop counter.
 
 Check out the implementations of [code syntax-parse] and [code
-syntax-expand] in the [book lang] book to learn all the details.
-Macro-defining macros are especially interesting!
+syntax-expand] in the [book lang Surface syntax] book to learn
+all the details. Macro-defining macros are especially interesting!
 
 @* Primitives
 
@@ -450,5 +450,5 @@ will add [code x] and [code y]. Another example would be [code
 does not initialize it.
 
 You don't need to know about these primitives when programming
-in Z1. But the [book comp] and [book lang] books make much more
-sense when you know about them in principle.
+in Z1. But the [book comp Compiler] and [book lang Surface syntax]
+books make much more sense when you know about them in principle.
