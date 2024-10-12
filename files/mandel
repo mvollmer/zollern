@@ -122,7 +122,7 @@ the zooming.
 
 @=
 (struct mandel/instance
-  (:base app/instance)
+  (:base ui/element)
   cur-re-min cur-re-max
   cur-im-min cur-im-max)
 
@@ -130,11 +130,11 @@ the zooming.
 <define the [code mandel/render] function>
 
 (fun (mandel/init inst)
-  (app/instance-init inst)
+  (ui/element-init inst)
   <init zoom>)
 
 (fun (mandel/fini inst)
-  (app/instance-fini inst))
+  (ui/element-fini inst))
 
 (fun (mandel/paint inst)
   (mandel/render inst))
@@ -147,14 +147,14 @@ the zooming.
        <zoom in>
        (ui/paint-needed inst))))
 
-(app/instance-functions mandel/funcs
+(ui/element-functions mandel/funcs
   mandel/init
   mandel/fini
   mandel/paint
   mandel/input)
 
-(fun (mandel/main)
-  (app/launch (ui/new mandel/instance mandel/funcs) "mandel" "main"))
+(fun (mandel/new)
+  (ui/new mandel/instance mandel/funcs))
 
 @
 Zooming is pretty straightforward. It just looks like a lot of

@@ -64,7 +64,7 @@ N steps, etc.
   tile-target-reaching)
 
 (struct soko/instance
-  (:base app/instance)
+  (:base ui/element)
   dozer-dir
   dozer-x
   dozer-y
@@ -356,7 +356,7 @@ N steps, etc.
   (soko/find-target-reaching inst))
 
 (fun (soko/init inst levels)
-  (app/instance-init inst)
+  (ui/element-init inst)
   (set (soko/move-history inst) (sys/page-get))
   (set (soko/levels inst) levels)
   (set (soko/cur-level inst) 0)
@@ -364,7 +364,7 @@ N steps, etc.
 
 (fun (soko/fini inst)
   (sys/page-put (soko/move-history inst))
-  (app/instance-fini inst))
+  (ui/element-fini inst))
 
 (fun (soko/paint inst)
   (soko/paint-level inst))
@@ -374,9 +374,7 @@ N steps, etc.
   (if ((== input gfx/ev-button-1-release)
        (soko/plan-path inst (/ (- x 10) 30) (/ (- y 10) 30)))
       ((== state 0)
-       (if ((== input ch/q)
-            (app/quit inst))
-           ((== input ch/r)
+       (if ((== input ch/r)
             (soko/init-level inst))
            ((== input gfx/ev-key-left)
             (soko/move-dozer inst soko/dir-left)
@@ -404,14 +402,14 @@ N steps, etc.
                  (set (soko/cur-level inst) (+ (soko/cur-level inst) 1))
                  (soko/init-level inst))))))))
 
-(app/instance-functions soko/funcs
+(ui/element-functions soko/funcs
   soko/init
   soko/fini
   soko/paint
   soko/input)
 
-(fun (soko/launch levels)
-  (app/launch (ui/new soko/instance soko/funcs levels)  "soko" "main"))
+(fun (soko/new-with-levels levels)
+  (ui/new soko/instance soko/funcs levels))
 
 (data soko/level_0
   (0
@@ -1378,5 +1376,5 @@ N steps, etc.
     (4 soko/level_49)
     (4 0)))
 
-(fun (soko/main)
-  (soko/launch soko/all-levels))
+(fun (soko/new)
+  (soko/new-with-levels soko/all-levels))

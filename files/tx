@@ -2651,7 +2651,9 @@ keep the viewer in about the right possition.
 @=
 
 (struct tx/instance
-  (:base app/instance)
+  (:base ui/element)
+  inst-goto
+  inst-goto-inst
   inst-ink
   inst-y-off
   inst-y-max
@@ -2662,8 +2664,10 @@ keep the viewer in about the right possition.
   (set (tx/inst-y-off inst) y)
   (ui/paint-needed inst))
 
-(fun (tx/init inst name offset)
-  (app/instance-init inst)
+(fun (tx/init inst name offset goto-func goto-inst)
+  (ui/element-init inst)
+  (set (tx/inst-goto inst) goto-func)
+  (set (tx/inst-goto-inst inst) goto-inst)
   (set (tx/inst-y-off inst) offset)
   (tx/start-session)
   (tx/process-file name)
@@ -2675,7 +2679,7 @@ keep the viewer in about the right possition.
 (fun (tx/fini inst)
   (tx/free-ink (tx/inst-ink inst))
   (ui/free (tx/inst-sb inst))
-  (app/instance-fini inst))
+  (ui/element-fini inst))
 
 (fun (tx/paint inst)
   (tx/draw-ink (tx/inst-ink inst)
@@ -2709,12 +2713,12 @@ keep the viewer in about the right possition.
        (set (u8 tagbuf) 0)
        (tx/query-ink-index (tx/inst-ink inst) (/ (- w 700) 2) (- (tx/inst-y-off inst)) (- input ch/d1) tagbuf)
        (if ((u8 tagbuf)
-            (app/goto-link tagbuf))))
+            ((tx/inst-goto inst) (tx/inst-goto-inst inst) tagbuf))))
       ((== input gfx/ev-button-1-release)
        (set (u8 tagbuf) 0)
        (tx/query-ink-xy (tx/inst-ink inst) (/ (- w 700) 2) (- (tx/inst-y-off inst)) x y tagbuf)
        (if ((u8 tagbuf)
-            (app/goto-link tagbuf)))))
+            ((tx/inst-goto inst) (tx/inst-goto-inst inst) tagbuf)))))
   (if ((< (tx/inst-y-off inst) 0)
        (set (tx/inst-y-off inst) 0)))
   (if ((> (tx/inst-y-off inst) (tx/inst-y-max inst))
@@ -2724,20 +2728,13 @@ keep the viewer in about the right possition.
        (ui/scrollbar-set (tx/inst-sb inst) (tx/inst-y-off inst) (tx/inst-y-max inst))
        (ui/paint-needed inst))))
 
-(app/instance-functions tx/funcs
+(ui/element-functions tx/funcs
   tx/init
   tx/fini
   tx/paint
   tx/input)
 
-(fun (tx/launch name)
-  (var offset 0)
-  (var old-app (app/find name "tx"))
-  (if (old-app
-       (set offset (tx/inst-y-off old-app))))
-  (app/launch (ui/new tx/instance tx/funcs name offset) name "tx"))
 @
-
 Happy [emph type] [bold setting]!
 
 @* Ideas for improvements

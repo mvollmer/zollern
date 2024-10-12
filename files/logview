@@ -1,0 +1,62 @@
+@** The log viewer
+
+@=
+(struct logview/element
+  (:base ui/element))
+
+(fun (logview/element-init inst)
+  (ui/element-init inst))
+
+(fun (logview/element-fini inst)
+  (ui/element-fini inst))
+
+(struct logview/paint-data
+  pd-x
+  pd-y)
+
+(fun (logview/element-paint-str inst pd str len)
+  (var x (logview/pd-x pd))
+  (var y (logview/pd-x pd))
+  (var w (ui/elt-width inst))
+  (var h (ui/elt-height inst))
+  (var end (+ str len))
+  (while (and (< str end)
+              (< y (- h 16)))
+    (if ((== (u8 str) ch/nl)
+         (set x 4)
+         (set y (+ y 16)))
+        (else
+         (set x (+ x (gfx/glyph fonts/mono x y (u8 str))))))
+    (if ((> x (- w 14))
+         (set x 4)
+         (set y (+ y 16))))
+    (set str (+ str 1)))
+  (set (logview/pd-x pd) x)
+  (set (logview/pd-y pd) y))
+
+(fun (logview/element-paint inst)
+  (mem pd logview/paint-data)
+  (set (logview/pd-x pd) 4)
+  (set (logview/pd-y pd) 4)
+  (var buffer (ctxt/log context))
+  (var top (+ buffer log/buffer))
+  (var bottom (+ buffer log/buffer-size))
+  (var start (log/lb-start buffer))
+  (var end (log/lb-end buffer))
+  (if ((<= start end)
+       (logview/element-paint-str inst pd start (- end start)))
+      (else
+       (logview/element-paint-str inst pd start (- bottom start))
+       (logview/element-paint-str inst pd top (- end top)))))
+
+(fun (logview/element-input inst state input))
+
+(ui/element-functions logview/element-funcs
+  logview/element-init
+  logview/element-fini
+  logview/element-paint
+  logview/element-input)
+
+(fun (logview/new)
+  (ui/new logview/element logview/element-funcs))
+@

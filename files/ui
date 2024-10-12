@@ -34,8 +34,60 @@ defining a new kind of element, to store the state that is needed
 to do its job. You can also add more methods, but this is less
 common (and more cumbersome).
 
-The [book app Applications] book explains how to derive a new
-application kind in detail.
+The fundamental user element kind is [code ui/element]. Every
+other element kind derives directly or indirectly from it.
+
+Deriving from [code ui/element] is done by defining a new structure
+type that has [code ui/element] as its first element. Then a
+pointer to such an instance is also a pointer to a [code ui/element]
+and can be used with the functions in this book.
+
+For example:
+@c
+(struct my/element
+  (:base ui/element)
+  my-data)
+@
+We also need to define the following functions for our new element,
+and collect them in a table.
+@c
+(fun (my/element-init inst)
+  (ui/element-init inst)
+  (set (my/my-data inst) (mem/alloc 100)))
+
+(fun (my/element-fini inst)
+  (mem/free (my/my-data inst))
+  (ui/element-fini inst))
+
+(fun (my/element-paint inst)
+  (gfx/rect 10 10 10 10 (gfx/color 255 0 0)))
+
+(fun (my/element-input inst state input)
+  ...)
+
+(ui/element-functions my/funcs
+  my/element-init
+  my/element-fini
+  my/element-paint
+  my/element-input)
+@
+
+With these, we can create a new element instance by calling [code
+ui/new].
+@c
+(fun (my/element-new)
+  (ui/new my/instance my/funcs))
+@
+This will allocate [code my/element] bytes of memory and initialize
+them to become the instance structure of the new element. As
+part of the initialization, [code my/element-init] will be called.
+
+Then, whenever this element needs to be shown, the [code my/element-paint]
+function will be called with the instance structure as its argument.
+The paint function can retrieve from the instance structure whatever
+state is needed to draw the element. It can also treat its argument
+as a [code ui/element] structure and access a couple of [emph
+their] fields.
 
 @* Base elements
 
@@ -246,8 +298,7 @@ use this to indicate this fact to the user by drawing a cursor,
 for example.
 
 All parents of the focus element in the element tree have their
-[emph contains-focus] flag set. This is used to determine whether
-the shell or the current application has the focus, for example.
+[emph contains-focus] flag set.
 
 @=
 (fun (ui/elt-contains-focus inst)

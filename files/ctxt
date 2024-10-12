@@ -8,9 +8,10 @@ needs some global mutable state, it can use a field...
   disk
   books
   comp
+  log
   mem
   fs
   gfx
-  app
   ui
-  tx)
+  tx
+  shell)

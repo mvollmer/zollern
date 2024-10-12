@@ -34,10 +34,10 @@
 (fun (book/search-fun book name)
   (.sys/book-search-fun book name))
 
-(fun (book/find-in-list list cond arg1)
+(fun (book/find-in-list list cond arg1 arg2)
   (var res 0)
   (while list
-    (if ((cond (book/bl-book list) arg1)
+    (if ((cond (book/bl-book list) arg1 arg2)
          (set res (book/bl-book list))
          (goto done)))
     (set list (book/bl-link list)))
@@ -53,13 +53,13 @@
       (else
        0)))
 
-(fun (book/is-out-of-date book is-unsaved)
+(fun (book/is-out-of-date book is-unsaved is-unsaved-data)
   (if ((book/ood-flag book)
        (- (book/ood-flag book) 1))
       (else
-       (var ood (or (is-unsaved (book/name book))
+       (var ood (or (is-unsaved (book/name book) is-unsaved-data)
                     (book/is-older-than-file book)
-                    (!= (book/find-in-list (book/deps book) book/is-out-of-date is-unsaved) 0)))
+                    (!= (book/find-in-list (book/deps book) book/is-out-of-date is-unsaved is-unsaved-data) 0)))
        (set (book/ood-flag book) (+ ood 1))
        ood)))
 
@@ -68,7 +68,7 @@
        (set (book/ood-flag book) 0)
        (book/find-in-list (book/deps book) book/reset-ood-flag)))
   0)
-       
+
 (fun (book/reset-out-of-date)
   (var b (ctxt/books context))
   (while b

@@ -1,0 +1,68 @@
+@** The log of records
+
+This book implements a simple way to collect textual output from
+all over the place. It doesn't have any dependencies by itself
+(almost) and thus every other book can use it.
+
+To view this log the [book shell shell] will run the [book logview
+Log Viewer].
+
+@* How to log interesting events
+
+The fundamental function is [code log/write]. It will append a
+given string verbatim to the log.
+
+@* Data structure
+
+The log is stored in a single page, which is used as a [emph ring
+buffer]. Once more than 16 kB of text has been written to the
+log, the oldest text will be removed to make space for more.
+
+@=
+(struct log/buffer
+  lb-start
+  lb-end)
+
+(fun (log/init)
+  (var buffer (sys/page-get))
+  (set (log/lb-start buffer) (+ buffer log/buffer))
+  (set (log/lb-end buffer) (+ buffer log/buffer))
+  (set (ctxt/log context) buffer))
+
+(defconst log/buffer-size sys/page-size)
+  
+(fun (log/write str)
+  (var buffer (ctxt/log context))
+  (var top (+ buffer log/buffer))
+  (var bottom (+ buffer log/buffer-size))
+  (var ptr (log/lb-end buffer))
+  (var start (log/lb-start buffer))
+  (var full 0)
+  (while (u8 str)
+    (set (u8 ptr) (u8 str))
+    (set str (+ str 1))
+    (set ptr (+ ptr 1))
+    (if ((>= ptr bottom)
+         (set ptr top)))
+    (if ((== ptr start)
+         (set full 1))))
+  (set (log/lb-end buffer) ptr)
+  (if (full
+       (set start (+ ptr 1))
+       (if ((>= start bottom)
+            (set start top)))
+       (set (log/lb-start buffer) start))))
+
+(fun (log/dump)
+  (var buffer (ctxt/log context))
+  (var top (+ buffer log/buffer))
+  (var bottom (+ buffer log/buffer-size))
+  (var start (log/lb-start buffer))
+  (var end (log/lb-end buffer))
+  (if ((<= start end)
+       (sys/write 2 start (- end start)))
+      (else
+       (sys/write 2 start (- bottom start))
+       (sys/write 2 top (- end top)))))
+  
+@
