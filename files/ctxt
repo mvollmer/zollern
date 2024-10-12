@@ -13,4 +13,5 @@ needs some global mutable state, it can use a field...
   gfx
   app
   ui
-  tx)
+  tx
+  shell)
