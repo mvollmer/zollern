@@ -2617,7 +2617,7 @@ a file and call [code tx/parse-section] in a loop, more or less.
        (fs/close r)
        (set (tx/c-rbuf c) 0))
       (else
-       (dbg/str "no such file:" name))))
+       (dbg/str "no such file" name))))
 @
 
 We almost forgot all the markup parsing state. Here it is, see

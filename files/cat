@@ -11,9 +11,12 @@ ch         .... Characters
 str        .... Strings
            . Operating system
 boot       .. Booting
+log        .. Logging
+pk         .. Debugging
 fs         .. File system
 gfx        .. Graphics
 ui         .. User interface
+logview    .. Log viewer
 shell      .. Shell
 ed         .. Editor
 tx         .. Type setting

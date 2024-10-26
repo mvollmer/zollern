@@ -155,9 +155,7 @@ application area.
 @=
 
 (fun (shell/launch-book inst name)
-  (log/write "Launching ")
-  (log/write name)
-  (log/write ":\n")
+  (log/msg "Launching %s:\n" name)
   (var result 0)
   (if ((var book (book/get name log/write 0))
        (if ((var new-func (book/search-fun book "new"))

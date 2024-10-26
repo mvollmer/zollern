@@ -1,22 +1,32 @@
 @** The log of records
 
 This book implements a simple way to collect textual output from
-all over the place. It doesn't have any dependencies by itself
-(almost) and thus every other book can use it.
+all over the place. It has (almost) no dependencies by itself
+and thus (almost) every other book can use it.
 
-To view this log the [book shell shell] will run the [book logview
+To view this log, the [book shell shell] will run the [book logview
 Log Viewer].
 
 @* How to log interesting events
 
-The fundamental function is [code log/write]. It will append a
-given string verbatim to the log.
+The fundamental function is [code log/append]. It will append
+a given string verbatim to the log. But there is also the much
+more convenient [code log/msg] function. And then there is the
+[book pk pk] book that has functions intended for debugging,
+such as [code pk/int].
 
 @* Data structure
 
 The log is stored in a single page, which is used as a [emph ring
 buffer]. Once more than 16 kB of text has been written to the
 log, the oldest text will be removed to make space for more.
+
+Two pointers are used to keep track which part of the buffer holds
+the log text: [emph start] and [emph end]. When [emph start]
+= [emph end], the buffer is empty, and when [emph end] is one
+byte behind [emph start], the buffer is full. Since we only add
+to the ring buffer and never take anything out, it will fill
+up eventually and then stay full.
 
 @=
 (struct log/buffer
@@ -30,15 +40,25 @@ log, the oldest text will be removed to make space for more.
   (set (ctxt/log context) buffer))
 
 (defconst log/buffer-size sys/page-size)
-  
-(fun (log/write str)
+@
+
+Writing into the buffer is done character by character, wrapping
+the [emph end] pointer around appropriately when it reaches the
+end of the buffer. When we run into the [emph start] pointer
+during this process, the buffer is full. But instead of stopping,
+we continue writing and then adjust the [emph start] pointer
+when everything is done.
+
+@=  
+(fun (log/append str len)
   (var buffer (ctxt/log context))
   (var top (+ buffer log/buffer))
   (var bottom (+ buffer log/buffer-size))
   (var ptr (log/lb-end buffer))
   (var start (log/lb-start buffer))
   (var full 0)
-  (while (u8 str)
+  (var str-end (+ str len))
+  (while (< str str-end)
     (set (u8 ptr) (u8 str))
     (set str (+ str 1))
     (set ptr (+ ptr 1))
@@ -52,17 +72,75 @@ log, the oldest text will be removed to make space for more.
        (if ((>= start bottom)
             (set start top)))
        (set (log/lb-start buffer) start))))
+@
 
-(fun (log/dump)
-  (var buffer (ctxt/log context))
-  (var top (+ buffer log/buffer))
-  (var bottom (+ buffer log/buffer-size))
-  (var start (log/lb-start buffer))
-  (var end (log/lb-end buffer))
-  (if ((<= start end)
-       (sys/write 2 start (- end start)))
-      (else
-       (sys/write 2 start (- bottom start))
-       (sys/write 2 top (- end top)))))
-  
+Here is a function for appending a zero-terminated string. We
+could just call [code str/len] to get its length, but that would
+create a dependency on the [book str str] book, and we couldn't
+put any debugging calls into that book. So let's inline the length
+computation here.
+
+@=
+(fun (log/write str)
+  (var end str)
+  (while (u8 end)
+    (set end (+ end 1)))
+  (log/append str (- end str)))
+@
+
+And here is a function for appending the decimal representation
+of a integer to the log. The number is turned into a string backwards,
+since the least-significant digit is easy to obtain via [code
+(% n 10)].
+
+@=
+(fun (log/write-int n)
+  (if ((< n 0)
+       (log/write "-")
+       (set n (- n))))
+  (mem buf 40)
+  (var ptr (+ buf 39))
+  (set (u8 ptr) 0)
+  (while (begin
+           (set ptr (- ptr 1))
+           (set (u8 ptr) (+ (% n 10) ch/d0))
+           (set n (/ n 10))
+           n))
+  (log/write ptr))
+@
+
+Instead of [code log/append] or [code log/write], most code will
+use [code log/msg]. It takes a [emph format string] with control
+codes in it. Much like [code printf], if you are old enough to
+remember that.
+
+For example,
+@c
+(log/msg "Hello, %s!\n" "World")
+@
+will append the string [code Hello, World] to the log, followed
+by a newline character.
+
+The available format codes are just [code %s] for zero-terminated
+strings and [code %d] for integers.
+
+@=
+(fun (log/msg format arg0)
+  (var args (loc arg0))
+  (while (u8 format)
+    (var ptr format)
+    (while (and (u8 ptr) (!= (u8 ptr) ch/%))
+      (set ptr (+ ptr 1)))
+    (log/append format (- ptr format))
+    (if ((u8 ptr)
+         (set ptr (+ ptr 1))
+         (if ((== (u8 ptr) ch/s)
+              (log/write (u64 args)))
+             ((== (u8 ptr) ch/d)
+              (log/write-int (u64 args)))
+             (else
+              (log/write "???")))
+         (set ptr (+ ptr 1))
+         (set args (+ args u64))))
+    (set format ptr)))
 @

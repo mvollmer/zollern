@@ -25,6 +25,7 @@ the last of which is [code TEXT/main], as expected.
 <define utility functions>
 
 (fun (TEXT/main)
+  (TEXT/hello)
   (TEXT/debug <foo>))
 
 @* Part Three - utilities
@@ -34,11 +35,11 @@ all just a test for the literate programming features of Zollern.
 
 @= <define utility functions>
 (fun (TEXT/debug l v)
-  (dbg/int l v))
+  (log/msg "%s: %d\n" l v))
 
 @
 But let's have one more utility.
 
 @= <define utility functions>
-(fun (TEXT/log msg)
-  (dbg/out msg))
+(fun (TEXT/hello msg)
+  (log/write "Hello, Zollern!\n"))

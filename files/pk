@@ -1,0 +1,31 @@
+@** Debugging
+
+This is a trivial book that only exists to get cute names like
+[code pk/int]. The "pk" abbreviates "peek".
+
+The function defined here are meant to be inserted into code while
+debugging, to get a trace of what is going on. For example, one
+might temporarily change
+
+@c
+(var x (math/random 1000))
+@
+to
+@c
+(var x (pk/int "x" (math/random 1000)))
+@
+to get a trace of the values of [code x] as the program runs.
+The output appears in the log.
+
+Here are the two functions, one for numbers, the other for strings.
+
+@=
+(fun (pk/int label num)
+  (log/msg "%s: %d\n" label num)
+  n)
+
+(fun (pk/str label str)
+  (log/msg "%s: %s\n" label str)
+  str)
+@
+
