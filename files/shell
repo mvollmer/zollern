@@ -398,7 +398,7 @@ application area.
   (var offset 0)
   (var old-elt (shell/find-element inst name "tx"))
   (if (old-elt
-       (set offset (tx/inst-y-off old-elt))))
+       (set offset (ui/scrollbar-pos (tx/inst-sb old-elt)))))
   (shell/add-element inst (ui/new tx/instance tx/funcs name offset goto-func inst) name "tx"))
 
 (fun (shell/cmd-view inst name)

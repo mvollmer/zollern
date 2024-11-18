@@ -577,41 +577,73 @@ The editing is implemented by the [book ed Editor] book.
 @=
 (struct ui/scrollbar
   (:base ui/element)
+  sb-target
   sb-pos
   sb-total
-  sb-scroll-handler
-  sb-scroll-handler-data
   sb-drag-delta)
 
-(fun (ui/scrollbar-init inst pos total handler handler-data)
+(fun (ui/scrollbar-init inst target)
   (ui/element-init inst)
-  (set (ui/sb-pos inst) pos)
-  (set (ui/sb-total inst) total)
-  (set (ui/sb-scroll-handler inst) handler)
-  (set (ui/sb-scroll-handler-data inst) handler-data))
+  (set (ui/sb-target inst) target)
+  (set (ui/sb-pos inst) 0)
+  (set (ui/sb-total inst) 0))
 
 (fun (ui/scrollbar-fini inst)
   (ui/element-fini inst))
 
 (fun (ui/scrollbar-paint inst)
-  (var h (/ (* (ui/elt-height inst) (ui/elt-height inst)) (ui/sb-total inst)))
-  (var p (/ (* (ui/sb-pos inst) (ui/elt-height inst)) (ui/sb-total inst)))
+  (var h)
+  (var p)
+  (var target (ui/sb-target inst))
+  (if ((< (ui/sb-total inst) (ui/elt-height target))
+       (set h (ui/elt-height inst))
+       (set p 0))
+      (else
+       (set h (/ (* (ui/elt-height target) (ui/elt-height inst)) (ui/sb-total inst)))
+       (set p (/ (* (ui/elt-height target) (ui/sb-pos inst)) (ui/sb-total inst)))))
   (gfx/rect 2 (+ p 2) (- (ui/elt-width inst) 4) (- h 4) ui/active-color))
 
+(fun (ui/sb-update inst npos)
+  (var target (ui/sb-target inst))
+  (if ((or (< npos 0)
+           (< (ui/sb-total inst) (ui/elt-height target)))
+       (set npos 0))
+      ((> npos (- (ui/sb-total inst) (ui/elt-height target)))
+       (set npos (- (ui/sb-total inst) (ui/elt-height target)))))
+  (if ((!= npos (ui/sb-pos inst))
+       (set (ui/sb-pos inst) npos)
+       (ui/paint-needed inst)
+       (ui/paint-needed target))))
+
 (fun (ui/scrollbar-input inst state input x y)
+  (var target (ui/sb-target inst))
+  (var npos (ui/sb-pos inst))
   (if ((== input gfx/ev-button-1-press)
-       (var p (/ (* (ui/sb-pos inst) (ui/elt-height inst)) (ui/sb-total inst)))
+       (var p (if ((< (ui/sb-total inst) (ui/elt-height target))
+                   0)
+                  (else
+                   (/ (* (ui/elt-height target) (ui/sb-pos inst)) (ui/sb-total inst)))))
        (set (ui/sb-drag-delta inst) (- y p)))
       ((== input gfx/ev-move)
        (var np (- y (ui/sb-drag-delta inst)))
-       (var npos (/ (* np (ui/sb-total inst)) (ui/elt-height inst)))
-       (if ((< npos 0)
-            (set npos 0))
-           ((> npos (ui/sb-total inst))
-            (set npos (ui/sb-total inst))))
-       (set (ui/sb-pos inst) npos)
-       (ui/paint-needed inst)
-       ((ui/sb-scroll-handler inst) (ui/sb-scroll-handler-data inst) npos))))
+       (set npos (/ (* np (ui/sb-total inst)) (ui/elt-height target)))))
+  (ui/sb-update inst npos))
+
+(fun (ui/scrollbar-key-input inst state input)
+  (var npos (ui/sb-pos inst))
+  (if ((== input gfx/ev-key-down)
+       (set npos (+ npos 20)))
+      ((== input gfx/ev-scroll-down)
+       (set npos (+ npos 100)))
+      ((== input gfx/ev-key-page-down)
+       (set npos (+ npos 500)))
+      ((== input gfx/ev-key-up)
+       (set npos (- npos 20)))
+      ((== input gfx/ev-scroll-up)
+       (set npos (- npos 100)))
+      ((== input gfx/ev-key-page-up)
+       (set npos (- npos 500))))
+  (ui/sb-update inst npos))
 
 (ui/element-functions ui/scrollbar-funcs
   ui/scrollbar-init
@@ -619,10 +651,11 @@ The editing is implemented by the [book ed Editor] book.
   ui/scrollbar-paint
   ui/scrollbar-input)
 
-(fun (ui/scrollbar-new pos total handler handler-data)
-  (ui/new ui/scrollbar ui/scrollbar-funcs pos total handler handler-data))
+(fun (ui/scrollbar-new target)
+  (ui/new ui/scrollbar ui/scrollbar-funcs target))
 
-(fun (ui/scrollbar-set inst pos total)
-  (set (ui/sb-pos inst) pos)
-  (set (ui/sb-total inst) total)
-  (ui/paint-needed inst))
+(fun (ui/scrollbar-pre-paint inst total)
+  (set (ui/sb-total inst) total))
+
+(fun (ui/scrollbar-pos inst)
+  (ui/sb-pos inst))

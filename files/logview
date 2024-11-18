@@ -1,27 +1,108 @@
 @** The log viewer
 
+This UI element shows the text accumulated in the [book log Log].
+Unlike that book, we can have all the dependencies we want.
+
+This is one of the simplest programs with a scrollbar, so we explain
+here how that works in a bit more detail.
+
+A scrollbar is a UI element, of course, and is created with [code
+(ui/scrollbar-new [emph target])]. The [emph target] parameter
+is the UI element that is being scrolled. In our case this is
+the UI element that draws the log text.
+
+Whenever the scroll position is changed, the target element is
+painted (by setting its [emph paint-needed] flag). The paint
+function of it should call [code ui/scrollbar-pos] to figure
+out which part to draw.
+
+A scrollbar element needs to know the total height of whatever
+the target element is drawing before painting the scrollbar.
+It also needs to know the height of the target element. And changing
+this parameters might change the scroll position as well. Therefore
+this all should happen at the start of the [emph paint] function
+of the target element. At that time, the height of that element
+is known.
+
+For these reasons, the function to call is called [code ui/scrollbar-pre-paint],
+to emphasize where it should be called.
+
+In general, you need to know how high the material is going to
+be that you are painting. For the Log viewer this means that
+we need to count the lines in a first pass over the text, call
+[code ui/scrollbar-pre-paint], and then paint in a second pass
+over the text.
+
+(As an optimization, the [book log log] book could count the lines
+incrementally as new text is appended and old text is removed.
+But we'll only do that if this becomes necessary.)
+
+The scrollbar takes care of all input that causes scrolling, including
+keys and the mouse wheel. For this to work, the target element
+should forward all input events that it doesn't handle itself
+to the [code ui/scrollbar-key-input] function.
+
+@* The application instance
+
+Since the actual log text is maintained by the [book log log]
+book, we only need to take care of the scrollbar.
+
 @=
 (struct logview/element
-  (:base ui/element))
+  (:base ui/element)
+  sb)
 
 (fun (logview/element-init inst)
-  (ui/element-init inst))
+  (ui/element-init inst)
+  (set (logview/sb inst) (ui/scrollbar-new inst)))
 
 (fun (logview/element-fini inst)
+  (ui/free (logview/sb inst))
   (ui/element-fini inst))
 
+@* Counting lines
+
+The log text can be accessed by calling [code log/dump]. It will
+call a function a couple of times with pieces of the log. We
+need a custom structure to keep the state for this process since
+Z1 doesn't have closures...
+
+@=
+(struct logview/count-data
+  cd-n)
+
+(fun (logview/count-str cd str len)
+  (var end (+ str len))
+  (while (< str end)
+    (if ((== (u8 str) ch/nl)
+         (set (logview/cd-n cd) (+ (logview/cd-n cd) 1))))
+    (set str (+ str 1))))
+
+(fun (logview/count-lines inst)
+  (mem cd logview/count-data)
+  (set (logview/cd-n cd) 1)
+  (log/dump logview/count-str cd)
+  (logview/cd-n cd))
+
+@* Painting lines
+
+Actually painting the log text has the same structure as counting
+the lines. It calls [code log/dump] in the same way, with a its
+own custom state structure.
+
+@=
 (struct logview/paint-data
+  pd-inst
   pd-x
   pd-y)
 
-(fun (logview/element-paint-str inst pd str len)
+(fun (logview/paint-str pd str len)
+  (var inst (logview/pd-inst pd))
   (var x (logview/pd-x pd))
-  (var y (logview/pd-x pd))
+  (var y (logview/pd-y pd))
   (var w (ui/elt-width inst))
-  (var h (ui/elt-height inst))
   (var end (+ str len))
-  (while (and (< str end)
-              (< y (- h 16)))
+  (while (< str end)
     (if ((== (u8 str) ch/nl)
          (set x 4)
          (set y (+ y 16)))
@@ -33,24 +114,39 @@
     (set str (+ str 1)))
   (set (logview/pd-x pd) x)
   (set (logview/pd-y pd) y))
+@
 
+And here are the calls to [code ui/scrollbar-pre-paint] and [code
+ui/scrollbar-pos], which bring the scrollbar into the picture.
+Of course, the scrollbar element itself also needs to be painted.
+
+@=
 (fun (logview/element-paint inst)
+  (var n-lines (logview/count-lines inst))
+  (ui/scrollbar-pre-paint (logview/sb inst) (* n-lines 16))
   (mem pd logview/paint-data)
+  (var pos (ui/scrollbar-pos (logview/sb inst)))
+  (var y-start (- pos))
+  (set (logview/pd-inst pd) inst)
   (set (logview/pd-x pd) 4)
-  (set (logview/pd-y pd) 4)
-  (var buffer (ctxt/log context))
-  (var top (+ buffer log/buffer))
-  (var bottom (+ buffer log/buffer-size))
-  (var start (log/lb-start buffer))
-  (var end (log/lb-end buffer))
-  (if ((<= start end)
-       (logview/element-paint-str inst pd start (- end start)))
-      (else
-       (logview/element-paint-str inst pd start (- bottom start))
-       (logview/element-paint-str inst pd top (- end top)))))
+  (set (logview/pd-y pd) y-start)
+  (log/dump logview/paint-str pd)
+  (ui/paint inst (logview/sb inst) (- (ui/elt-width inst) ui/scrollbar-width) 0 ui/scrollbar-width (ui/elt-height inst)))
+@
 
-(fun (logview/element-input inst state input))
+@* The rest
 
+The log viewer doesn't react to input events itself, so we just
+pass them all on to the scrollbar.
+
+@=
+(fun (logview/element-input inst state input)
+  (ui/scrollbar-key-input (logview/sb inst) state input))
+@
+
+And we finish with the usual element definition boilerplate.
+
+@=
 (ui/element-functions logview/element-funcs
   logview/element-init
   logview/element-fini

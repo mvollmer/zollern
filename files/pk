@@ -20,12 +20,12 @@ The output appears in the log.
 Here are the two functions, one for numbers, the other for strings.
 
 @=
-(fun (pk/int label num)
-  (log/msg "%s: %d\n" label num)
-  n)
+(fun (pk/int labl num)
+  (log/msg "%s: %d\n" labl num)
+  num)
 
-(fun (pk/str label str)
-  (log/msg "%s: %s\n" label str)
+(fun (pk/str labl str)
+  (log/msg "%s: %s\n" labl str)
   str)
 @
 

@@ -74,6 +74,27 @@ when everything is done.
        (set (log/lb-start buffer) start))))
 @
 
+When reading what is in the log, we have to deal with one continous
+string of characters or maybe two, depending on where the end
+is relative to the start.
+
+The following function takes care of that and calls a given function
+one or two times.
+
+@=
+(fun (log/dump func func-data)
+  (var buffer (ctxt/log context))
+  (var top (+ buffer log/buffer))
+  (var bottom (+ buffer log/buffer-size))
+  (var start (log/lb-start buffer))
+  (var end (log/lb-end buffer))
+  (if ((<= start end)
+       (func func-data start (- end start)))
+      (else
+       (func func-data start (- bottom start))
+       (func func-data top (- end top)))))
+@
+
 Here is a function for appending a zero-terminated string. We
 could just call [code str/len] to get its length, but that would
 create a dependency on the [book str str] book, and we couldn't
@@ -116,7 +137,7 @@ remember that.
 
 For example,
 @c
-(log/msg "Hello, %s!\n" "World")
+(log/msg "Hello, %s!\\n" "World")
 @
 will append the string [code Hello, World] to the log, followed
 by a newline character.
