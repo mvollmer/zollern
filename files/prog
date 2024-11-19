@@ -2,5 +2,12 @@
 
 Zollern has a primitive bootstrap language called Z1 that is only
 used to implement ... everything. There is no other language
-yet, but maybe there will be in the future.
+yet, but there likely will be in the future.
 
+The current plan for Z2 is to be pretty much the same kind of
+language as Z1 (low-level with manual memory management), but
+better. Easier to read implementation, some optimizations, simple
+static type system, better error messages.
+
+(And Z3 is then going to be a dynamic language will all the goodies.
+Automatic memory management, concurrency, strong types.)
