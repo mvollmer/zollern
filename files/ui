@@ -574,6 +574,22 @@ The editing is implemented by the [book ed Editor] book.
 
 @* Scroll bars
 
+A scrollbar controls how a [emph target] element is drawn. To
+make it all work, you have to follow a few rules:
+
+@d
+[item - ]The target needs to be painted before the scrollbar.
+
+[item - ]The target needs to call [code ui/scrollbar-pre-paint]
+in its paint function before [code ui/scollbar-pos].
+
+[item - ]The target needs to call [code ui/scrollbar-key-input]
+in its input function.
+@
+
+The [book logview Log viewer] is a good example. It also explain
+the motivation for the rules above.
+
 @=
 (struct ui/scrollbar
   (:base ui/element)
@@ -659,3 +675,132 @@ The editing is implemented by the [book ed Editor] book.
 
 (fun (ui/scrollbar-pos inst)
   (ui/sb-pos inst))
+
+@* Lists
+
+This is the UI element that implements all the lists you see in
+the navigation area. It can show rows of text. Each row has some
+textual content, a nesting level, and a symbolic [emph tag].
+One row might be selected, and some rows might be [emph flagged].
+The element reports clicks on its rows by calling a given function
+with the tag of the row.
+
+A list element owns all the memory needed to maintain its state.
+If you add a row to it, the element will make copies of all the
+strings that are involved.
+
+@=
+(struct ui/list
+  (:base ui/element)
+  l-handler
+  l-handler-data
+  l-entries
+  l-tail
+  l-selected)
+
+(struct ui/list-entry
+  le-next
+  le-level
+  le-flags
+  le-tag
+  le-text)
+
+(fun (ui/list-init inst handler handler-data)
+  (ui/element-init inst)
+  (set (ui/l-handler inst) handler)
+  (set (ui/l-handler-data inst) handler-data)
+  (set (ui/l-entries inst) 0)
+  (set (ui/l-tail inst) (loc (ui/l-entries inst)))
+  (set (ui/l-selected inst) 0))
+
+(fun (ui/list-reset inst)
+  (var ptr (ui/l-entries inst))
+  (while ptr
+    (var next (ui/le-next ptr))
+    (mem/free (ui/le-tag ptr))
+    (mem/free (ui/le-text ptr))
+    (set ptr next))
+  (set (ui/l-entries inst) 0)
+  (set (ui/l-tail inst) (loc (ui/l-entries inst))))
+
+(fun (ui/list-fini inst)
+  (ui/list-reset inst)
+  (mem/free (ui/l-selected inst))
+  (ui/element-fini inst))
+@
+
+To identify the selected row, a list element keeps a string with
+the tag of that row. This string is separately allocated; resetting
+the list entries will not invalidate this string.
+
+@=
+(fun (ui/list-set-selected inst tag)
+  (if ((!= tag (ui/l-selected inst))
+       (mem/free (ui/l-selected inst))
+       (set (ui/l-selected inst) (and tag (str/dup tag))))))
+
+(fun (ui/list-get-selected inst)
+  (ui/l-selected inst))
+
+(fun (ui/l-make-entry level flags tag text)
+  (var entry (mem/alloc ui/list-entry))
+  (set (ui/le-next entry) 0)
+  (set (ui/le-level entry) level)
+  (set (ui/le-flags entry) flags)
+  (set (ui/le-tag entry) (and tag (str/dup tag)))
+  (set (ui/le-text entry) (str/dup text))
+  entry)
+
+(fun (ui/list-add inst level flags tag text)
+  (var entry (ui/l-make-entry level flags tag text))
+  (set (u64 (ui/l-tail inst)) entry)
+  (set (ui/l-tail inst) (loc (ui/le-next entry))))
+
+(fun (ui/list-add-sorted inst level flags tag text)
+  (var entry (ui/l-make-entry level flags tag text))
+  (var ptr (loc (ui/l-entries inst)))
+  (while (and (u64 ptr) (> (str/cmp (ui/le-text (u64 ptr)) text) 0))
+    (set ptr (loc (ui/le-next (u64 ptr)))))
+  (set (ui/le-next entry) (u64 ptr))
+  (set (u64 ptr) entry))
+  
+@
+
+Painting and input handling and the rest is straightforward.
+
+@=
+
+(fun (ui/list-paint inst)
+  (var f fonts/sans)
+  (var lh (- (gfx/font-ascent f) (gfx/font-descent f)))
+  (var y 0)
+  (var entry (ui/l-entries inst))
+  (while entry
+    (gfx/string (+ (* 10 (ui/le-level entry))) y
+                (if ((ui/le-flags entry) fonts/sans-b) (else fonts/sans))
+                (ui/le-text entry))
+    (if ((and (ui/l-selected inst) (ui/le-tag entry) (str/eq (ui/l-selected inst) (ui/le-tag entry)))
+         (ui/tint-selected 0 y (ui/elt-width inst) lh)))
+    (set y (+ y lh 2))
+    (set entry (ui/le-next entry))))
+
+(fun (ui/list-input inst state input x y)
+  (if ((== input gfx/ev-button-1-press)
+       (var f fonts/sans)
+       (var lh (- (gfx/font-ascent f) (gfx/font-descent f)))
+       (var index (/ y (+ lh 2)))
+       (var ptr (ui/l-entries inst))
+       (while (and ptr (> index 0))
+         (set ptr (ui/le-next ptr))
+         (set index (- index 1)))
+       (if ((and ptr (ui/le-tag ptr))
+            ((ui/l-handler inst) (ui/l-handler-data inst) (ui/le-tag ptr)))))))
+
+(ui/element-functions ui/list-funcs
+  ui/list-init
+  ui/list-fini
+  ui/list-paint
+  ui/list-input)
+
+(fun (ui/list-new handler handler-data)
+  (ui/new ui/list ui/list-funcs handler handler-data))
