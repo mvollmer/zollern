@@ -115,12 +115,6 @@ by a [emph horizontal box] (full of text boxes and glue), and
 these boxes are put into a [emph vertical box] that forms the
 document.
 
-The math commands like [code sup] do their job by putting a text
-box into a small vertical box with some vertical glue. That glue
-is used to position the text box as desired. The small vertical
-box is then added to the current paragraph and will eventually
-end up in a horizonal box.
-
 A glue node can be flexible, it can shrink and expand. For example,
 the centered book titles are created by making a horizontal box
 with expandable glue, a text box with the title, and another
@@ -128,6 +122,11 @@ expandle glue, in that order. The two expandable glue nodes both push
 the title into the middle of the horizontal box.
 
 If you have used [tex], this should all be quite familiar.
+
+In addition to horizontal and vertical boxes that contain glue
+and text, there are also [emph canvas] boxes that contain positioning
+and drawing commands. Canvas boxes are used to implement math
+commands like [code sup], for example.
 
 Both boxes and glue are [emph nodes]. A node stores a type code,
 and a link to a next node. This link is used to form the list
@@ -139,7 +138,9 @@ of children of boxes.
   nt-vbox
   nt-tbox
   nt-pbox
-  nt-glue)
+  nt-cbox
+  nt-glue
+  nt-cop)
 
 (struct tx/node
   n-type
@@ -160,9 +161,7 @@ values will be computed while [emph setting the glue].
 (struct tx/box
   (:base tx/node)
   b-width b-height b-depth
-  b-children
-  b-bg-color
-  b-tag)
+  b-children)
 
 (fun (tx/is-box node)
   (< (tx/n-type node) tx/nt-glue))
@@ -221,6 +220,13 @@ then added to the surrounding box.
 
 (fun (tx/is-pbox node)
   (== (tx/n-type node) tx/nt-pbox))
+@
+
+Canvas boxes have nothing extra.
+
+@=
+(struct tx/cbox
+  (:base tx/box))
 @
 
 And now for the glue nodes. A piece of glue has three parameters:
@@ -295,26 +301,9 @@ for setting boxes and for drawing the final result. As we will
 see, constructing is intertwined with setting and interestingly
 also with drawing.
 
-But we warm up with a function for returning the memory of node
-graph. All nodes will be allocated with [code mem/alloc], and
-thus we need to return their memory with [code mem/free].
+But sometimes it is helpful to print a node during debugging,
+and we can write that function already:
 
-@=
-(fun (tx/free-node node)
-  (var t (tx/n-type node))
-  (if ((== t tx/nt-tbox)
-       (mem/free (tx/tb-str node)))
-      ((tx/is-box node)
-       (if ((tx/b-tag node)
-            (mem/free (tx/b-tag node))))
-       (var a (tx/b-children node))
-       (while a
-         (var b (tx/n-next a))
-         (tx/free-node a)
-         (set a b))))
-  (mem/free node))
-@
-And sometimes it is helpful to print a node during debugging:
 @=
 (fun (tx/dbg-nodes l dbg)
   (while l
@@ -609,12 +598,83 @@ things.
        (set (tx/b-depth vb) 0))))
 @
 
-Here is a function that can set the glue in any box, by looking
-at its type. This will be called below during the construction
-of boxes.
+@* Canvas boxes
+
+A canvas box can position other boxes at specific coordinates
+and can draw things other than text, like rectangles. It is used
+to implement mathematical commands like [code sub] and text with
+colored background like [code code]. But it will also be used
+by bigger diagrams.
+
+A canvas box itself does not do any interesting layout computations.
+When constructing it, you have to specify the final coordinates
+for everything. The smarts of laying out a mathematical formula
+are thus found further down, in the parser.
+
+Setting a canvas box just computes its size. Everything above
+the y-axis contributes to its height, everything below to its
+depth.
+
+@=
+(struct tx/copnode
+  (:base tx/node)
+  cop-op
+  cop-arg1
+  cop-arg2
+  cop-arg3
+  cop-arg4)
+
+(enum
+  cop-move
+  cop-tint
+  cop-tag)
+
+(fun (tx/set-cbox box)
+  (var x 0)
+  (var y 0)
+  (var min-y 0)
+  (var max-y 0)
+  (var max-x 0)
+  (var c (tx/b-children box))
+  (while c
+    (if ((tx/is-box c)
+         (var top (- y (tx/b-height c)))
+         (if ((< top min-y)
+              (set min-y top)))
+         (var bot (+ y (tx/b-depth c)))
+         (if ((> bot max-y)
+              (set max-y bot)))
+         (var rt (+ x (tx/b-width c)))
+         (if ((> rt max-x)
+              (set max-x rt))))
+        ((== (tx/n-type c) tx/nt-cop)
+         (var op (tx/cop-op c))
+         (if ((== op tx/cop-move)
+              (set x (tx/cop-arg1 c))
+              (set y (tx/cop-arg2 c)))
+             ((or (== op tx/cop-tint)
+                  (== op tx/cop-tag))
+              (var w (tx/cop-arg1 c))
+              (var h (tx/cop-arg2 c))
+              (if ((< y min-y)
+                   (set min-y y)))
+              (if ((> (+ y h) max-y)
+                   (set max-y (+ y h))))
+              (if ((> (+ x w) max-x)
+                   (set max-x (+ x w))))))))
+    (set c (tx/n-next c)))
+  (set (tx/b-height box) (- min-y))
+  (set (tx/b-depth box) max-y)
+  (set (tx/b-width box) max-x))
+@
+
+This was the last box type, and we can now define a function that
+can set the glue in any box, by looking at its type. This will
+be called below during the construction of boxes.
 
 Note that paragraph boxes are not handled here, since they will
 never appear as children of other boxes.
+
 @=
 (fun (tx/set-node node)
   (var t (tx/n-type node))
@@ -623,7 +683,30 @@ never appear as children of other boxes.
       ((== t tx/nt-hbox)
        (tx/set-hbox node))
       ((== t tx/nt-vbox)
-       (tx/set-vbox node))))
+       (tx/set-vbox node))
+      ((== t tx/nt-cbox)
+       (tx/set-cbox node))))
+@
+
+We can now also write the function for returning the memory of
+a node tree. All nodes will be allocated with [code mem/alloc],
+and thus we need to return their memory with [code mem/free].
+
+@=
+(fun (tx/free-node node)
+  (var t (tx/n-type node))
+  (if ((== t tx/nt-tbox)
+       (mem/free (tx/tb-str node)))
+      ((tx/is-box node)
+       (if ((and (== t tx/nt-cop)
+                 (== (tx/cop-op node) tx/cop-tag))
+            (mem/free (tx/cop-arg3 node))))
+       (var a (tx/b-children node))
+       (while a
+         (var b (tx/n-next a))
+         (tx/free-node a)
+         (set a b))))
+  (mem/free node))
 
 @* Breaking paragraphs into lines
 
@@ -1068,36 +1151,6 @@ but it also takes care of the position, font, and color.
   (tx/emit-u8 state 0))
 @
 
-The only other thing besides text that can be drawn is actually
-the background of boxes. This is done in a weird way, dictated
-by the weird way the [code gfx] book works right now: It has
-to happen [emph after] drawing everything that is inside the
-box.
-
-Weird things will happen when nested boxes have different background
-colors. This needs improvement.
-
-@=
-(fun (tx/ink-box-decorate state node x y)
-  (var w (tx/b-width node))
-  (var h (+ (tx/b-height node) (tx/b-depth node)))
-  (if ((!= (tx/b-bg-color node) (gfx/color 255 255 255))
-       (tx/ink-moveto state (+ x w) (+ y h))
-       (tx/emit-u8 state tx/ink-tint)
-       (tx/emit-u8 state w)
-       (tx/emit-u8 state h)
-       (tx/emit-color state (tx/b-bg-color node))))
-  (if ((var tag (tx/b-tag node))
-       (tx/ink-moveto state (+ x w) (+ y h))
-       (tx/emit-u8 state tx/ink-tag)
-       (tx/emit-u8 state w)
-       (tx/emit-u8 state h)
-       (while (u8 tag)
-         (tx/emit-u8 state (u8 tag))
-         (set tag (+ tag 1)))
-       (tx/emit-u8 state 0))))
-@
-
 Producing the inking program for a general box node is now pretty
 straightforward.
 
@@ -1105,13 +1158,11 @@ straightforward.
 (fun (tx/ink-node state node x y)
   (var t (tx/n-type node))
   (var c)
-  (var b-x)
-  (var b-y)
+  (var w)
+  (var h)
   (if ((== t tx/nt-tbox)
        (tx/ink-text state node x y))
       ((== t tx/nt-hbox)
-       (set b-x x)
-       (set b-y y)
        (set c (tx/b-children node))
        (while c
          (if ((== (tx/n-type c) tx/nt-glue)
@@ -1119,11 +1170,8 @@ straightforward.
              (else
               (tx/ink-node state c x (+ y (- (tx/b-height node) (tx/b-height c))))
               (set x (+ x (tx/b-width c)))))
-         (set c (tx/n-next c)))
-       (tx/ink-box-decorate state node b-x b-y))
+         (set c (tx/n-next c))))
       ((== t tx/nt-vbox)
-       (set b-x x)
-       (set b-y y)
        (set c (tx/b-children node))
        (while c
          (if ((== (tx/n-type c) tx/nt-glue)
@@ -1131,16 +1179,50 @@ straightforward.
              (else
               (tx/ink-node state c x y)
               (set y (+ y (tx/b-height c) (tx/b-depth c)))))
-         (set c (tx/n-next c)))
-       (tx/ink-box-decorate state node b-x b-y))))
+         (set c (tx/n-next c))))
+      ((== t tx/nt-cbox)
+       (var xx x)
+       (var yy (+ y (tx/b-height node)))
+       (set c (tx/b-children node))
+       (while c
+         (if ((tx/is-box c)
+              (tx/ink-node state c xx (- yy (tx/b-height c))))
+             ((== (tx/n-type c) tx/nt-cop)
+              (var op (tx/cop-op c))
+              (if ((== op tx/cop-move)
+                   (set xx (+ x (tx/cop-arg1 c)))
+                   (set yy (+ y (tx/b-height node) (tx/cop-arg2 c)))))
+              (if ((== op tx/cop-tint)
+                   (set w (tx/cop-arg1 c))
+                   (set h (tx/cop-arg2 c))
+                   (var col (tx/cop-arg3 c))
+                   (tx/ink-moveto state (+ xx w) (+ yy h))
+                   (tx/emit-u8 state tx/ink-tint)
+                   (tx/emit-u8 state w)
+                   (tx/emit-u8 state h)
+                   (tx/emit-color state col)))
+              (if ((== op tx/cop-tag)
+                   (set w (tx/cop-arg1 c))
+                   (set h (tx/cop-arg2 c))
+                   (var tag (tx/cop-arg3 c))
+                   (tx/ink-moveto state (+ x w) (+ y h))
+                   (tx/emit-u8 state tx/ink-tag)
+                   (tx/emit-u8 state w)
+                   (tx/emit-u8 state h)
+                   (while (u8 tag)
+                     (tx/emit-u8 state (u8 tag))
+                     (set tag (+ tag 1)))
+                   (tx/emit-u8 state 0)))))
+         (set c (tx/n-next c))))))
 @
 
 @* Links
 
-You might have noticed that a box can have a [emph tag] associated
-with it. This is used for interactive elements such as links.
-You can query a ink object for the tag at a specific position,
-and also query it for the [emph n]-th tag that is currently visible.
+You might have noticed that a canvas box can associate a [emph
+tag] with a rectangle. This is used for interactive elements
+such as links. You can query a ink object for the tag at a specific
+position, and also query it for the [emph n]-th tag that is currently
+visible.
 
 The query query functions have the same structure as [code draw-ink],
 but where as [code draw-ink] mostly ignores the [code ink-tag]
@@ -1353,9 +1435,6 @@ it the current box. The box will have natural width or height,
 unless that is changed with [code tx/set-hbox-width] or [code
 tx/set-vbox-height], respectively.
 
-The box will have a white background. This can be changed with
-[code tx/set-box-bg-color].
-
 [item - ][code (tx/end)]
 
 Complete the current box and add it to its parent. The parent
@@ -1379,10 +1458,6 @@ box.
 
 Set the requested height of the current box, which must be a vertical
 box.
-
-[item - ][code (tx/set-box-bg-color [emph color])]
-
-Set the background color of the current box.
 @
 
 [bold Text]
@@ -1615,8 +1690,8 @@ converted to ink. We keep a record of the y coordinate for this.
 (var dy)
 (if ((== (tx/n-type node) tx/nt-glue)
      (set dy (tx/gs-length (tx/g-spec node))))
-  (else
-   (set dy (+ (tx/b-height node) (tx/b-depth node)))))
+    (else
+     (set dy (+ (tx/b-height node) (tx/b-depth node)))))
 (set (tx/c-outer-y c) (+ (tx/c-outer-y c) dy))
 (tx/free-node node)
 @
@@ -1636,9 +1711,7 @@ As can be expected, we allocate memory for a [code tx/tbox] structure,
 initialize it appropriately, and then call [code tx/add-to-current-box].
 
 @=
-(fun (tx/init-box n)
-  (set (tx/b-bg-color n) (gfx/color 255 255 255))
-  (set (tx/b-tag n) 0))
+(fun (tx/init-box n))
 
 (fun (tx/text str)
   (var n (mem/alloc tx/tbox))
@@ -1695,6 +1768,24 @@ is started for them.
   (set (tx/pb-left-spec n) (tx/session-left-glue))
   (set (tx/pb-right-spec n) (tx/session-right-glue))
   (tx/begin-box-building n))
+
+(fun (tx/begin-cbox)
+  (var n (mem/alloc tx/cbox))
+  (set (tx/n-type n) tx/nt-cbox)
+  (tx/init-box n)
+  (tx/begin-box-building n))
+
+(fun (tx/cop op arg1 arg2 arg3 arg4)
+  (var n (mem/alloc tx/copnode))
+  (set (tx/n-type n) tx/nt-cop)
+  (set (tx/cop-op n) op)
+  (set (tx/cop-arg1 n) arg1)
+  (set (tx/cop-arg1 n) arg1)
+  (set (tx/cop-arg2 n) arg2)
+  (set (tx/cop-arg3 n) arg3)
+  (set (tx/cop-arg4 n) arg4)
+  (tx/add-to-current-box n))
+
 @
 
 Here are the trivial functions for changing parameters of the
@@ -1708,14 +1799,6 @@ current box.
 (fun (tx/set-vbox-height height)
   (var b (tx/get-current-box))
   (set (tx/vb-height b) height))
-
-(fun (tx/set-box-bg-color color)
-  (var b (tx/get-current-box))
-  (set (tx/b-bg-color b) color))
-
-(fun (tx/set-box-tag tag)
-  (var b (tx/get-current-box))
-  (set (tx/b-tag b) (str/dup tag)))
 @
 
 The current box is completed by calling [code tx/end] (or [code
@@ -2070,7 +2153,9 @@ tx/par] when encountering a "\\n" token.
 (fun (tx/maybe-par-skip)
   (var c (ctxt/tx context))
   (if ((tx/c-need-par-skip c)
-       (tx/skip (- (tx/session-par-skip) (tx/c-prev-depth c)))
+       (var dy (- (tx/session-par-skip) (tx/c-prev-depth c)))
+       (if ((> dy 0)
+            (tx/skip (- (tx/session-par-skip) (tx/c-prev-depth c)))))
        (set (tx/c-need-par-skip c) 0))))
 
 (fun (tx/no-par-skip)
@@ -2168,15 +2253,20 @@ broken into multiple lines.
 (fun (tx/cmd-code)
   (var old-font (tx/session-font))
   (set (tx/session-font) fonts/mono)
+  (var hb 3)
+  (var vb 0)
   (tx/ensure-hmode)
+  (tx/begin-cbox)
+  (tx/cop tx/cop-move hb 0)
   (tx/begin-hbox)
-  (tx/begin-vbox)
-  (tx/set-vbox-height 14)
-  (tx/end)
-  (tx/skip 3)
-  (tx/set-box-bg-color (gfx/color 240 240 240))
+  (var hbox (tx/get-current-box))
   (tx/parse-text)
-  (tx/skip 3)
+  (tx/end)
+  (tx/cop tx/cop-move 0 (- (+ (tx/b-height hbox) vb)))
+  (tx/cop tx/cop-tint
+          (+ (tx/b-width hbox) (* 2 hb))
+          (+ (tx/b-height hbox) (tx/b-depth hbox) (* 2 vb))
+          (gfx/color 240 240 240))
   (tx/end)
   (set (tx/session-font) old-font))
 @
@@ -2202,11 +2292,11 @@ general, and get serious about fonts.
   (var old-font (tx/session-font))
   (set (tx/session-font) fonts/sans-o-s)
   (tx/ensure-hmode)
-  (tx/begin-vbox)
+  (tx/begin-cbox)
+  (tx/cop tx/cop-move 0 7)
   (tx/begin-hbox)
   (tx/parse-text)
   (tx/end)
-  (tx/skip -7)
   (tx/end)
   (set (tx/session-font) old-font))
 
@@ -2214,12 +2304,11 @@ general, and get serious about fonts.
   (var old-font (tx/session-font))
   (set (tx/session-font) fonts/sans-o-s)
   (tx/ensure-hmode)
-  (tx/begin-vbox)
+  (tx/begin-cbox)
+  (tx/cop tx/cop-move 2 -7)
   (tx/begin-hbox)
-  (tx/skip 2)
   (tx/parse-text)
   (tx/end)
-  (tx/skip 7)
   (tx/end)
   (set (tx/session-font) old-font))
 @
@@ -2233,19 +2322,18 @@ the two arguments.
   (var old-font (tx/session-font))
   (set (tx/session-font) fonts/sans-o-s)
   (tx/ensure-hmode)
-  (tx/begin-vbox)
+  (tx/begin-cbox)
+  (tx/cop tx/cop-move 2 -7)
   (tx/begin-hbox)
-  (tx/skip 2)
   (tx/parse-text)
   (tx/end)
   (var t (tx/c-cur-token (ctxt/tx context)))
   (if ((== (u8 t) ch/bar)
        (tx/next-token)
-       (tx/skip -1)
+       (tx/cop tx/cop-move 0 7)
        (tx/begin-hbox)
        (tx/parse-text)
        (tx/end)))
-  (tx/skip -4)
   (tx/end)
   (set (tx/session-font) old-font))
 @
@@ -2277,43 +2365,43 @@ its logo correctly.
 @=
 (fun (tx/cmd-tex)
   (tx/ensure-hmode)
+  (tx/begin-cbox)
   (tx/text "T")
-  (tx/skip -2)
-  (tx/begin-vbox)
-  (tx/begin-hbox)
+  (tx/cop tx/cop-move 7 3)
   (tx/text "E")
-  (tx/end)
-  (tx/skip -3)
-  (tx/end)
-  (tx/skip -2)
-  (tx/text "X"))
+  (tx/cop tx/cop-move 14 0)
+  (tx/text "X")
+  (tx/end))
 @
 
 Links to other books ...
 
 @=
 (fun (tx/cmd-book)
-  (tx/ensure-hmode)
-  (tx/skip -3)
-  (tx/begin-hbox)
-  (tx/begin-vbox)
-  (tx/set-vbox-height 14)
-  (tx/end)
-  (tx/skip 3)
-  (tx/set-box-bg-color ui/link-color)
+  (var hb 3)
+  (var vb 0)
   (var t (tx/c-cur-token (ctxt/tx context)))
-  (tx/set-box-tag t)
+  (var tag (str/dup t))
   (tx/next-token)
   (while (tx/is-white-space (u8 t))
     (tx/next-token))
+  (tx/ensure-hmode)
+  (tx/begin-cbox)
+  (tx/cop tx/cop-move hb 0)
+  (tx/begin-hbox)
+  (var hbox (tx/get-current-box))
   (tx/parse-text)
-  (tx/skip 3)
   (tx/end)
-  (tx/skip -3))
+  (tx/cop tx/cop-move 0 (- (+ (tx/b-height hbox) vb)))
+  (var w (+ (tx/b-width hbox) (* 2 hb)))
+  (var h (+ (tx/b-height hbox) (tx/b-depth hbox) (* 2 vb)))
+  (tx/cop tx/cop-tint w h ui/link-color)
+  (tx/cop tx/cop-tag w h tag)
+  (tx/end))
 @
 
 Now we only need to put all commands into a table. Linear search
-is goog enough for us.
+is good enough for us.
 
 @=
 (fun (tx/execute-command cmd)
@@ -2463,23 +2551,23 @@ preceeded by the little gray vertical rule.
   (var c (ctxt/tx context))
   (var t (tx/c-cur-token c))
   (set (tx/session-font) fonts/mono)
+  (var la (gfx/font-ascent fonts/mono))
+  (var lh (- la (gfx/font-descent fonts/mono)))
   (var need-empty-line 0)
   (while (and (u8 t) (not (== (u8 t) ch/ht)))
     (if ((== (u8 t 0) ch/nl)
          (set need-empty-line 1))
         (else
          (if (need-empty-line
-              (tx/begin-hbox)
-              (tx/set-box-bg-color (gfx/color 180 180 180))
-              (tx/skip 3)
-              (tx/text "")
+              (tx/begin-cbox)
+              (tx/cop tx/cop-move 0 (- la))
+              (tx/cop tx/cop-tint 3 lh (gfx/color 180 180 180))
               (tx/end)))
          (set need-empty-line 0)
          (tx/begin-hbox)
-         (tx/begin-hbox)
-         (tx/set-box-bg-color (gfx/color 180 180 180))
-         (tx/skip 3)
-         (tx/text "")
+         (tx/begin-cbox)
+         (tx/cop tx/cop-move 0 (- la))
+         (tx/cop tx/cop-tint 3 lh (gfx/color 180 180 180))
          (tx/end)
          (tx/skip 10)
          (tx/text t)
