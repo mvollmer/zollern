@@ -1,0 +1,155 @@
+@** Random pictures
+
+Diagrams deserve a proper programming language, and the only one
+we have right now is Z1. So we write our pictures in Z1 and collect
+them all here.
+
+Not embedding the code for diagrams in the book where they belong
+has the advantage that we can explain those picture programs
+properly, with all the tools we have for documenting programs.
+We could even use pictures to explain picture programs!
+
+@* Utilities
+
+@=
+(fun (pic/begin-display)
+  (tx/par)
+  (tx/skip (* 2 (tx/session-par-skip)))
+  (tx/begin-cbox))
+
+(fun (pic/end)
+  (tx/end)
+  (tx/skip (tx/session-par-skip)))
+
+(fun (pic/fill-rect x y w h col)
+  (tx/cop tx/cop-move x y)
+  (tx/cop tx/cop-rect w h col))
+
+(fun (pic/h-line x y l col)
+  (tx/cop tx/cop-move x y)
+  (tx/cop tx/cop-rect l 1 col))
+
+(fun (pic/v-line x y l col)
+  (tx/cop tx/cop-move x y)
+  (tx/cop tx/cop-rect 1 l col))
+  
+(fun (pic/rect x y w h col)
+  (pic/h-line x y w col)
+  (pic/h-line x (+ y h) w col)
+  (pic/v-line x y h col)
+  (pic/v-line (+ x w) y h col))
+
+(fun (pic/text-width str)
+  (var f (tx/session-font))
+  (var w 0)
+  (while (u8 str)
+    (var glyph 0)
+    (if ((< (u8 str) 128)
+         (set glyph (u64 (gfx/font-glyphs f) (u8 str)))))
+    (if ((not glyph)
+         (set glyph (u64 (gfx/font-glyphs f) 32))))
+    (set w (+ w (gfx/glyph-advance glyph)))
+    (set str (+ str 1)))
+  w)
+
+(fun (pic/r-text x y str col)  
+  (var f (tx/session-font))
+  (var fh (gfx/font-ascent f))
+  (var fd (- (gfx/font-descent f)))
+  (var y-off (- (/ (+ fh fd) 2) fd))
+  (tx/cop tx/cop-move x (+ y y-off))
+  (tx/text str))
+
+(fun (pic/l-text x y str col)  
+  (var w (pic/text-width str))
+  (pic/r-text (- x w) y str col))
+
+(fun (pic/b-text x y str col)  
+  (var w (pic/text-width str))
+  (var f (tx/session-font))
+  (var fh (gfx/font-ascent f))
+  (var fd (- (gfx/font-descent f)))
+  (tx/cop tx/cop-move (- x (/ w 2)) (+ y fh))
+  (tx/text str))
+
+(defconst pic/black (gfx/const-color 0 0 0))
+
+
+@=
+(fun (pic/TEST)
+  (pic/begin-display)
+  (pic/rect 0 0 10 100 (gfx/color 0 0 255))
+  (pic/end))
+
+@* Pictures for the "tx" book
+
+@=
+(fun (pic/big-glyph x y sz font c)
+  (var glyph 0)
+  (if ((< c 128)
+       (set glyph (u64 (gfx/font-glyphs font) c))))
+  (if ((not glyph)
+       (set glyph (u64 (gfx/font-glyphs font) 32))))
+  (var w (gfx/glyph-width glyph))
+  (var h (gfx/glyph-height glyph))
+  (set x (+ x (* sz (gfx/glyph-offset-x glyph))))
+  (set y (+ y (* sz (gfx/glyph-offset-y glyph))))
+  (var src-p (+ glyph gfx/glyph-header))
+  (var i)
+  (var j)
+  (set j 0)
+  (while (< j h)
+    (set i 0)
+    (while (< i w)
+      (var a (- 255 (u8 src-p)))
+      (pic/fill-rect (+ x (* i sz) 1) (+ y (* j sz) 1) (- sz 1) (- sz 1) (gfx/color a a a))
+      (set src-p (+ src-p u8))
+      (set i (+ i 1)))
+    (set j (+ j 1)))
+  (* sz (gfx/glyph-advance glyph)))
+  
+(fun (pic/big-text x y sz font str)
+  (var w 0)
+  (while (u8 str)
+    (set w (+ w (pic/big-glyph (+ x w) y sz font (u8 str))))
+    (set str (+ str 1)))
+  w)
+
+(fun (pic/tx-box-dims)
+  (var font fonts/sans-o)
+  (var sz 8)
+  (var h-off 100)
+  (var t-margin 10)
+  
+  (pic/begin-display)
+  
+  ;; text in the box
+  (var w (pic/big-text h-off 0 sz font "type"))
+  (var h (* sz (gfx/font-ascent font)))
+  (var d (- (* sz (gfx/font-descent font))))
+
+  ;; the box itself
+  (pic/rect h-off 0 w (+ h d) pic/black)
+  (pic/h-line h-off h w (gfx/color 150 150 150))
+
+  ;; vertical measurements
+  (var vm-off (- h-off 15))
+  (pic/v-line vm-off 0 (+ h d) pic/black)
+  (pic/h-line (- vm-off 5) 0 10 pic/black)
+  (pic/h-line (- vm-off 5) h 10 pic/black)
+  (pic/h-line (- vm-off 5) (+ h d) 10 pic/black)
+  (pic/l-text (- vm-off t-margin) (/ h 2) "height" pic/black)
+  (pic/l-text (- vm-off t-margin) (+ h (/ d 2)) "depth" pic/black)
+
+  ;; horizontal measurement
+  (var hm-off (+ h d 15))
+  (pic/h-line h-off hm-off w pic/black)
+  (pic/v-line h-off (- hm-off 5) 10 pic/black)
+  (pic/v-line (+ h-off w) (- hm-off 5) 10 pic/black)
+  (pic/b-text (+ h-off (/ w 2)) (+ hm-off t-margin) "width" pic/black)
+
+  ;; baseline label
+  (pic/r-text (+ h-off w t-margin) h "baseline" pic/black)
+
+  (pic/end))
+@

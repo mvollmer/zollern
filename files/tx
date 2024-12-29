@@ -150,9 +150,10 @@ of children of boxes.
 Next we define the various box structures. All boxes have a [emph
 width], a [emph height], and a [emph depth]. The height measures
 from the baseline of a box upwards to its top edge, and the depth
-measures downwards to its bottom edge. (The width of course measures
-from its left edge to its right edge. One day there will be a
-picture here.)
+measures downwards to its bottom edge. Here is a enlarged picture
+of a typical text box.
+
+[pic/tx-box-dims]
 
 A new box starts out with indeterminate dimensions. The final
 values will be computed while [emph setting the glue].
@@ -627,6 +628,7 @@ depth.
 (enum
   cop-move
   cop-tint
+  cop-rect
   cop-tag)
 
 (fun (tx/set-cbox box)
@@ -653,6 +655,7 @@ depth.
               (set x (tx/cop-arg1 c))
               (set y (tx/cop-arg2 c)))
              ((or (== op tx/cop-tint)
+                  (== op tx/cop-rect)
                   (== op tx/cop-tag))
               (var w (tx/cop-arg1 c))
               (var h (tx/cop-arg2 c))
@@ -873,8 +876,10 @@ become clear further below. It's all very straightforward.
   ink-setfont-sans-l
   ink-setfont-mono
   ink-setcolor
+  ink-savepos
   ink-glyphs
   ink-tint
+  ink-rect
   ink-tag
   ink-end)
 @
@@ -901,6 +906,8 @@ ways. There are only two that do the actual drawing.
   (tx/set-page state ink)
   (var x 0)
   (var y 0)
+  (var saved-x 0)
+  (var saved-y 0)
   (var font 0)
   (var color-r 0)
   (var color-g 0)
@@ -938,6 +945,10 @@ ways. There are only two that do the actual drawing.
          (set color-b (tx/get-u8 state))
          (set color-is-black (and (== color-r 0) (== color-g 0) (== color-b 0))))
 
+        ((== op tx/ink-savepos)
+         (set saved-x x)
+         (set saved-y y))
+
         ((== op tx/ink-tag)
          (var tw (tx/get-u8 state))
          (var th (tx/get-u8 state))
@@ -945,12 +956,10 @@ ways. There are only two that do the actual drawing.
          <optionally draw a tag target>)
 
         ((== op tx/ink-tint)
-         (var bw (tx/get-u8 state))
-         (var bh (tx/get-u8 state))
-         (var r (tx/get-u8 state))
-         (var g (tx/get-u8 state))
-         (var b (tx/get-u8 state))
-         (gfx/tint-rect (+ x-off x (- bw)) (+ y-off y (- bh)) bw bh r g b))
+         (gfx/tint-rect (+ x-off saved-x) (+ y-off saved-y) (- x saved-x) (- y saved-y) color-r color-g color-b))
+
+        ((== op tx/ink-rect)
+         (gfx/rect (+ x-off saved-x) (+ y-off saved-y) (- x saved-x) (- y saved-y) (gfx/color color-r color-g color-b)))
 
         ((== op tx/ink-glyphs)
          (var c)
@@ -1117,6 +1126,16 @@ machine state to a desired position.
   (set (tx/is-y state) y))
 @
 
+And setting the current color.
+
+@=
+(fun (tx/ink-set-color state color)
+  (if ((!= color (tx/is-color state))
+       (tx/emit-u8 state tx/ink-setcolor)
+       (tx/emit-color state color)
+       (set (tx/is-color state) color))))
+@
+
 Drawing a text node of course uses the [code tx/ink-glyps] instruction,
 but it also takes care of the position, font, and color.
 
@@ -1138,11 +1157,7 @@ but it also takes care of the position, font, and color.
            ((== font fonts/mono)
             (tx/emit-u8 state tx/ink-setfont-mono)))
        (set (tx/is-font state) font)))
-  (var color (tx/tb-color node))
-  (if ((!= color (tx/is-color state))
-       (tx/emit-u8 state tx/ink-setcolor)
-       (tx/emit-color state color)
-       (set (tx/is-color state) color)))
+  (tx/ink-set-color state (tx/tb-color node))
   (tx/emit-u8 state tx/ink-glyphs)
   (var text (tx/tb-str node))
   (while (u8 text)
@@ -1155,6 +1170,16 @@ Producing the inking program for a general box node is now pretty
 straightforward.
 
 @=
+(fun (tx/ink-cop state node ink-op xx yy)
+  (var w (tx/cop-arg1 node))
+  (var h (tx/cop-arg2 node))
+  (var col (tx/cop-arg3 node))
+  (tx/ink-moveto state xx yy)
+  (tx/emit-u8 state tx/ink-savepos)
+  (tx/ink-moveto state (+ xx w) (+ yy h))
+  (tx/ink-set-color state col)
+  (tx/emit-u8 state ink-op))
+
 (fun (tx/ink-node state node x y)
   (var t (tx/n-type node))
   (var c)
@@ -1191,21 +1216,16 @@ straightforward.
               (var op (tx/cop-op c))
               (if ((== op tx/cop-move)
                    (set xx (+ x (tx/cop-arg1 c)))
-                   (set yy (+ y (tx/b-height node) (tx/cop-arg2 c)))))
-              (if ((== op tx/cop-tint)
-                   (set w (tx/cop-arg1 c))
-                   (set h (tx/cop-arg2 c))
-                   (var col (tx/cop-arg3 c))
-                   (tx/ink-moveto state (+ xx w) (+ yy h))
-                   (tx/emit-u8 state tx/ink-tint)
-                   (tx/emit-u8 state w)
-                   (tx/emit-u8 state h)
-                   (tx/emit-color state col)))
-              (if ((== op tx/cop-tag)
+                   (set yy (+ y (tx/b-height node) (tx/cop-arg2 c))))
+                  ((== op tx/cop-tint)
+                   (tx/ink-cop state c tx/ink-tint xx yy))
+                  ((== op tx/cop-rect)
+                   (tx/ink-cop state c tx/ink-rect xx yy))
+                  ((== op tx/cop-tag)
                    (set w (tx/cop-arg1 c))
                    (set h (tx/cop-arg2 c))
                    (var tag (tx/cop-arg3 c))
-                   (tx/ink-moveto state (+ x w) (+ y h))
+                   (tx/ink-moveto state x y)
                    (tx/emit-u8 state tx/ink-tag)
                    (tx/emit-u8 state w)
                    (tx/emit-u8 state h)
@@ -1236,6 +1256,8 @@ under the mouse when it is clicked.
   (tx/set-page state ink)
   (var x 0)
   (var y 0)
+  (var saved-x 0)
+  (var saved-y 0)
   (var op)
   (while (!= (set op (tx/get-u8 state)) tx/ink-end)
     (if ((== op tx/ink-x)
@@ -1253,13 +1275,17 @@ under the mouse when it is clicked.
          (tx/get-u8 state)
          (tx/get-u8 state))
 
+        ((== op tx/ink-savepos)
+         (set saved-x x)
+         (set saved-y y))
+
         ((== op tx/ink-tag)
          (var bw (tx/get-u8 state))
          (var bh (tx/get-u8 state))
-         (if ((and (>= x-query (+ x-off x (- bw)))
-                   (>= y-query (+ y-off y (- bh)))
-                   (< x-query (+ x-off x))
-                   (< y-query (+ y-off y)))
+         (if ((and (>= x-query (+ x-off x))
+                   (>= y-query (+ y-off y))
+                   (< x-query (+ x-off x bw))
+                   (< y-query (+ y-off y bh)))
               (var t tagbuf)
               (var c)
               (while (set c (tx/get-u8 state))
@@ -1268,13 +1294,6 @@ under the mouse when it is clicked.
               (set (u8 t) 0))
              (else
               (while (tx/get-u8 state)))))
-
-        ((== op tx/ink-tint)
-         (tx/get-u8 state)
-         (tx/get-u8 state)
-         (tx/get-u8 state)
-         (tx/get-u8 state)
-         (tx/get-u8 state))
 
         ((== op tx/ink-glyphs)
          (while (tx/get-u8 state))))))
@@ -1296,10 +1315,10 @@ function above.
 (var gfx (ctxt/gfx context))
 (if ((and draw-tag-index
           (< tag-index 9)
-          (>= (+ y-off (- y th)) (- (gfx/gfx-clip-y gfx) (gfx/gfx-win-y gfx)))
-          (< (+ y-off y) (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
-     (var tx (+ x-off (- x (/ tw 2))))
-     (var ty (+ y-off (- y (/ th 2))))
+          (>= (+ y-off y) (- (gfx/gfx-clip-y gfx) (gfx/gfx-win-y gfx)))
+          (< (+ y-off y th) (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
+     (var tx (+ x-off x (/ tw 2)))
+     (var ty (+ y-off y (/ th 2)))
      (gfx/rect (- tx 15) (- ty 15) 30 30 (gfx/color 255 255 255))
      (gfx/glyph fonts/sans-l (- tx 6) (- ty 10) (+ ch/d1 tag-index))
      (ui/tint-active (- tx 15) (- ty 15) 30 30)
@@ -1314,6 +1333,8 @@ Querying the ink for an index is easy.
   (tx/set-page state ink)
   (var x 0)
   (var y 0)
+  (var saved-x 0)
+  (var saved-y 0)
   (var tag-index 0)
   (var op)
   (while (!= (set op (tx/get-u8 state)) tx/ink-end)
@@ -1332,12 +1353,16 @@ Querying the ink for an index is easy.
          (tx/get-u8 state)
          (tx/get-u8 state))
 
+        ((== op tx/ink-savepos)
+         (set saved-x x)
+         (set saved-y y))
+
         ((== op tx/ink-tag)
          (var tw (tx/get-u8 state))
          (var th (tx/get-u8 state))
          (var gfx (ctxt/gfx context))
-         (if ((and (>= (+ y-off (- y th)) (- (gfx/gfx-clip-y gfx) (gfx/gfx-win-y gfx)))
-                   (< (+ y-off y) (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
+         (if ((and (>= (+ y-off y) (- (gfx/gfx-clip-y gfx) (gfx/gfx-win-y gfx)))
+                   (< (+ y-off y th) (+ (gfx/gfx-clip-y gfx) (gfx/gfx-clip-h gfx))))
               (if ((== tag-index index)
                    (var t tagbuf)
                    (var c)
@@ -1348,13 +1373,6 @@ Querying the ink for an index is easy.
                   (else
                    (while (tx/get-u8 state))))
               (set tag-index (+ tag-index 1)))))
-
-        ((== op tx/ink-tint)
-         (tx/get-u8 state)
-         (tx/get-u8 state)
-         (tx/get-u8 state)
-         (tx/get-u8 state)
-         (tx/get-u8 state))
 
         ((== op tx/ink-glyphs)
          (while (tx/get-u8 state))))))
@@ -2404,6 +2422,13 @@ Now we only need to put all commands into a table. Linear search
 is good enough for us.
 
 @=
+(fun (tx/error msg)
+  (var old-color (tx/session-color))
+  (set (tx/session-color) (gfx/color 255 0 0))
+  (tx/ensure-hmode)
+  (tx/text msg)
+  (set (tx/session-color) old-color))
+
 (fun (tx/execute-command cmd)
   (if ((str/eq cmd "bold")
        (tx/cmd-bold))
@@ -2427,6 +2452,13 @@ is good enough for us.
        (tx/cmd-tex))
       ((str/eq cmd "book")
        (tx/cmd-book))
+      ((str/prefix cmd "pic/")
+       (if ((var pic-book (book/get "pic" log/write 0))
+            (if ((var pic-func (book/search-fun pic-book (+ cmd 4)))
+                 (pic-func))
+                (else
+                 (tx/error (+ cmd 4))
+                 (tx/error ": no such pic function"))))))
       (else
        (dbg/str "UNKNOWN COMMAND" cmd)
        (tx/parse-text))))
@@ -2605,8 +2637,8 @@ a real code section.
   (tx/need-par-skip))
 @
 
-There is also a function to ignore headers. This is used for meta
-data lines like [code @cat].
+There is also a function to ignore headers. This is used for unknown
+section commands.
 
 @=
 (fun (tx/cmd-head-ignore)
@@ -2614,9 +2646,10 @@ data lines like [code @cat].
   (var t (tx/c-cur-token c))
   (while (not (str/eq t "]"))
     (tx/next-token)))
-@
 
-And here is the main entry point to the "tx" grammar, [code tx/parse-section].
+@* Putting it all together
+
+Here then is main entry point to the "tx" grammar, [code tx/parse-section].
 
 It resets session values to their defaults, figures out which
 head and body functions to use, and then calls them, taking care
@@ -2665,9 +2698,6 @@ for [code cmd].
    (set cmd-body tx/cmd-body-example))
   ((str/eq cmd "")
    (set cmd-head tx/cmd-head-text)
-   (set cmd-body tx/cmd-body-text))
-  ((str/eq cmd "cat")
-   (set cmd-head tx/cmd-head-ignore)
    (set cmd-body tx/cmd-body-text))
   (else
    (dbg/str "UNKNOWN SECTION" cmd)
