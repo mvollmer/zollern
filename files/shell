@@ -298,6 +298,7 @@ application area.
        (shell/ed-save-all inst)
        (shell/add-tx-element inst name shell/cmd-view)
        (shell/focus-current inst)
+       (shell/update inst)
        (ui/paint-needed (shell/root inst)))))
 
 (fun (shell/cmd-write-mode inst)

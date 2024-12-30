@@ -302,37 +302,6 @@ for setting boxes and for drawing the final result. As we will
 see, constructing is intertwined with setting and interestingly
 also with drawing.
 
-But sometimes it is helpful to print a node during debugging,
-and we can write that function already:
-
-@=
-(fun (tx/dbg-nodes l dbg)
-  (while l
-    (dbg l)
-    (set l (tx/n-next l))))
-
-(fun (tx/dbg-node n)
-  (var t (tx/n-type n))
-  (if ((== t tx/nt-glue)
-       (dbg/out "glue\n")
-       (dbg/int " length" (tx/gs-length (tx/g-spec n)))
-       (dbg/int " stretch" (tx/gs-stretch (tx/g-spec n)))
-       (dbg/int " stretch order" (tx/gs-stretch-order (tx/g-spec n)))
-       (dbg/int " shrink" (tx/gs-shrink (tx/g-spec n)))
-       (dbg/int " shrink order" (tx/gs-shrink-order (tx/g-spec n))))
-      ((== t tx/nt-tbox)
-       (dbg/str "text" (tx/tb-str n)))
-      ((== t tx/nt-hbox)
-       (dbg/out "hbox\n")
-       (dbg/int " width" (tx/hb-width n))
-       (tx/dbg-nodes (tx/b-children n) tx/dbg-node)
-       (dbg/out "end\n"))
-      ((== t tx/nt-vbox)
-       (dbg/out "vbox\n")
-       (dbg/int " height" (tx/vb-height n))
-       (tx/dbg-nodes (tx/b-children n) tx/dbg-node)
-       (dbg/out "end\n"))))
-
 @* Setting the glue
 
 The act of [emph setting the glue] in a box will give that box
@@ -1845,13 +1814,15 @@ box instead.
 @
 
 And we are already at the last function in the node construction
-API, [code tx/stop-session].
+API, [code tx/stop-session]. If there are open boxes, we simply
+close them all silently. This can only happen when some Z1 function
+uses the box construction API incorrectly; it can not be caused
+by wrong markup input.
 
 @=
 (fun (tx/stop-session)
   (var c (ctxt/tx context))
   (while (tx/c-box-builder c)
-    (dbg/out "OPEN BOX AT END\n")
     (tx/end))
   (tx/emit-u8 (tx/c-ink-state c) tx/ink-end)
   (var ink (tx/is-ink (tx/c-ink-state c)))
@@ -2099,6 +2070,24 @@ but whitespace, words, or special characters are not even considered.
 (set (tx/c-at-bol (ctxt/tx context)) 1)
 @
 
+There might be syntax and other errors in the input, and we have
+to decide what to do about them: The error message is put right
+into the typeset output (in red), and try to continue as if nothing
+had happened.
+
+@=
+(fun (tx/error msg val)
+  (var old-color (tx/session-color))
+  (set (tx/session-color) (gfx/color 255 0 0))
+  (tx/begin-hbox)
+  (tx/text msg)
+  (if (val
+       (tx/text ": ")
+       (tx/text val)))
+  (tx/end)
+  (set (tx/session-color) old-color))
+@
+
 Let's see how parsing works by looking at the function that handles
 commands like [code \[bold this\]].
 
@@ -2134,7 +2123,7 @@ recursion otherwise.)
   (if ((== (u8 t) ch/])
        (tx/next-token))
       (else
-       (dbg/out "MISSING \"]\"\n"))))
+       (tx/error "missing \"]\"" 0))))
 @
 
 A text section has usually a lot of words separated by interword
@@ -2230,7 +2219,6 @@ input. (Let's not talk about the "\|" token... it might go away.)
          (tx/parse-command))
         (else
          (tx/ensure-hmode)
-         ;; (dbg/str "text" t)
          (tx/unescape t)
          (tx/text t)
          (tx/next-token)))))
@@ -2422,13 +2410,6 @@ Now we only need to put all commands into a table. Linear search
 is good enough for us.
 
 @=
-(fun (tx/error msg)
-  (var old-color (tx/session-color))
-  (set (tx/session-color) (gfx/color 255 0 0))
-  (tx/ensure-hmode)
-  (tx/text msg)
-  (set (tx/session-color) old-color))
-
 (fun (tx/execute-command cmd)
   (if ((str/eq cmd "bold")
        (tx/cmd-bold))
@@ -2457,10 +2438,11 @@ is good enough for us.
             (if ((var pic-func (book/search-fun pic-book (+ cmd 4)))
                  (pic-func))
                 (else
-                 (tx/error (+ cmd 4))
-                 (tx/error ": no such pic function"))))))
+                 (tx/error "pic function not found" (+ cmd 4)))))
+           (else
+            (tx/error "compilation error" "pic"))))
       (else
-       (dbg/str "UNKNOWN COMMAND" cmd)
+       (tx/error "unknown command" cmd)
        (tx/parse-text))))
 @
 
@@ -2671,7 +2653,7 @@ to complete the parsing of the header line.
   <find head and body functions for cmd>
   (cmd-head)
   (while (not (str/eq t "]"))
-    (dbg/str "JUNK AFTER HEADER" t)
+    (tx/error "junk after header" t)
     (tx/next-token))
   (tx/next-token)
   (cmd-body))
@@ -2700,7 +2682,7 @@ for [code cmd].
    (set cmd-head tx/cmd-head-text)
    (set cmd-body tx/cmd-body-text))
   (else
-   (dbg/str "UNKNOWN SECTION" cmd)
+   (tx/error "unknown section" cmd)
    (set cmd-head tx/cmd-head-ignore)
    (set cmd-body tx/cmd-body-text)))
 
@@ -2732,11 +2714,11 @@ a file and call [code tx/parse-section] in a loop, more or less.
        (tx/par)
        (tx/skip (* 5 (tx/session-par-skip)))
        (if ((u8 t)
-            (dbg/out "JUNK AFTER PARSING\n")))
+            (tx/error "junk after parsing" t)))
        (fs/close r)
        (set (tx/c-rbuf c) 0))
       (else
-       (dbg/str "no such file" name))))
+       (log/msg "no such file: %s" name))))
 @
 
 We almost forgot all the markup parsing state. Here it is, see
