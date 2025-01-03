@@ -1932,7 +1932,8 @@ characters, which also handles the escaping.
 
 (fun (tx/next-word t c n)
   (var esc 0)
-  (while (and (or (tx/is-word-char c) esc)
+  (while (and (>= c 0)
+              (or (tx/is-word-char c) esc)
               (< n 255))
     (set (u8 t n) c)
     (set esc (and (not esc) (== c ch/bsl)))
