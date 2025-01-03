@@ -1,8 +1,8 @@
 intro      . Introduction
 prog       . Programming languages
 z1-intro   .. Z1
-asm        ... Assembler
-comp       ... Compiler
+asm1       ... Assembler
+comp1      ... Compiler
 lang       ... Surface syntax
            ... Runtime
 ctxt       .... Context
