@@ -8,8 +8,8 @@ run: zfs zfb z1
 z0: z0.c
 	cc -std=c99 -g -o z0 z0.c
 
-z1: z0 files/asm files/comp
-	./z0 files/asm files/comp z1
+z1: z0 files/asm1 files/comp1
+	./z0 files/asm1 files/comp1 z1
 
 files/fonts: zttf z
 	./zttf /usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf 14 fonts/mono >files/fonts
