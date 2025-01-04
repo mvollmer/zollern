@@ -700,6 +700,7 @@ strings that are involved.
 
 (struct ui/list-entry
   le-next
+  le-parent
   le-level
   le-flags
   le-tag
@@ -745,6 +746,7 @@ the list entries will not invalidate this string.
 (fun (ui/l-make-entry level flags tag text)
   (var entry (mem/alloc ui/list-entry))
   (set (ui/le-next entry) 0)
+  (set (ui/le-parent entry) 0)
   (set (ui/le-level entry) level)
   (set (ui/le-flags entry) flags)
   (set (ui/le-tag entry) (and tag (str/dup tag)))
@@ -763,6 +765,16 @@ the list entries will not invalidate this string.
     (set ptr (loc (ui/le-next (u64 ptr)))))
   (set (ui/le-next entry) (u64 ptr))
   (set (u64 ptr) entry))
+
+(fun (ui/list-commit inst)
+  (mem parents (* 20 u64))
+  (var entry (ui/l-entries inst))
+  (while entry
+    (var level (ui/le-level entry))
+    (set (u64 parents level) entry)
+    (if ((> level 0)
+         (set (ui/le-parent entry) (u64 parents (- level 1)))))
+    (set entry (ui/le-next entry))))
   
 @
 
@@ -770,18 +782,35 @@ Painting and input handling and the rest is straightforward.
 
 @=
 
+(fun (ui/l-find-selected inst parents)
+  (var entry (ui/l-entries inst))
+  (while entry    
+    (if ((and (ui/l-selected inst) (ui/le-tag entry) (str/eq (ui/l-selected inst) (ui/le-tag entry)))         
+         (goto done)))
+    (set (u64 parents (ui/le-level entry)) entry)
+    (set entry (ui/le-next entry)))
+  (label done)
+  entry)
+
 (fun (ui/list-paint inst)
   (var f fonts/sans)
   (var lh (- (gfx/font-ascent f) (gfx/font-descent f)))
   (var y 0)
+  (mem parents (* 20 u64))
+  (var selected (ui/l-find-selected inst parents))
+  (var n-parents (and selected (ui/le-level selected)))
   (var entry (ui/l-entries inst))
   (while entry
-    (gfx/string (+ (* 10 (ui/le-level entry))) y
-                (if ((ui/le-flags entry) fonts/sans-b) (else fonts/sans))
-                (ui/le-text entry))
-    (if ((and (ui/l-selected inst) (ui/le-tag entry) (str/eq (ui/l-selected inst) (ui/le-tag entry)))
-         (ui/tint-selected 0 y (ui/elt-width inst) lh)))
-    (set y (+ y lh 2))
+    (var level (ui/le-level entry))
+    (if ((or (== level 0)
+             (and (<= level n-parents) (== (ui/le-parent entry) (u64 parents (- level 1))))
+             (== (ui/le-parent entry) selected))
+         (gfx/string (+ (* 10 (ui/le-level entry))) y
+                     (if ((ui/le-flags entry) fonts/sans-b) (else fonts/sans))
+                     (ui/le-text entry))
+         (if ((== entry selected)
+              (ui/tint-selected 0 y (ui/elt-width inst) lh)))
+         (set y (+ y lh 2))))
     (set entry (ui/le-next entry))))
 
 (fun (ui/list-input inst state input x y)
@@ -789,12 +818,23 @@ Painting and input handling and the rest is straightforward.
        (var f fonts/sans)
        (var lh (- (gfx/font-ascent f) (gfx/font-descent f)))
        (var index (/ y (+ lh 2)))
-       (var ptr (ui/l-entries inst))
-       (while (and ptr (> index 0))
-         (set ptr (ui/le-next ptr))
-         (set index (- index 1)))
-       (if ((and ptr (ui/le-tag ptr))
-            ((ui/l-handler inst) (ui/l-handler-data inst) (ui/le-tag ptr)))))))
+       (mem parents (* 20 u64))
+       (var selected (ui/l-find-selected inst parents))
+       (var n-parents (and selected (ui/le-level selected)))
+       (var i 0)
+       (var entry (ui/l-entries inst))
+       (while entry
+         (var level (ui/le-level entry))
+         (if ((or (== level 0)
+                  (and (<= level n-parents) (== (ui/le-parent entry) (u64 parents (- level 1))))
+                  (== (ui/le-parent entry) selected))
+              (set index (- index 1))
+              (if ((< index 0)
+                   (goto done)))))
+         (set entry (ui/le-next entry)))
+       (label done)
+       (if ((and entry (ui/le-tag entry))
+            ((ui/l-handler inst) (ui/l-handler-data inst) (ui/le-tag entry)))))))
 
 (ui/element-functions ui/list-funcs
   ui/list-init

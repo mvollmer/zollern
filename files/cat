@@ -4,12 +4,14 @@ z1-intro   .. Z1
 asm1       ... Assembler
 comp1      ... Compiler
 lang       ... Surface syntax
-           ... Runtime
-ctxt       .... Context
-mem        .... Memory
-ch         .... Characters
-str        .... Strings
-           . Operating system
+intro2     .. Z2
+asm        ... Assembler
+runtime    . Language runtime
+ctxt       .. Context
+mem        .. Memory
+ch         .. Characters
+str        .. Strings
+os         . Operating system
 boot       .. Booting
 log        .. Logging
 pk         .. Debugging
@@ -20,8 +22,8 @@ logview    .. Log viewer
 shell      .. Shell
 ed         .. Editor
 tx         .. Type setting
-           . Programs
+progs      . Programs
 mandel     .. Mandelbrot
 soko       .. Sokoban
-           . Literature
+literature . Literature
 TOM        .. Tom Sawyer

@@ -186,6 +186,7 @@ application area.
   (book/reset-out-of-date)
   (ui/list-reset (shell/write-list inst))
   (fs/list shell/insert-file inst)
+  (ui/list-commit (shell/write-list inst))
   (ui/paint-needed inst))
 
 (fun (shell/read-char rbuf)
@@ -246,7 +247,8 @@ application area.
 
 (fun (shell/update-list inst list catname)
   (ui/list-reset list)
-  (shell/read-catalog catname list))
+  (shell/read-catalog catname list)
+  (ui/list-commit list))
 
 (fun (shell/update inst)
   (shell/update-files inst)
