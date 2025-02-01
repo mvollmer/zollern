@@ -1,0 +1,43 @@
+@** The Z2 programming language
+
+The second programming level of Zollern is called, obviously,
+Z2. It is much the same kind of language as Z1, but improved.
+
+Z1 was constrained by the way it was implemented. We had to write
+it all in assembler, and it isn't fun to change it and improve
+it after it got off the ground enough to write programs in it. It
+was much more fun to write those programs, including the first
+versions of the editor, the type setter, the UI framework, and
+of course the shell.
+
+The plan with Z2 is now to move forward in history a bit and add
+a mild type system and write a compiler that does at least [emph
+some] optimizations.
+
+But the main advance will be to write it in a higher level language
+(Z1) which will make it fun again to modify it. For example, Z1 has
+no hexa-decimal or floating point literals because they didn't
+seem important back when that part of it was laboriously hacked
+in assembler. Now we could use them, but it is way too tedious
+to go back into the assembler mindset and modify Z1. Z2 is meant
+to get us out of that hole.
+
+Initially, Z2 will be fully compatible with Z1 and we will develop
+it until it can successfully compile all the existing Z1 code.
+Then we change the bootstrap process to only use the old Z1 compiler
+to compile the Z2 compiler, which will then compile the rest.
+And [emph then] we will start adding the good stuff to Z2 and
+improve the existing programs to make use of it. We can drop
+compatibility with Z1 at that point.
+
+The interoperability of Z1 and Z2 is limited by macros: The Z2
+compiler can not run macro expansion code compiled by Z1 since
+the data structures that represent the code only work within
+an active Z1 context. So we might just not let them interact
+at all. Let's see.
+
+The downside of Z2 is that it is a slower compiler than Z1: It
+has more complicated algorithms, and it is not written by hand
+in assembler but is compiled by a compiler that generates rather
+bad machine code (Z1). Hopefully this doesn't matter.
+
