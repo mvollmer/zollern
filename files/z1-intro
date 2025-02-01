@@ -4,7 +4,7 @@ The first programming language of Zollern is called "Z1". It is
 quite primitive, but already quite fun.
 
 It has a real compiler, which is written in assembler. That story
-is told in the [book asm Assembler], [book comp Compiler], and
+is told in the [book asm1 Assembler], [book comp1 Compiler], and
 [book lang Surface syntax] books. Here we explain the Z1 language
 itself and how you can write programs in it.
 
@@ -450,5 +450,5 @@ will add [code x] and [code y]. Another example would be [code
 does not initialize it.
 
 You don't need to know about these primitives when programming
-in Z1. But the [book comp Compiler] and [book lang Surface syntax]
+in Z1. But the [book comp1 Compiler] and [book lang Surface syntax]
 books make much more sense when you know about them in principle.

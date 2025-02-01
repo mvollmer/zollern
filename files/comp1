@@ -5,7 +5,7 @@ compiler from Z1 primitives such as [code (9 0 a b)] to machine
 code.
 
 It is written in the assembly language defined and implemented
-by the [book asm Assembler] book. It is compiled outside of Zollern
+by the [book asm1 Assembler] book. It is compiled outside of Zollern
 when Zollern boots, and changing it thus requires a full reboot
 for those changes to take effect.
 
@@ -19,7 +19,7 @@ system, for example. And last, assembler is just very verbose.
 @* The Z0 assembler language
 
 Z0 implements its own variant of x86-64 assembler, with lots of
-parentheses, of course. The [book asm Assembler] book has all
+parentheses, of course. The [book asm1 Assembler] book has all
 the details of how it is defined, and here we give an overview
 from the point of actually using the assembly language.
 
@@ -236,7 +236,7 @@ This has to happen in the right order, of course, so that we only
 copy [code l1] to [code l3] after using [code l3] to set [code
 l7].
 
-The [book asm Assembler] book does not define speciality instructions
+The [book asm1 Assembler] book does not define speciality instructions
 like [code syscall]. That is fine, we can define it right here.
 @=
 (def (syscall)

@@ -1,6 +1,6 @@
 @** Z1 Surface syntax
 
-As explained in the [book comp Compiler] book, the Z1 compiler
+As explained in the [book comp1 Compiler] book, the Z1 compiler
 only implements [emph primitives], and we have to write macros
 to translate code like [code (while (foo) (bar))] into those
 primitives.

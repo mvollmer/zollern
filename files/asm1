@@ -6,7 +6,7 @@ compiler is written in this assembler language (see the [book
 comp Compiler] book), and uses the instructions defined here
 when emitting machine code. The upper third of the compiler is
 the [book lang Surface syntax] book, and is written in the primitive
-version of Z1 understood by the [book comp Compiler] book.
+version of Z1 understood by the [book comp1 Compiler] book.
 
 This asssembler here is written in the input language of the [emph
 Z0] binary macro processor. Z0 is a program running outside of
@@ -14,7 +14,7 @@ Zollern that can generate a binary file from a couple of input
 files that are written in its Z0 macro language.
 
 During each boot of Zollern, the Z0 program reads this [book asm
-Assembler] book followed by the [book comp Compiler] book and
+Assembler] book followed by the [book comp1 Compiler] book and
 produces a binary output file.
 
 That binary file can be directly executed by the OS that hosts
@@ -28,7 +28,7 @@ The instructions at that certain address are defined here in this
 book, see the [code start] label at the very end.
 
 Those instructions will jump to the [code main] function in the
-[book comp Compiler] book, which in turn will compile the [book
+[book comp1 Compiler] book, which in turn will compile the [book
 boot Boot] book, which is written in Z1. Then the [code boot/start]
 function is called. If you want to know how the story continues,
 you have to read the [book boot Boot] book, of course.
@@ -130,7 +130,7 @@ For example,
 will replace every occurance of a list with a single symbol named
 "syscall" in it with [code (1 0x0F 0x05)].
 
-Unlike the Z1 macros implemented in the [book comp Compiler] book,
+Unlike the Z1 macros implemented in the [book comp1 Compiler] book,
 patterns do not only match on the first element of a list (the
 "operator" position), they must match everywhere. For example,
 @c
@@ -250,7 +250,7 @@ Ok, here then are all the 16 register names:
 @
 The registers starting with "l" and "x" are for generic use by
 functions, "sp" is the stack pointer, and "cp" is the global
-"context" pointer. The [book comp Compiler] book explains the
+"context" pointer. The [book comp1 Compiler] book explains the
 conventions for using them.
 
 @* Instruction encoding
@@ -908,7 +908,7 @@ the entrypoint of the compiler where we want.
 
 Thus, we define the first [code code] block here, and make it
 jump to the [code main] label. It will be defined at the end
-of the [book comp Compiler] book.
+of the [book comp1 Compiler] book.
 
 @=
 (code start
