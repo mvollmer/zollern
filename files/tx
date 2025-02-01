@@ -1056,6 +1056,7 @@ Here are the complementary [emph get] functions for [code tx/draw-ink]:
   val)
 
 <define the tx/draw-ink function>
+
 @
 
 Coordinates are updated either incrementally (when the increment
@@ -2300,7 +2301,7 @@ general, and get serious about fonts.
   (set (tx/session-font) fonts/sans-o-s)
   (tx/ensure-hmode)
   (tx/begin-cbox)
-  (tx/cop tx/cop-move 0 7)
+  (tx/cop tx/cop-move 0 2)
   (tx/begin-hbox)
   (tx/parse-text)
   (tx/end)
@@ -2337,7 +2338,7 @@ the two arguments.
   (var t (tx/c-cur-token (ctxt/tx context)))
   (if ((== (u8 t) ch/bar)
        (tx/next-token)
-       (tx/cop tx/cop-move 0 7)
+       (tx/cop tx/cop-move 0 4)
        (tx/begin-hbox)
        (tx/parse-text)
        (tx/end)))
@@ -2363,7 +2364,7 @@ This kind of hack is very much in the spirit of [tex].
   (tx/glue (tx/gluespec 0 0 0 1 1))
   (tx/set-hbox-width 0)
   (tx/parse-text)
-  (tx/end)))
+  (tx/end))
 @
 
 And speaking of [tex], Zollerns typesetter can of course typeset

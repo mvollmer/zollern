@@ -1,0 +1,1702 @@
+@** Z2 Compiler
+
+This is Zollerns second compiler. It is a long Z1 program and
+we allow ourselves the luxurious "c" prefix.
+
+At the time Z2 was started, Zollern already had a lot of code
+written in Z1. There was a nice dynamic memory allocator and
+an API for reading files. But the plan was to move all this to
+Z2, eventually. We only want to eventually have one nice dynamic
+memory allocator, and it should be written in Z2, for example.
+Thus, Z2 itself can not use it and we are in the same situation
+as we were with Z1: We need to implement basic things from scratch,
+just for the compiler.
+
+Current plan to get initial machine code:
+
+@d
+[item - ]Pool allocation of s-expressions and other data structures, stack allocation of others.
+
+[item - ]One pass direct code generation via s-exp walking, no intermediate representation.
+
+[item - ]Constant expression evaluation while walking.
+
+[item - ]Special code generation for "if" context, to get something reasonable.
+
+[item - ]Register allocation for temporary results of expressions.
+
+[item - ]Explicitly requested optimizations, like local vars in registers.
+@
+
+@* Random utilities
+
+Since we can't use any of the things we have written for Z1 in
+the last decade, let's write "strlen" again. And a couple others.
+
+@=
+(fun (c/strlen str)
+  (var end str)
+  (while (u8 end)
+    (set end (+ end 1)))
+  (- end str))
+
+(fun (c/strcpy dst src)
+  (while (u8 src)
+    (set (u8 dst) (u8 src))
+    (set src (+ src 1))
+    (set dst (+ dst 1)))
+  (set (u8 dst) 0))
+
+(fun (c/streq a b)
+  (while (and (u8 a) (== (u8 a) (u8 b)))
+    (set a (+ a 1))
+    (set b (+ b 1)))
+  (== (u8 a) (u8 b)))
+@
+
+@* Compiler state
+
+@=
+<global constants>
+
+(struct c/state-struct
+  s-prev-state
+  <state for memory allocation>
+  <state for expression objects>
+  <state for reading files>
+  <state for non-local returns>
+  <state for the current token>
+  <state for register and slot allocation>)
+
+
+(fun (c/state)
+  (ctxt/comp context))
+@
+
+@* Allocating memory
+
+How do we allocate memory when we can't use the nice dynamic allocator
+in the [book mem mem] book? We could reimplement it here, just
+like we reimplemented [code str/len], [code str/cpy], etc. But
+a proper dynamic allocator is not really trivial enough for that.
+
+Nor do we really want it. The alloctor in the [book mem mem] book
+is fully manual: we need to explicitly free every bit of memory
+we allocate, at the exact right moment. This is going to be cumbersome
+for the expression objects that we will use to represent s-expressions
+in the compiler, and doubly so for the macro expanders. We really
+want some automatic memory management when writing a compiler
+that does macro expansion of s-expressions.
+
+A simple tracing garbage collector is fun to implement, and we
+will do that eventually. The Z2 compiler might even help by exposing
+the stack layout, for example. But we will not complicate this
+compiler with it just yet. Instead we will use a simple [emph
+pool allocator], just like Z1 does.
+
+The pool allocator can only allocate new memory, there is no way
+to return unused memory to it. Instead, the whole pool of allocated
+memory is freed in one go when the compilation is done.
+
+This sounds very wasteful, and it is. But the Z2 compiler doesn't
+have any sophisticated data structures at run-time. It doesn't
+convert the source code into SSA and then transforms that a couple
+of times during optimization, for example. It just reads the
+source code and then walks the s-expression structure, expanding
+some macros along the way into new s-expressions.
+
+And because of fragments, we will have to read the whole file
+anyway before compiling the first expression.
+
+XXX - some stats from real compilations, once we have them.
+
+The pool is maintained by keeping a list of pages that we have
+gotten from [code sys/page-get], and pointers to the next and
+last free bytes.
+
+@= <state for memory allocation>
+s-pages
+s-next
+s-end
+s-total-alloc
+@
+
+@= <init memory allocation state>
+(set (c/s-pages state) 0)
+(set (c/s-next state) (+ state c/state-struct))
+(set (c/s-end state) (+ state sys/page-size))
+(set (c/s-total-alloc state) 0)
+@
+
+When compilation is done, we return all pages with [code sys/page-put].
+
+@= <finalize memory allocation state>
+(log/msg "allocated %d bytes\n" (c/s-total-alloc state))
+(var p (c/s-pages state))
+(while p
+  (var n (u64 p))
+  (sys/page-put p)
+  (set p n))
+@
+
+Here comes the allocation function. If the requested size fits
+in-between [code s/next] and [code s/end], we just bump [code
+s/next]. If not, we get a new page and add it into the list.
+
+@=
+(fun (c/alloc size)
+  (var state (c/state))
+  (set (c/s-total-alloc state) (+ (c/s-total-alloc state) size))
+  (var ptr (c/s-next state))
+  (if ((< (+ ptr size) (c/s-end state))
+       (set (c/s-next state) (+ ptr size)))
+      (else
+       (var p (sys/page-get))
+       (set (u64 p) (c/s-pages state))
+       (set (c/s-pages state) p)
+       (set ptr (+ p u64))
+       (set (c/s-next state) (+ ptr size))
+       (set (c/s-end state) (+ p sys/page-size))))
+  ptr)
+@
+
+@* Expression objects
+
+Now that memory allocation is sorted, we can put it to use for
+the expression objects that represent the code that is being
+compiled. As always, we need lists, numbers, strings, and symbols.
+
+Lists are made from [emph pairs], which contain two pointers to
+other objects each. One pointer points to a list element, the
+other at the pair that starts the rest of the list. For example,
+the s-expression [code (+ x 1)] is a list of three elements:
+the symbol named "+", the symbol named "x", and the number "1".
+It looks like this in memory:
+
+[pic/c-list-pairs]
+
+For numbers, we will have integers and [emph floats]. So we end
+up with these five kinds of expressions:
+
+@=
+(enum
+  x-kind-pair
+  x-kind-int
+  x-kind-float
+  x-kind-string
+  x-kind-symbol)
+@
+
+All expression objects have only one field in common: the [emph
+kind] to tell us what the expression is concretely.
+
+@=
+(struct c/exp-base
+  x-kind)
+@
+
+A pair is very straightforward, it just has the two pointers for
+forming lists. And a [emph position] for error messages related
+to the pair.
+
+@=
+(struct c/exp-pair
+  (:base c/exp-base)
+  x-first
+  x-rest
+  x-pos)
+
+(fun (c/make-pair first rest)
+  (var x (c/alloc c/exp-pair))
+  (set (c/x-kind x) c/x-kind-pair)
+  (set (c/x-first x) first)
+  (set (c/x-rest x) rest)
+  x)
+@
+
+Integers and floats are equally simple. (S-expressions as a whole
+are super simple. There is almost no hidden complexity. That's
+what makes them great.)
+
+@=
+(struct c/exp-int
+  (:base c/exp-base)
+  x-int-val)
+
+(fun (c/make-int val)
+  (var x (c/alloc c/exp-pair))
+  (set (c/x-kind x) c/x-kind-int)
+  (set (c/x-int-val x) val)
+  x)
+
+(struct c/exp-float
+  (:base c/exp-base)
+  x-float-val)
+
+(fun (c/make-float val)
+  (var x (c/alloc c/exp-pair))
+  (set (c/x-kind x) c/x-kind-float)
+  (set (c/x-float-val x) val)
+  x)
+@
+
+Strings are sligthly less easy since they don't have a fixed size.
+We get around that by declaring a structure that has an array
+of characters as its last field, and officially give that array
+a length of zero. Then we ignore that and put all the characters
+right after the structure.
+
+@=
+(struct c/exp-string
+  (:base c/exp-base)
+  (x-chars u8 0))
+
+(fun (c/make-string chars)
+  (var x (c/alloc (+ c/exp-string (c/strlen chars) 1)))
+  (set (c/x-kind x) c/x-kind-string)
+  (c/strcpy (c/x-chars x) chars)
+  x)
+
+@
+
+The most complicated expression objects are the symbols. They
+are just like strings and put their characters after the header
+structure, but we also need to keep them [emph unique].
+
+If our input contains two separate places that refer to the same
+symbol, then we want that to be represented by a single expression
+object.
+
+For example, this input
+@c
+(fun (inc x)
+  (+ x 1))
+@
+should be represented like this
+
+[pic/c-inc-fun]
+
+That way, we can stick extra information into the expression objects
+for a symbol and find it again easily. For example, when processing
+the header of the function [code inc] above, it would put information
+into the object for [code x] that it is the first argument of
+the function. Then, when the compiler sees it again in the [code
+(+ x 1)] expression, it immediately knows where the get the value
+for [code x] from. In fact, the names of symbols are not used
+very much anymore after we have turned the input source code
+into these expression objects.
+
+Thus, whenever constructing a symbol object for a given name,
+we first look through all previously created ones to see whether
+we can find an object for that name.
+
+Any kind of data structure could be used for this, like a linked
+list that we would search from start to end each time. But we
+do better: we'll use a hash table, which (in our case) means
+that we don't use one long linked list, but very many short ones.
+
+Knuth will tell you that a prime number of lists works best:
+
+@=
+(defconst c/symtab-size 107)
+@
+
+Which list to search for a given name is determined by computing
+a deterministic but random-looking number between 0 and 107 from
+the characters of the symbol name. Equal names result in the
+same number, and if an object for that name already exists, it
+must be in the list for that number.
+
+A good hash function is one that spreads out the numbers as evenly
+as possible so that the individual lists are all of about the
+same length and thus rather short. It's usually more important
+to spread the numbers out more by spending a little more time
+in the hash function, than it is to make the hash function itself
+fast.
+
+I always use this hash function proposed by djb, because he knows
+what he's doing:
+@d
+[emph h][sub 0] = 5381
+
+[emph h][sub i]  = 33[emph h][sub i-1] ^ [emph c][sub i]
+@
+Here [emph c][sub i] is the [emph i]th character of the string
+and ^ means "bitwise exclusive or". To constrain the result to
+the size [emph s] of the hash table, we will simple compute [emph
+h][sub n] mod [emph s].
+
+Unfortunately, Z1 has neither bitwise exclusive or, nor can it
+compute the remainder after division. We will fix that oversight
+in Z2 of course, but here we must implement "xor" and "mod" explicitly.
+
+We could probably just use "+" instead of "xor" without making
+the hash function significantly worse. But implementing "xor"
+with just "or" and "and" is a fun little excersize.
+
+@=
+(fun (c/xor a b)
+  (- (bit-or a b) (bit-and a b)))
+
+(fun (c/mod a m)
+  (if ((< a 0)
+       (set a (- a))))
+  (- a (* (/ a m) m)))
+@
+
+The hashing function is then very straightforward to write.
+
+@=
+(fun (c/strhash str size)
+  (var h 5381)
+  (while (u8 str)
+    (set h (c/xor (* h 33) (u8 str)))
+    (set str (+ str 1)))
+  (c/mod h size))
+@
+
+The [code c/make-symbol] function has to first search the symbol
+table, and only no symbol with the given name is found does it
+need to allocate memory for a new one, and put it into the right
+list.
+
+@=
+(struct c/exp-symbol
+  (:base c/exp-base)
+  x-sym-next
+  x-sym-type
+  x-sym-def
+  (x-sym-chars u8 0))
+
+(fun (c/make-symbol chars)
+  (var state (c/state))
+  (var h (c/strhash chars c/symtab-size))
+  (var sym)
+  (set sym (u64 (c/s-symtab state) h))
+  (while sym
+    (if ((c/streq (c/x-sym-chars sym) chars)
+         (goto done)))
+    (set sym (c/x-sym-next sym)))
+  (set sym (c/alloc (+ c/exp-symbol (c/strlen chars) 1)))
+  (set (c/x-kind sym) c/x-kind-symbol)
+  (set (c/x-sym-type sym) 0)
+  (set (c/x-sym-def sym) 0)
+  (c/strcpy (c/x-sym-chars sym) chars)
+  (set (c/x-sym-next sym) (u64 (c/s-symtab state) h))
+  (set (u64 (c/s-symtab state) h) sym)
+  (label done)
+  sym)
+@
+
+The hash table for symbols is part of the compiler state, and
+we need to declare and initialize it.
+
+@= <state for expression objects>
+s-symtab
+
+@= <init expression objects state>
+(set (c/s-symtab state) (c/alloc (* c/symtab-size u64)))
+(var i 0)
+(while (< i c/symtab-size)
+  (set (u64 (c/s-symtab state) i) 0)
+  (set i (+ i 1)))
+@
+
+Here is a function for checking how well our hash table is actually
+working. It will output the length of the list in each bucket.
+
+@=
+(fun (c/dump-symtab-stats)
+  (var state (c/state))
+  (var i 0)
+  (var total 0)
+  (log/msg "(pic/histo %d" c/symtab-size)
+  (while (< i c/symtab-size)
+    (var l (u64 (c/s-symtab state) i))
+    (var n 0)
+    (while l
+      (set n (+ n 1))
+      (set l (c/x-sym-next l)))
+    (log/msg " %d" n)
+    (set total (+ total n))
+    (set i (+ i 1)))
+  (log/msg ")\n")
+  (log/msg "total: %d\n" total))
+@
+
+And this is the result when reading the [book tx tx] book into the compiler:
+
+[pic/c-symtab-histogram]
+
+There are 585 symbols, the longest list in the symbol table has
+11 entries, and the average length is about 5. Not exactly uniform,
+but pretty ok.
+
+We wrap up expression objeccts with a function to turn them back
+into their textual representations (almost).
+
+@=
+(fun (c/write x)
+  (var k (c/x-kind x))
+  (if ((== k c/x-kind-pair)
+       (log/msg "(")
+       (while x
+         (c/write (c/x-first x))
+         (set x (c/x-rest x))
+         (if (x
+              (log/msg " ")
+              (if ((!= (c/x-kind x) c/x-kind-pair)
+                   (log/msg ". ")
+                   (c/write x)
+                   (set x 0))))))
+       (log/msg ")"))
+      ((== k c/x-kind-int)
+       (log/msg "%d" (c/x-int-val x)))
+      ((== k c/x-kind-float)
+       (log/msg "<float>"))
+      ((== k c/x-kind-string)
+       (log/msg "\"%s\"" (c/x-chars x)))
+      ((== k c/x-kind-symbol)
+       (log/msg "%s" (c/x-sym-chars x)))))
+@
+
+@* Reading files
+
+The compiler can open and read one file, and we have to implement
+that from scratch as well (since the real filesystem code will
+be compiled by this compiler).
+
+Luckily, the Zollern diks structure is trivial. If it ever gets
+more complicated, we will probably keep some part of the disk
+in the trivial "bootstrap" format so that we don't have to implement
+anything too sophisticated here. Or maybe reading will always
+be easy enough.
+
+A Zollern disk is an array of 16 kB blocks. The first block is
+the index, which is an array of "nodes" of size 256 each. Each
+node represents one file, excpept the first, which contains meta
+data about the whole filesystem.
+
+A node contains 64 bytes for the name of a file, the size of the
+file, and a number of "pointers" into the rest of the disk. A
+pointer is an index into the array of blocks, and the pointed
+to blocks contain the data for the file, of course.
+
+@=
+(defconst c/fs-block-size (* 16 1024))
+(defconst c/fs-node-size  256)
+(defconst c/fs-name-size  64)
+(defconst c/fs-ptr-size   2)
+
+(defconst c/fs-node-count (/ c/fs-block-size c/fs-node-size))
+(defconst c/fs-ptr-count (/ (- c/fs-node-size c/fs-name-size 4 4) c/fs-ptr-size))
+
+(struct c/fs-node
+  (fnode-name u8 c/fs-name-size)
+  (fnode-size u32)
+  (fnode-time u32)
+  (fnode-ptr u16 c/fs-ptr-count))
+@
+
+[emph Opening] a file means finding its node in the disk index. The
+Z1 bootstrap process has already made the whole disk available
+in memory and thus we don't need to actually interface with any
+hardware in order to read what's on disk.
+
+@= <state for reading files>
+file-node
+file-next-ptr
+file-cur
+file-end
+file-pos
+
+@=
+(struct c/fs-disk
+  fs-disk-start)
+
+(fun (c/fs-open name)
+  (var state (c/state))
+  (var ptr (c/fs-disk-start (ctxt/disk context)))
+  (var i 1)
+  (var found 0)
+  (while (< i c/fs-node-count)
+    (set ptr (+ ptr c/fs-node-size))
+    (if ((c/streq ptr name)
+         (set (c/file-node state) ptr)
+         (set (c/file-next-ptr state) 0)
+         (set (c/file-cur state) 0)
+         (set (c/file-end state) 0)
+         (set (c/file-pos state) 0)
+         (set found 1)
+         (goto done)))
+    (set i (+ i 1)))
+  (label done)
+  found)
+@
+
+Parsing is done character by character by advancing the [code
+c/file-cur] pointer until it hits [code c/file-end]. At that
+point, we need to advance to the next block and reset those pointers.
+This is done by the [code c/fs-next] function.
+
+@=
+(fun (c/fs-next)
+  (var state (c/state))
+  (var node (c/file-node state))
+  (var ptr (c/file-next-ptr state))
+  (var rest-size (- (c/fnode-size node) (* ptr c/fs-block-size)))
+  (if ((> rest-size 0)
+       (set (c/file-next-ptr state) (+ ptr 1))
+       (set (c/file-cur state) (+ (c/fs-disk-start (ctxt/disk context))
+                                  (* (c/fnode-ptr node ptr) c/fs-block-size)))
+       (if ((> rest-size c/fs-block-size)
+            (set (c/file-end state) (+ (c/file-cur state) c/fs-block-size)))
+           (else
+            (set (c/file-end state) (+ (c/file-cur state) rest-size))))
+       1)
+      (else
+       0)))
+@
+
+Getting the next character will first call [code c/fs-read] if
+necessary, and then take the character from [code c/file-cur].
+The end of the file is signalled by returning -1.
+
+@=
+(fun (c/get-char)
+  (var state (c/state))
+  (var res)
+  (if ((== (c/file-cur state) (c/file-end state))
+       (if ((not (c/fs-next))
+            (set res -1)
+            (goto done)))))
+  (set res (u8 (c/file-cur state)))
+  (set (c/file-cur state) (+ (c/file-cur state) 1))
+  (set (c/file-pos state) (+ (c/file-pos state) 1))
+  (label done)
+  res)
+@
+
+While parsing the input, we usually get characters until we find
+one that doesn't belong to the current token anymore. Such a
+character is put back into the input by a [emph unget] function.
+
+It's only allowed to do that once. We don't support rewinding
+the whole input this way and thus it is enough to step the [code
+c/file-cur] pointer backwards one position. We don't have to
+worry about crossing block boundaries.
+
+@=
+(fun (c/unget-char)
+  (var state (c/state))
+  (set (c/file-cur state) (- (c/file-cur state) 1))
+  (set (c/file-pos state) (- (c/file-pos state) 1)))
+@
+
+@* Errors during compilation
+
+To keep things simple, this compiler will give up when it encounters
+the first error in the input. But parsing and compilation is
+very recursive and in order to give up we would have to return
+from all those levels with an indication that the compilation
+should be aborted. This would be a lot of extra code that obfuscates
+the important parts.
+
+Thus instead of backtracking on foot out of the nested function
+dungeon, we will [emph fast travel] to its entrance. When a function
+detects and error, it will not return to its caller, but it will
+manipulate the stack so that when it returns, the stack pointer
+and program counter get set to values that make the program continue
+as if a function way up the call chain had returned.
+
+The intermediate functions will never know what happened. They
+don't get any chance to return memory that they have allocated,
+or do other cleanup actions.
+
+As it turns out, we can write the compiler to not need any cleanup
+actions. The memory allocation scheme implemented above helps
+a lot with that.
+
+Implementing such a non-local return scheme is pretty straighforward
+in assembler, and pretty impossible in Z1 itself. So we use some
+functions from the special ".sys" book that have been written
+in assembler just for us. (The actual code is in the [book comp1
+comp1] book.
+
+@= <state for non-local returns>
+longret-handle
+
+@=
+(fun (c/call-with-longret func arg)
+  (var state (c/state))
+  (.sys/call-with-longret (loc (c/longret-handle state)) func arg))
+
+(fun (c/longret val)
+  (var state (c/state))
+  (.sys/longret (loc (c/longret-handle state)) val))
+
+(fun (c/error fmt arg1 arg2 arg3)
+  (log/msg fmt arg1 arg2 arg3)
+  (log/msg "\n")
+  (c/longret 0))
+@
+
+@* Parsing into tokens
+
+While constructing the expression objects for a file, the compiler
+state maintains the [emph current token]. This is the most recently
+encountered sequence of characters that form one unit of the
+s-expression syntax. For example, a opening parentheses is a
+token, or a the characters that form a symbol.
+
+We have a number of different kind of tokens:
+
+@=
+(enum
+  tk-eof
+  tk-open-paren
+  tk-close-paren
+  tk-string
+  tk-word
+  tk-header)
+@
+
+Note that numbers and symbols have not yet appeared. They are
+both just words at this point.
+
+The characters of the current token are stored in a full page.
+That's hopefully enough.
+
+@= <state for the current token>
+token
+token-kind
+@
+
+@= <init state for current token>
+(set (c/token state) (sys/page-get))
+
+@= <finalize state for current token>
+(sys/page-put (c/token state))
+
+@
+Finding the next token consists of skipping over all whitespace
+characters (trivial!), looking at the first non-whitespace character
+to decide what kind of token we have, and then collecting all
+characters that belong to that token.
+
+Let's start with skipping whitespace, which turns out to be not
+so trivial as hoped since we need to recognize the [code @] sections
+and skip all of them except the [code @=] ones. And once we have
+found a [code @=] section, we have to deal with its fragment
+identifier, if any.
+
+Thus, after skipping whitespace, we are in one of three positions:
+in the middle of a code section; at the start of a [emph main]
+code section; or at the start of a code section with a fragment.
+This is communicated by the return value of the [code c/skip-whitespace]
+function with a value from this enumeration:
+
+@=
+(enum
+  ws-eof
+  ws-inline
+  ws-main-start
+  ws-fragment-start)
+@
+
+Let's get the complicated part out of the way first, skipping
+sections until we find the [code @=] marker.
+
+A little bit surprisingly, doing this in Z1 turns out to more
+code than in assembler! But while this version here is more verbose,
+it is also easier to understand and much easier to modify. This
+is one of the goals of writing Z2: making things easy to modify
+so that we can confidently evolve it on a whim without having
+to deeply study how it actually works.
+
+The code below implements a [emph state machine]. There is a variable
+[code s] that tracks where we are in the input text so that we
+can determine what the character means that we have just read.
+
+After reading a newline character, the state [code s] tells us
+that we are now at the beggingin of a line ([code state-at-bol]),
+and if the next character is [code @], the state is moved to
+[code state-at-at]. And if the next character then is [code =],
+we start processing the rest of a code section line.
+
+@=
+(enum
+  state-in-other-section
+  state-at-bol
+  state-at-at)
+
+(fun (c/skip-sections)
+  (var state (c/state))
+  (var s c/state-at-at)
+  (label again)
+  (var ch (c/get-char))
+  (if ((and (== s c/state-at-at) (== ch ch/=))
+       (var res c/ws-fragment-start)
+       (label again-tail)
+       (set ch (c/get-char))
+       (if ((== ch ch/spc)
+            (goto again-tail))
+           ((== ch ch/nl)
+            (set res c/ws-main-start)
+            (goto again-tail))
+           ((!= ch -1)
+            (c/unget-char)
+            res)
+           (else
+            c/ws-eof)))
+      ((and (== s c/state-at-bol) (== ch ch/@))
+       (set s c/state-at-at)
+       (goto again))
+      ((== ch ch/nl)
+       (set s c/state-at-bol)
+       (goto again))
+      ((!= ch -1)
+       (set s c/state-in-other-section)
+       (goto again))
+      (else
+       c/ws-eof)))
+@
+
+Skipping the real whitespace is a similar but simpler state machine.
+It only has to track whether we are at the beginning of a line
+or not.
+
+@=
+(fun (c/skip-whitespace)
+  (var state (c/state))
+  (var at-bol <are we at the beginning of a line?>)
+  (label again)
+  (var ch (c/get-char))
+  (if ((== ch ch/spc)
+       (set at-bol 0)
+       (goto again))
+      ((== ch ch/nl)
+       (set at-bol 1)
+       (goto again))
+      ((== ch ch/sc)
+       <skip a comment>
+       (set at-bol 1)
+       (goto again))
+      ((and at-bol (== ch ch/@))
+       (c/skip-sections))
+      ((!= ch -1)
+       (c/unget-char)
+       c/ws-inline)
+      (else
+       c/ws-eof)))
+
+@= <skip a comment>
+(while (begin
+         (set ch (c/get-char))
+         (and (!= ch ch/nl) (!= ch -1))))
+@
+
+Whether we are initially at the beginning of line when skipping
+whitespace is a interesting question. While in the middle of
+parsing a file, the first character of whitespace will never
+be at the beginning of a line because only a newline character
+will get us there, and that is whitespace. But the very first
+character of a file is at the beginning of the very first line,
+so the very first invocation of [code c/skip-whitespace] should
+initialize [code at-bol] to true.
+
+We can detect this very first invocation by looking at the [code
+c/file-cur] field in the compiler state. It is zero exactly when
+no character has yet been read.
+
+@= <are we at the beginning of a line?>
+(not (c/file-cur state))
+
+@
+
+Alright, already a lot of code, but that was only about empty
+space. Let's now write the [code next-token] function that collects
+the characters for the actual tokens.
+
+The overall structure should not be a surprise: After skipping
+whitespace, the next character determines kind of token we are
+looking at. Some of them consist of just a single character,
+while others need to keep reading until the end of the token.
+
+@=
+(fun (c/next-token)
+  (var state (c/state))
+  (var tok (c/token state))
+  (var ws (c/skip-whitespace))
+  (if ((== ws c/ws-main-start)
+       (set (c/token-kind state) c/tk-header)
+       (set (u8 tok) 0))
+      (else
+       (var ch (c/get-char))
+       (var q 0)
+       (if ((== ch -1)
+            (set (c/token-kind state) c/tk-eof))
+           ((== ch ch/lp)
+            (set (c/token-kind state) c/tk-open-paren))
+           ((== ch ch/rp)
+            (set (c/token-kind state) c/tk-close-paren))
+           ((== ch ch/dq)
+            (set (c/token-kind state) c/tk-string)
+            <collect string token>)
+           (else
+            (if ((== ws c/ws-inline)
+                 (set (c/token-kind state) c/tk-word))
+                (else
+                 (set (c/token-kind state) c/tk-header)))
+            (if ((== ch ch/<)
+                 <collect angle symbol token>)
+                (else
+                 <collect symbol token>))))
+       (set (u8 tok) 0))))
+@
+
+Collecting charcaters for strings and angle symbols is pretty
+similar. We just need to scan until reaching the terminating
+character while also handling backslash escaping. Note that a
+string token does not contain the [code "] characters that delimit
+it, while a angle symbol does contain its [code <] and [code
+>] characters.
+
+@= <collect string token>
+(set q 0)
+(while 1
+  (set ch (c/get-char))
+  (if ((== ch -1)
+       (c/error "EOF in string literal")))
+  (if ((== ch ch/bs)
+       (set q 1)
+       (goto string-again))
+      ((and (== ch ch/dq) (not q))
+       (goto string-done))
+      ((and q (== ch ch/n))
+       (set ch ch/nl)))
+  (set (u8 tok) ch)
+  (set tok (+ tok 1))
+  (label string-again))
+(label string-done)
+@
+
+@= <collect angle symbol token>
+(set q 0)
+(set (u8 tok) ch)
+(set tok (+ tok 1))
+(set ch (c/get-char))
+(if ((>= ch ch/@)
+     (set (u8 tok) ch)
+     (set tok (+ tok 1))
+     (while 1
+       (set ch (c/get-char))
+       (if ((== ch -1)
+            (c/error "EOF in angel symbol literal")))
+       (if ((== ch ch/bs)
+            (set q 1)
+            (goto angle-again))
+           ((and (== ch ch/>) (not q))
+            (goto angle-done)))
+       (set (u8 tok) ch)
+       (set tok (+ tok 1))
+       (label angle-again))
+     (label angle-done)
+     (set (u8 tok) ch)
+     (set tok (+ tok 1)))
+  (else
+   (c/unget-char)))
+@
+
+A regular symbol has no delimiters; it stops when we reach a character
+that starts a different kind of token, or whitespace.
+
+@= <collect symbol token>
+(set (u8 tok) ch)
+(set tok (+ tok 1))
+(while 1
+  (set ch (c/get-char))
+  (if ((== ch -1)
+       (goto symbol-done))
+      ((or (== ch ch/spc) (== ch ch/nl)
+           (== ch ch/dq) (== ch ch/lp) (== ch ch/rp))
+       (c/unget-char)
+       (goto symbol-done)))
+  (set (u8 tok) ch)
+  (set tok (+ tok 1)))
+(label symbol-done)
+
+@* Reading S-Expressions
+
+Finding the tokens that make up s-expressions was pretty long
+winded and full of tricky cases. In contrast to that, processing
+the grammar of s-expressions is very straightforward and elegant.
+
+But we need a function first that distinguishes numbers and symbols.
+
+@=
+(fun (c/parse-number t)
+  (var sign 1)
+  (if ((== (u8 t) ch/-)
+       (set sign -1)
+       (set t (+ t 1))))
+  (var n 0)
+  (var tt t)
+  (while (and (>= (u8 t) ch/d0) (<= (u8 t) ch/d9))
+    (set n (+ (* 10 n) (- (u8 t) ch/d0)))
+    (set t (+ t 1)))
+  (if ((and (!= t tt) (== (u8 t) 0))
+       (c/make-int (* sign n)))
+      (else
+       0)))
+@
+
+Now constructing expression objects is easy, as promised. If we
+see a string token, we make a string object, if we see a word,
+we make a number or symbol, and if we see a open parentheses,
+we recurse to collect all the elements of a list.
+
+It is an error if [code c/read-exp] sees the end of input. The
+main reading loop below in [code c/read-file] takes care of that.
+
+@=
+(fun (c/read-exp)
+  (var state (c/state))
+  (var t (c/token state))
+  (var tk (c/token-kind state))
+  (var res)
+  (if ((== tk c/tk-string)
+       (set res (c/make-string t))
+       (c/next-token))
+      ((== tk c/tk-word)
+       (set res (c/parse-number t))
+       (if ((not res)
+            (set res (c/make-symbol t))))
+       (c/next-token))
+      ((== tk c/tk-open-paren)
+       (set res 0)
+       (var tail (loc res))
+       (c/next-token)
+       (while (!= (c/token-kind state) c/tk-close-paren)
+         (var p (c/make-pair (c/read-exp) (u64 tail)))
+         (set (u64 tail) p)
+         (set tail (loc (c/x-rest p))))
+       (c/next-token))
+      (else
+       (c/error "%d: unexpected end of input in expression (%d)" (c/file-pos state) (c/token-kind state))))
+  res)
+@
+
+The compiler reads a whole file into a list of expression objects, 
+via the [code c/read-file] function.
+
+This function also handles fragments: It collects fragment definitions
+into the [code c/x-sym-def] field of symbol objects and then
+when the while file has been read, it replaces fragment references
+with their definitions.
+
+@=
+<define c/splice-fragments>
+
+(fun (c/read-file)
+  (var state (c/state))
+  (var res 0)
+  (var ptr (loc res))
+  (c/next-token)
+  (while (!= (c/token-kind state) c/tk-eof)
+    (if ((== (c/token-kind state) c/tk-header)
+         <set ptr appropriately for a new code section>)
+        (else
+         (var x (c/make-pair (c/read-exp) 0))
+         (set (u64 ptr) x)
+         (set ptr (loc (c/x-rest x))))))
+  (c/splice-fragments res)
+  res)
+@
+
+When a new code section starts, the following expression objects
+either get appended to the main result of reading the file (for
+a section that starts with just [code @=], or they get appended
+to the list in the [code c/x-sym-def] field (for sections that
+start with [code @= <symbol>]).
+
+@= <set ptr appropriately for a new code section>
+(if ((u8 (c/token state))
+     (set ptr (loc (c/x-sym-def (c/make-symbol (c/token state))))))
+  (else
+   (set ptr (loc res))))
+(while (u64 ptr)
+  (set ptr (loc (c/x-rest (u64 ptr)))))
+(c/next-token)
+@
+
+Replacing fragements with their definition is slightly tricky.
+The [code c/splice-fragments] function walks over every object,
+and calls itself recursively when encounting a list.
+
+Every symbol that is encountered during this walk and that has
+a fragment definition is replaced with that definition, and then
+the process is reset to process this list.
+
+@= <define c/splice-fragments>
+(fun (c/splice-fragments list)
+  (while list
+    (label again)
+    (var f (c/x-first list))
+    (if ((== (c/x-kind f) c/x-kind-pair)
+         (c/splice-fragments f))
+        ((== (c/x-kind f) c/x-kind-symbol)
+         (var d (c/x-sym-def f))
+         (set (c/x-sym-def f) 0)
+         (if (d
+              <do the splicing>
+              (goto again)))))
+    (set list (c/x-rest list))))
+@
+
+Replacing a symbol with a list has to splice that list into the
+list that contains the symbol. For example, if [code <x>] has
+the fragement definition [code ((set x 2) (foo x))], then code like
+@c
+(while 1 <x> (bar))
+@
+should expand into
+@c
+(while 1 (set x 2) (foo x) (bar))
+@
+
+@= <do the splicing>
+(set (c/x-first list) (c/x-first d))
+(var r (c/x-rest list))
+(set (c/x-rest list) (c/x-rest d))
+(var ptr (loc (c/x-rest list)))
+(while (u64 ptr)
+  (set ptr (loc (c/x-rest (u64 ptr)))))
+(set (u64 ptr) r)
+@
+
+@* Allocating registers (and slots)
+
+Unlike the Z1 compiler, this compiler tries to use all the registers
+of the machine. The x86-64 instruction set can encode 16 registers,
+which we call [code r0] to [code r15]. Three are used for special
+purposes: the stack pointer [code r4], the global context pointer
+[code r5], and the frame pointer [code r6]. And as explained
+below, we reserve [code r0] and [code r1] to be used [emph super
+temporarily] within instruction sequences. This leaves us with
+12 registers that can be allocated for temporary results and
+for local variables.
+
+That leaves 11 registers for variables and temporary results,
+which is not a whole lot. We could try to not have a frame pointer,
+but that complicates code generation for this single-pass compiler,
+and we are more interested in the principles and keeping it simple
+than in actual performance.
+
+If we run out of registers, we allocate [emph stack slots] instead.
+We can have as many stack slots as we want, but for simplicity
+we start with limiting us at 512.
+
+@= <global constants>
+(defconst c/max-regs 16)
+(defconst c/max-slots 512)
+
+@= <state for register and slot allocation>
+(s-regs u8 c/max-regs)
+(s-slots u8 c/max-slots)
+s-last-slot
+@
+
+@=
+(fun (c/init-registers-and-slots)
+  (var state (c/state))
+  (var i 0)
+  (while (< i c/max-regs)
+    (set (c/s-regs state i) 0)
+    (set i (+ i 1)))
+  (set (c/s-regs state 0) 1)
+  (set (c/s-regs state 1) 1)
+  (set (c/s-regs state 4) 1)
+  (set (c/s-regs state 5) 1)
+  (set (c/s-regs state 6) 1)
+  (set i 0)
+  (while (< i c/max-slots)
+    (set (c/s-slots state i) 0)
+    (set i (+ i 1)))
+  (set (c/s-last-slot state) -1))
+@
+
+Allocation then just scans the linear arrays and stops at the
+first free one. Running out of registers is allowed, but running
+out of slots is a fatal error.
+
+@=
+(fun (c/allocate-register)
+  (var state (c/state))
+  (var i 0)
+  (while (< i c/max-regs)
+    (if ((== (c/s-regs state i) 0)
+         (set (c/s-regs state i) 2)
+         (goto found)))
+    (set i (+ i 1)))
+  (set i -1)
+  (label found)
+  i)
+@
+
+Stack slots are also used for the arguments to the currently running
+function and the way things are set up in the function prologue
+makes it so that arguments are at a positive offset from the
+framepointer, and the locally allocated slots are at a negative
+offset.
+
+To allow the rest of the compiler to treat these two kinds of
+slots mostly the same, we actually return the negative offsets
+when allocating slots here. The first argument is at offset 0,
+and the first allocated slot is at offset -1.
+
+@=
+(fun (c/allocate-slot)
+  (var state (c/state))
+  (var i 0)
+  (while (< i c/max-slots)
+    (if ((== (c/s-slots state i) 0)
+         (set (c/s-slots state i) 1)
+         (goto found)))
+    (set i (+ i 1)))
+  (c/error "out of slots")
+  (label found)
+  (if ((> i (c/s-last-slot state))
+       (set (c/s-last-slot state) i)))
+  (- (+ i 1)))
+@
+
+Freeing registers and slots is simple, but we have to again take
+into account that the rest of the compiler uses negative numbers
+of local slots.
+
+@=
+(fun (c/free-register reg)
+  (var state (c/state))
+  (set (c/s-regs state reg) 0))
+
+(fun (c/free-slot slot)
+  (var state (c/state))
+  (if ((<= slot -1)
+       (set (c/s-slots state (- (- slot) 1)) 0))))
+@
+
+@* Values
+
+While walking the s-expression tree, we keep track of where certain
+values are stored. This is done with a [code value] structure.
+Calling the principle expression compilation function [code compile-expr]
+will fill out one of these structures and the caller can examine it
+to know what to do next.
+
+A value has a number of properties, that can be combined in a
+number of ways.
+
+@d
+[item -] [bold immediate] or not. A immediate value is a constant
+from a literal. It is not stored anywhere at run-time, but the
+value is known at compile time and stored directly in the [code
+value] structure.
+
+[item -] [bold register] or [bold slot]. The value is not known
+at compile time, and is stored at run-time in either a register
+or stack slot. Which register or stack slot is stored in the
+[code value] structure.
+
+[item -] [bold temporary] or [bold permanent]. The place where
+the value is stored at run-time (register, slot, or indirect)
+is either used only temporarily for evaluating an expression,
+or is used permanently to to hold a local variable or similar.
+In some cases, the place is even [bold super temporary]. This
+means that the place isn't even reserved for the value and it
+needs to be consumed in the next machine instructions before
+it is overwritten. (This only happens with function calls, where
+the result is always super temporarily in register 0.)
+@
+
+Not all combinations make sense, so we get his list:
+
+@=
+(enum
+  vk-immediate
+  vk-super-temporary-register
+  vk-temporary-register
+  vk-temporary-slot
+  vk-permanent-register
+  vk-permanent-slot)
+@
+
+Now we can define the actual structure:
+
+@=
+(struct c/value
+  v-kind
+  v-val)
+@
+
+Values are used in one of three contexts: as the accumulator in
+an operation, as the argument in an operation, and as the destination
+in an assignment.
+
+Our target assembler language has operations with two registers.
+For example, [code (add l0 l1)] adds the value in register [code
+l1] to register [code l0]. Here [code l0] is the accumulator
+and [code l1] is the argument. If we are given two [code value]
+structures, we have to figure out what to do for each kind and
+for each context.
+
+For the accumulator, we want a [code vk-temporary-register].
+We can then just use it directly in the assembler output. For
+the argument, all of [code vk-super-temporary-register],
+[code vk-temporary-register] and [code vk-permanent-register]
+are okay since we wont be overwriting it.
+
+(For an assignment destination, we want one of the permanent kinds,
+and any other kind is an error.)
+
+So we need to emit code to convert a given value to a register
+kind. However, there might not be any free registers available.
+We could steal a register from another value and temporarily
+[emph spill] that other value to a stack slot, but that's complicated
+to do across jumps, so we simply don't.
+
+Thus, allocating a register can fail. To get around this, we keep
+a very small number of registers always available and only allow
+them to be used super temporarily to shuffle values into and
+out of slots. This gives us the following functions:
+
+@d
+[code (c/convert-value-to-accum [emph value] [emph super-tmp-reg])]
+- Convert [emph value] to a temporary register and return that
+register. If no register was available, convert it to a temporary
+slot and load it into the given super temporary register. You
+can then keep using [emph value] for many instructions and call
+any kind of compiler function in between.
+
+[code (c/value-accum-sync [emph value] [emph reg])] - After using
+the register returned by [code c/convert-value-to-accum] as an
+accumulator, immediatly call this function with that returned
+register. This will store the super temporary register back into
+the slot, if one was used.
+
+[code (c/value-to-reg [emph value] [emph super-tmp-reg])] - Put
+[emph value] into a register and return that. If it is already
+in a register, this will be returned. If not, it will be loaded
+into the super temporary register. The [emph value] structure
+will not be modified.
+
+[code (c/value-drop [emph value])] - Forget about [emph value],
+returning its register or slot to the pool of available registers
+and slots, etc.
+@
+
+@=
+(fun (c/emit-store-slot slot reg)
+  (log/msg "(set (u64 r6 %d) r%d) ; slot %d\n" (* slot 8) reg slot))
+
+(fun (c/emit-load-slot reg slot)
+  (log/msg "(set r%d (u64 r6 %d)) ; slot %d\n" reg (* slot 8) slot))
+
+(fun (c/convert-value-to-accum value super-tmp-reg)
+  (var k (c/v-kind value))
+  (var r)
+  (var s)
+  (if ((== k c/vk-immediate)       
+       (set r (c/allocate-register))
+       (if ((>= r 0)
+            (log/msg "(set r%d %d)\n" r (c/v-val value))
+            (set (c/v-kind value) c/vk-temporary-register)
+            (set (c/v-val value) r)
+            r)
+           (else
+            (set s (c/allocate-slot))
+            (log/msg "(set r%d %d)\n" super-tmp-reg (c/v-val value))
+            (c/emit-store-slot s super-tmp-reg)
+            (set (c/v-kind value) c/vk-temporary-slot)
+            (set (c/v-val value) s)
+            super-tmp-reg)))
+      ((== k c/vk-super-temporary-register)
+       (set r (c/allocate-register))
+       (if ((>= r 0)
+            (log/msg "(set r%d r%d)\n" r (c/v-val value))
+            (set (c/v-kind value) c/vk-temporary-register)
+            (set (c/v-val value) r)
+            r)
+           (else
+            (set s (c/allocate-slot))
+            (if ((!= super-tmp-reg (c/v-val value))
+                 (log/msg "(set r%d r%d)\n" super-tmp-reg (c/v-val value))))
+            (c/emit-store-slot s super-tmp-reg)
+            (set (c/v-kind value) c/vk-temporary-slot)
+            (set (c/v-val value) s)
+            super-tmp-reg)))
+      ((== k c/vk-temporary-register)
+       (c/v-val value))
+      ((== k c/vk-temporary-slot)
+       (c/emit-load-slot super-tmp-reg (c/v-val value))
+       super-tmp-reg)
+      ((== k c/vk-permanent-register)
+       (set r (c/allocate-register))
+       (if ((>= r 0)
+            (log/msg "(set r%d r%d)\n" r (c/v-val value))
+            (set (c/v-kind value) c/vk-temporary-register)
+            (set (c/v-val value) r)
+            r)
+           (else
+            (set s (c/allocate-slot))
+            (log/msg "(set r%d r%d)\n" super-tmp-reg (c/v-val value))
+            (set (c/v-kind value) c/vk-temporary-slot)
+            (set (c/v-val value) s)
+            super-tmp-reg)))
+      ((== k c/vk-permanent-slot)
+       (set r (c/allocate-register))
+       (if ((>= r 0)
+            (c/emit-load-slot r (c/v-val value))
+            (set (c/v-kind value) c/vk-temporary-register)
+            (set (c/v-val value) r)
+            r)
+           (else
+            (set s (c/allocate-slot))
+            (c/emit-load-slot super-tmp-reg (c/v-val value))
+            (set (c/v-kind value) c/vk-temporary-slot)
+            (set (c/v-val value) s)
+            super-tmp-reg)))
+      (else
+       (c/error "not yet to accum %d" k))))
+
+(fun (c/value-accum-sync value reg)
+  (var k (c/v-kind value))
+  (if ((== k c/vk-temporary-slot)
+       (c/emit-store-slot (c/v-val value) reg))
+      ((== k c/vk-temporary-register))
+      (else
+       (c/error "internal error: not accum"))))
+
+(fun (c/value-to-reg value super-tmp-reg)
+  (var k (c/v-kind value))
+  (if ((== k c/vk-immediate)
+       (log/msg "(set r%d %d)\n" super-tmp-reg (c/v-val value))
+       super-tmp-reg)
+      ((== k c/vk-super-temporary-register)
+       (if ((!= super-tmp-reg (c/v-val value))
+            (log/msg "(set r%d r%d)\n" super-tmp-reg (c/v-val value))
+            super-tmp-reg)))
+      ((or (== k c/vk-temporary-register)
+           (== k c/vk-permanent-register))
+       (c/v-val value))
+      ((or (== k c/vk-temporary-slot)
+           (== k c/vk-permanent-slot))
+       (c/emit-load-slot super-tmp-reg (c/v-val value))
+       super-tmp-reg)
+      (else
+       (c/error "not yet to reg %d" k))))
+
+(fun (c/value-drop value)
+  (var k (c/v-kind value))
+  (if ((== k c/vk-immediate))
+      ((== k c/vk-temporary-register)
+       (c/free-register (c/v-val value)))
+      ((== k c/vk-temporary-slot)
+       (c/free-slot (c/v-val value)))
+      ((== k c/vk-super-temporary-register))
+      ((== k c/vk-permanent-register))
+      ((== k c/vk-permanent-slot))
+      (else
+       (c/error "not yet drop %d" k))))
+
+(fun (c/value-dump value)
+  (log/msg "K %d V %d\n" (c/v-kind value) (c/v-val value)))
+@
+
+@* Primitives
+
+@=
+(enum
+  st-undef
+  st-local-reg
+  st-local-slot
+  st-prim-begin
+  st-prim-fun
+  st-prim-accum)
+
+(struct c/prim-accum-struct
+  pa-accum-const
+  pa-accum-immediate
+  pa-accum-reg)
+
+(fun (c/define sym type defn)
+  (set (c/x-sym-type sym) type)
+  (set (c/x-sym-def sym) defn))
+
+(fun (c/define-symbol name type defn)
+  (c/define (c/make-symbol name) type defn))
+@
+
+@= <register primitives>
+(c/define-symbol ":begin" c/st-prim-begin 0)
+
+@* Compiling expressions
+
+@=
+(fun (c/comp-accum-expr prim value x comp-expr)
+  (mem arg c/value)
+  (var r-accum)
+  (var r-arg)
+  (var imm)
+  (var imm-set 0)
+  (var value-set 0)
+  (var arg-set 0)
+  (if ((not x)
+       (c/error "syntax")))
+  (while x
+    (var p (if (value-set arg) (else value)))
+    (comp-expr p (c/x-first x))
+    (if ((== (c/v-kind p) c/vk-immediate)
+         (if (imm-set
+              (set imm ((c/pa-accum-const prim) imm (c/v-val p))))
+             (else
+              (set imm (c/v-val p))
+              (set imm-set 1))))
+        (value-set
+         (set arg-set 1))
+        (else
+         (set value-set 1)))
+    (if (arg-set
+         (set r-accum (c/convert-value-to-accum value 1))
+         (set r-arg (c/value-to-reg arg 0))
+         ((c/pa-accum-reg prim) r-accum r-arg)
+         (c/value-accum-sync value r-accum)
+         (c/value-drop arg)
+         (set arg-set 0)))
+    (set x (c/x-rest x)))
+  (if (imm-set
+       (if (value-set
+            (set r-accum (c/convert-value-to-accum value 1))
+            ((c/pa-accum-immediate prim) r-accum imm)
+            (c/value-accum-sync value r-accum))
+           (else
+            (set (c/v-kind value) c/vk-immediate)
+            (set (c/v-val value) imm))))))
+
+(struct c/register-save-state
+  (rss-slots s32 c/max-regs))
+
+(fun (c/save-regs reg-state)
+  (var state (c/state))
+  (var i 0)
+  (while (< i c/max-regs)
+    (if ((== (c/s-regs state i) 2)
+         (var s (c/allocate-slot))
+         (set (c/rss-slots reg-state i) s)
+         (log/msg "(set (u64 r6 %d) r%d)\n" (* s 8) i)))
+    (set i (+ i 1))))
+
+(fun (c/load-regs reg-state)
+  (var state (c/state))
+  (var i 0)
+  (while (< i c/max-regs)
+    (if ((== (c/s-regs state i) 2)
+         (var s (c/rss-slots reg-state i))
+         (log/msg "(set r%d (u64 r6 %d))\n" i (* s 8))
+         (c/free-slot s)))
+    (set i (+ i 1))))
+
+(fun (c/comp-args args comp-expr)
+  (if ((not args)
+       0)
+      (else
+       (var n (c/comp-args (c/x-rest args) comp-expr))
+       (mem value c/value)
+       (comp-expr value (c/x-first args))
+       (var r (c/value-to-reg value 0))
+       (log/msg "(push r%d)\n" r)
+       (c/value-drop value)
+       (+ n 1))))
+
+(fun (c/comp-fun-call value exp comp-expr)
+  (mem fun-value c/value)
+  (mem save-state c/register-save-state)
+  (comp-expr fun-value (c/x-first exp))
+  (var n-args (c/comp-args (c/x-rest exp) comp-expr))
+  (var r (c/value-to-reg fun-value 0))
+  (c/save-regs save-state)
+  (log/msg "(call r%d)\n")
+  (c/load-regs save-state)
+  (c/value-drop fun-value)
+  (log/msg "(add sp %d)\n" (* 8 n-args))
+  (set (c/v-kind value) c/vk-super-temporary-register)
+  (set (c/v-val value) 0))
+
+(fun (c/comp-expr value exp)
+  (var k (c/x-kind exp))
+  (var x)
+  (if ((== k c/x-kind-int)
+       (set (c/v-kind value) c/vk-immediate)
+       (set (c/v-val value) (c/x-int-val exp)))
+      ((== k c/x-kind-symbol)
+       (if ((== (c/x-sym-type exp) c/st-local-reg)
+            (set (c/v-kind value) c/vk-permanent-register)
+            (set (c/v-val value) (c/x-sym-def exp)))
+           ((== (c/x-sym-type exp) c/st-local-slot)
+            (set (c/v-kind value) c/vk-permanent-slot)
+            (set (c/v-val value) (c/x-sym-def exp)))
+           (else
+            (c/error "undefined"))))
+      ((== k c/x-kind-pair)
+       (var op (c/x-first exp))
+       (if ((== (c/x-kind op) c/x-kind-symbol)
+            (if ((== (c/x-sym-type op) c/st-prim-begin)
+                 <compile "begin" expression>)
+                ((== (c/x-sym-type op) c/st-prim-accum)
+                 (c/comp-accum-expr (c/x-sym-def op) value (c/x-rest exp) c/comp-expr))
+                (else
+                 (c/comp-fun-call value exp c/comp-expr))))
+           (else
+            (c/comp-fun-call value exp c/comp-expr))))
+      (else
+       (c/error "syntax"))))
+@
+
+@= <compile "begin" expression>
+(set x (c/x-rest exp))
+(while (c/x-rest x)
+  (c/comp-expr value (c/x-first x))
+  (c/value-drop value)
+  (set x (c/x-rest x)))
+(c/comp-expr value (c/x-first x))
+@
+
+@* Accumulator primitives
+
+@=
+(fun (c/plus-accum-const a b)
+  (+ a b))
+
+(fun (c/plus-accum-imm dst imm)
+  (log/msg "(add r%d %d)\n" dst imm))
+
+(fun (c/plus-accum-reg dst src)
+  (log/msg "(add r%d r%d)\n" dst src))
+
+(data c/plus-accum
+  (4
+   c/plus-accum-const
+   c/plus-accum-imm
+   c/plus-accum-reg))
+
+(fun (c/minus-accum-const a b)
+  (- a b))
+
+(fun (c/minus-accum-imm dst imm)
+  (log/msg "(sub r%d %d)\n" dst imm))
+
+(fun (c/minus-accum-reg dst src)
+  (log/msg "(sub r%d r%d)\n" dst src))
+
+(data c/minus-accum
+  (4
+   c/minus-accum-const
+   c/minus-accum-imm
+   c/minus-accum-reg))
+
+@= <register primitives>
+(c/define-symbol ":plus" c/st-prim-accum c/plus-accum)
+(c/define-symbol ":minus" c/st-prim-accum c/minus-accum)
+
+@* Compiling functions
+
+@=
+(fun (c/comp-fun exp)
+  (c/init-registers-and-slots)
+  (var state (c/state))
+  (var head (c/x-first (c/x-rest exp)))
+  (var body (c/x-first (c/x-rest (c/x-rest exp))))
+  (var args (c/x-rest head))
+  (var i 1)
+  (while args
+    (c/define (c/x-first args) c/st-local-slot i)
+    (set i (+ i 1))
+    (set args (c/x-rest args)))
+  (log/msg "%s:\n" (c/x-sym-chars (c/x-first head)))
+  (log/msg "(push r6)\n")
+  (log/msg "(set r6 sp)\n")
+  (log/msg "(sub sp N-SLOTS)\n")
+  (mem value c/value)
+  (c/comp-expr value body)
+  (var r (c/value-to-reg value 0))
+  (if ((!= r 0)
+       (log/msg "(set r0 r%d)\n" r)))
+  (log/msg "(set sp r6)\n")
+  (log/msg "(pop r6)\n")
+  (log/msg "(ret) ; N-SLOTS = (* 8 %d)\n" (+ (c/s-last-slot state) 1)))
+
+@= <register primitives>
+(c/define-symbol ":fun" c/st-prim-fun 0)
+
+@* Top-level
+
+@=
+(fun (c/comp-top exp)
+  (var k (c/x-kind exp))
+  (var x)
+  (if ((== k c/x-kind-pair)
+       (var op (c/x-first exp))
+       (if ((== (c/x-kind op) c/x-kind-symbol)
+            (if ((== (c/x-sym-type op) c/st-prim-begin)
+                 (set exp (c/x-rest exp))
+                 (while exp
+                   (c/comp-top (c/x-first exp))
+                   (set exp (c/x-rest exp))))
+                ((== (c/x-sym-type op) c/st-prim-fun)
+                 (c/comp-fun exp))
+                (else
+                 (c/error "invalid top-level op"))))
+           (else
+            (c/error "invalid top-level op"))))
+      (else
+       (c/error "invalid top-level syntax"))))
+
+@* Main
+
+@=
+(fun (c/init-state)
+  (var state (sys/page-get))
+  (set (c/s-prev-state state) (c/state))
+  (set (ctxt/comp context) state)
+  <init memory allocation state>
+  <init expression objects state>
+  <init state for current token>)
+
+(fun (c/fini-state)
+  (var state (c/state))
+  <finalize state for current token>
+  <finalize memory allocation state>
+  (set (ctxt/comp context) (c/s-prev-state state)))
+
+@=
+(fun (c/register-primitives)
+  <register primitives>)
+
+(fun (c/compile-file name)
+  (var state (c/state))
+  (mem value c/value)
+  (if ((not (c/fs-open name))
+       (log/msg "Not found: %s\n" name))
+      (else
+       (var exps (c/read-file))
+       (c/register-primitives) ;; XXX - do this earlier
+       (while exps
+         (c/comp-top (c/x-first exps))
+         (set exps (c/x-rest exps))))))
+
+(fun (c/main)
+  (c/init-state)
+  (c/call-with-longret c/compile-file "TEST")
+  ;; (c/dump-symtab-stats)
+  (c/fini-state))
+@

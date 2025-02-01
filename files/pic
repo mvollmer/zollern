@@ -4,6 +4,9 @@ Diagrams deserve a proper programming language, and the only one
 we have right now is Z1. So we write our pictures in Z1 and collect
 them all here.
 
+(Pictures also deserve a proper interactive editor, but that is
+too hard for Zollern.)
+
 Not embedding the code for diagrams in the book where they belong
 has the advantage that we can explain those picture programs
 properly, with all the tools we have for documenting programs.
@@ -15,9 +18,12 @@ We could even use pictures to explain picture programs!
 (fun (pic/begin-display)
   (tx/par)
   (tx/skip (* 2 (tx/session-par-skip)))
+  (tx/begin-hbox)
+  (tx/skip 30) ;; same as @d
   (tx/begin-cbox))
 
 (fun (pic/end)
+  (tx/end)
   (tx/end)
   (tx/skip (tx/session-par-skip)))
 
@@ -35,9 +41,9 @@ We could even use pictures to explain picture programs!
   
 (fun (pic/rect x y w h col)
   (pic/h-line x y w col)
-  (pic/h-line x (+ y h) w col)
+  (pic/h-line x (+ y h -1) w col)
   (pic/v-line x y h col)
-  (pic/v-line (+ x w) y h col))
+  (pic/v-line (+ x w -1) y h col))
 
 (fun (pic/text-width str)
   (var f (tx/session-font))
@@ -72,16 +78,41 @@ We could even use pictures to explain picture programs!
   (tx/cop tx/cop-move (- x (/ w 2)) (+ y fh))
   (tx/text str))
 
+(fun (pic/t-text x y str col)  
+  (var w (pic/text-width str))
+  (var f (tx/session-font))
+  (var fh (gfx/font-ascent f))
+  (var fd (- (gfx/font-descent f)))
+  (tx/cop tx/cop-move (- x (/ w 2)) (- y fd))
+  (tx/text str))
+
 (defconst pic/black (gfx/const-color 0 0 0))
 
+(fun (pic/text-box x y str)
+  (var b 5)
+  (var w (pic/text-width str))
+  (var f (tx/session-font))
+  (var fh (gfx/font-ascent f))
+  (var fd (- (gfx/font-descent f)))
+  (pic/rect x (- y fh b) (+ w (* 4 b)) (+ fh fd b b) pic/black)
+  (tx/cop tx/cop-move (+ x b b) y)
+  (tx/text str))
+
+@
+
+A TEST picture
+
+[pic/TEST]
 
 @=
 (fun (pic/TEST)
   (pic/begin-display)
-  (pic/rect 0 0 10 100 (gfx/color 0 0 255))
+  (pic/rect 20 20 10 10 (gfx/color 0 0 255))
   (pic/end))
 
 @* Pictures for the "tx" book
+
+[pic/tx-box-dims]
 
 @=
 (fun (pic/big-glyph x y sz font c)
@@ -153,3 +184,165 @@ We could even use pictures to explain picture programs!
 
   (pic/end))
 @
+
+@* Pictures for the "c" book
+
+[pic/c-list-pairs]
+
+@=
+(fun (pic/c-pair x y)
+  (pic/rect x y 50 30 pic/black)
+  (pic/t-text (+ x 25) y "first" pic/black)
+  (pic/rect (+ x 49) y 50 30 pic/black)
+  (pic/t-text (+ x 74) y "rest" pic/black))
+
+(fun (pic/c-arrow-head x y)
+  (var i 0)
+  (while (< i 4)
+    (pic/v-line (- x i) (- y 1 i) (+ 3 i i) pic/black)
+    (set i (+ i 1))))
+  
+(fun (pic/c-first-pointer x)
+  (pic/fill-rect (+ x 23) 12 5 5 pic/black)
+  (pic/v-line (+ x 25) 12 (- 72 12) pic/black)
+  (pic/h-line (+ x 25) 71 15 pic/black)
+  (pic/c-arrow-head (+ x 38) 71))
+  
+(fun (pic/c-rest-pointer x)
+  (pic/fill-rect (+ x 23 49) 12 5 5 pic/black)
+  (pic/h-line (+ x 27 49) 14 (+ 25 50) pic/black)
+  (pic/c-arrow-head (+ x 27 49 25 47) 14))
+  
+(fun (pic/c-list-pairs)
+  (var x 0)
+  (var p-gap 50)
+
+  (pic/begin-display)
+  
+  ;; three pairs
+  (pic/c-pair x 0)
+  (pic/c-pair (+ x 100 p-gap) 0)
+  (pic/c-pair (+ x 100 p-gap 100 p-gap) 0)
+
+  ;; three list elements
+  (pic/text-box (+ x 40) 75 "symbol +")
+  (pic/text-box (+ x 40 100 p-gap) 75 "symbol x")
+  (pic/text-box (+ x 40 100 p-gap 100 p-gap) 75 "number 1")
+
+  ;; pointers from pairs to elements
+  (pic/c-first-pointer x)
+  (pic/c-first-pointer (+ x 100 p-gap))
+  (pic/c-first-pointer (+ x 100 p-gap 100 p-gap))
+  
+  ;; rest pointers
+  (pic/c-rest-pointer x)
+  (pic/c-rest-pointer (+ x 100 p-gap))
+  
+  ;; zero
+  (pic/b-text (+ x 100 p-gap 100 p-gap 49 25) 7 "0" pic/black)
+
+  (pic/end))
+@
+
+[pic/c-inc-fun]
+
+@=
+(fun (pic/c-gx x off)
+  (+ (* x 150) off))
+
+(fun (pic/c-gy y off)
+  (+ (* y 60) off))
+
+(fun (pic/c-v-pair x y)
+  (pic/rect (pic/c-gx x 0) (pic/c-gy y 0) 70 20 pic/black)
+  (pic/rect (pic/c-gx x 0) (pic/c-gy y 19) 70 20 pic/black))
+
+(fun (pic/c-text x y str)
+  (pic/text-box (pic/c-gx x 0) (pic/c-gy y 15) str))
+
+(fun (pic/c-v-first-arrow x y l)
+  (pic/fill-rect (pic/c-gx x 33) (pic/c-gy y 8) 5 5 pic/black)
+  (pic/h-line (pic/c-gx x 33) (pic/c-gy y 10) (pic/c-gx l -33) pic/black)
+  (pic/c-arrow-head (pic/c-gx (+ x l) -1) (pic/c-gy y 10)))
+
+(fun (pic/c-v-rest-arrow x y l)
+  (pic/fill-rect (pic/c-gx x 33) (pic/c-gy y 27) 5 5 pic/black)
+  (pic/v-line (pic/c-gx x 35) (pic/c-gy y 27) (pic/c-gy l -27) pic/black)
+  (var e (pic/c-gy (+ y l) -2))
+  (var xx (pic/c-gx x 35))
+  (var i 0)
+  (while (< i 4)
+    (pic/h-line (- xx 1 i) (- e i) (+ 3 i i) pic/black)
+    (set i (+ i 1))))
+
+(fun (pic/c-v-rest-zero x y)
+  (pic/b-text (pic/c-gx x 35) (pic/c-gy y 21) "0" pic/black))
+
+(fun (pic/c-inc-fun)
+  (pic/begin-display)
+
+  (pic/c-v-pair 0 0)
+  (pic/c-v-first-arrow 0 0 1)
+  (pic/c-text 1 0 "fun")
+  (pic/c-v-rest-arrow 0 0 1)
+
+  (pic/c-v-pair 0 1) ;; (inc x)
+  (pic/c-v-first-arrow 0 1 1)
+  (pic/c-v-rest-arrow 0 1 2)
+  (pic/c-v-pair 0 3) ;; (+ x 1)
+  (pic/c-v-first-arrow 0 3 1)
+  (pic/c-v-rest-zero 0 3)
+
+  (pic/c-v-pair 1 1)
+  (pic/c-v-first-arrow 1 1 1)
+  (pic/c-text 2 1 "inc")
+  (pic/c-v-rest-arrow 1 1 1)
+
+  (pic/c-v-pair 1 2)
+  (pic/c-v-first-arrow 1 2 2)
+  (pic/c-text 3 2 "x  (argument 0)")
+  (pic/c-v-rest-zero 1 2)
+
+  (pic/c-v-pair 1 3)
+  (pic/c-v-first-arrow 1 3 1)
+  (pic/c-text 2 3 "+")
+  (pic/c-v-rest-arrow 1 3 1)
+
+  (pic/c-v-pair 1 4) ;; x
+  (pic/c-v-rest-arrow 1 4 1)
+
+  ;; funny arrow that is the whole point of this picture
+  (pic/fill-rect (pic/c-gx 1 33) (pic/c-gy 4 8) 5 5 pic/black)
+  (pic/h-line (pic/c-gx 1 33) (pic/c-gy 4 10) (pic/c-gx 2 -75) pic/black)
+  (pic/v-line (pic/c-gx 3 (- 33 76)) (pic/c-gy 2 10) (pic/c-gy 2) pic/black)
+
+  (pic/c-v-pair 1 5)
+  (pic/c-v-first-arrow 1 5 1)
+  (pic/c-text 2 5 "1")
+  (pic/c-v-rest-zero 1 5)
+
+  (pic/end))  
+@
+
+[pic/c-symtab-histogram]
+
+@=
+
+(fun (pic/histo n)
+  (var i 0)
+  (var ptr (loc n))
+  (while (< i n)
+    (set ptr (+ ptr u64))
+    (var d (u64 ptr))
+    (pic/fill-rect (* i 5) (- 100 (* d 10)) 4 (* d 10) pic/black)
+    (set i (+ i 1))))
+  
+(fun (pic/c-symtab-histogram)
+  (pic/begin-display)
+  (pic/histo 107
+             4 4 3 5 7 3 3 5 4 8 2 8 10 5 8 9 7 7 6 8 7 3 3 10 6 7 7 4 6 8
+             3 4 5 5 3 2 8 9 5 7 5 4 3 11 2 3 3 9 6 7 5 3 1 3 2 3 1 5 4 1 5
+             5 3 4 7 3 8 5 6 4 6 5 5 3 4 8 4 4 2 8 5 7 8 1 7 7 4 9 9 5 5 6
+             9 6 9 9 9 5 6 6 4 4 7 9 6 10 5)
+  (pic/end))
+

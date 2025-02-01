@@ -1,0 +1,53 @@
+@** Z2 Assembler
+
+The level two assembler is a API to create [emph books] of machine
+code and other constant data. We will not be writing long assembler
+programs (like we did for the Z1 compiler), but the Z2 compiler
+will use this API in its backend to emit the actual machine instructions.
+
+@* Books
+
+@=
+(struct asm/book
+  bk-next-page
+  bk-name
+  bk-refcount)
+
+(fun (asm/book-new name)
+  )
+
+(fun (asm/book-ref book)
+  )
+
+(fun (asm/book-unref book)
+  )
+
+(fun (asm/alloc book size)
+  )
+
+(fun (asm/begin state book)
+  )
+
+(fun (asm/end state)
+  )
+
+(fun (asm/emit-8 state val)
+  )
+
+(fun (asm/emit-16 state val)
+  )
+
+(fun (asm/emit-32 state val)
+  )
+
+(fun (asm/emit-64 state val)
+  )
+
+(fun (asm/emit-add state a b)
+  )
+
+(fun (asm/emit-add-i state a val)
+  )
+
+...
+
