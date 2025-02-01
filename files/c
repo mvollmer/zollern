@@ -1,0 +1,632 @@
+@** Z2 Compiler
+
+This is Zollerns second compiler. It is a long Z1 program and
+we allow ourselves the luxurious "c" prefix.
+
+At the time Z2 was started, Zollern already had a lot of code
+written in Z1. There was a nice dynamic memory allocator and
+an API for reading files. But the plan was to move all this to
+Z2, eventually. We only want to eventually have one nice dynamic
+memory allocator, and it should be written in Z2, for example.
+Thus, Z2 itself can not use it and we are in the same situation
+as we were with Z1: We need to implement basic things from scratch,
+just for the compiler.
+
+However, maybe we make things pluggable, so that once the filesystem
+API has been compiled by the Z2 compiler, it can start using
+it to read files.
+
+Current plan to get initial machine code:
+
+@d
+[item - ]Pool allocation of s-expressions and other data structures, stack allocation of others.
+
+[item - ]One pass direct code generation via s-exp walking, no intermediate representation.
+
+[item - ]Constant expression evaluation while walking.
+
+[item - ]Special code generation for "if" context, to get something reasonable.
+
+[item - ]Register allocation for temporary results of expressions.
+
+[item - ]Maybe explicitly requested optimizations, like local vars in registers, inlining.
+@
+
+@* Random utilities
+
+Since we can't use any of the things we have written for Z1 in
+the last decade, let's write "strlen" again. And a couple others.
+
+@=
+(fun (c/strlen str)
+  (var end str)
+  (while (u8 end)
+    (set end (+ end 1)))
+  (- end str))
+
+(fun (c/strcpy dst src)
+  (while (u8 src)
+    (set (u8 dst) (u8 src))
+    (set src (+ src 1))
+    (set dst (+ dst 1)))
+  (set (u8 dst) 0))
+
+(fun (c/streq a b)
+  (while (and (u8 a) (== (u8 a) (u8 b)))
+    (set a (+ a 1))
+    (set b (+ b 1)))
+  (== (u8 a) (u8 b)))
+@
+
+@* Compiler state
+
+@=
+(struct c/state-struct
+  s-prev-state
+  <state for memory allocation>
+  <state for expression objects>
+  <state for reading files>
+  <state for the current token>)
+
+(fun (c/state)
+  (ctxt/comp context))
+@
+
+@* Allocating memory
+
+How do we allocate memory when we can't use the nice dynamic allocator
+in the [book mem mem] book? We could reimplement it here, just
+like we reimplemented [code str/len], [code str/cpy], etc. But
+a proper dynamic allocator is not really trivial enough for that.
+
+Nor do we really want it. The alloctor in the [book mem mem] book
+is fully manual: we need to explicitly free every bit of memory
+we allocate, at the exact right moment. This is going to be cumbersome
+for the expression objects that we will use to represent s-expressions
+in the compiler, and doubly so for the macro expanders. We really
+want some automatic memory management when writing a compiler
+that does macro expansion of s-expressions.
+
+A simple tracing garbage collector is fun to implement, and we
+will do that eventually. The Z2 compiler might even help by exposing
+the stack layout, for example. But we will not complicate this
+compiler with it just yet. Instead we will use a simple [emph
+pool allocator], just like Z1 does.
+
+The pool allocator can only allocate new memory, there is no way
+to return unused memory to it. Instead, the whole pool of allocated
+memory is freed in one go when the compilation is done.
+
+This sounds very wasteful, and it is. But the Z2 compiler doesn't
+have any sophisticated data structures at run-time. It doesn't
+convert the source code into SSA and then transforms that a couple
+of times during optimization, for example. It just reads the
+source code and then walks the s-expression structure, expanding
+some macros along the way into new s-expressions.
+
+And because of fragments, we will have to read the whole file
+anyway before compiling the first expression.
+
+XXX - some stats from real compilations, once we have them.
+
+The pool is maintained by keeping a list of pages that we have
+gotten from [code sys/page-get], and pointers to the next and
+last free bytes.
+
+@= <state for memory allocation>
+s-pages
+s-next
+s-end
+s-total-alloc
+@
+
+@= <init memory allocation state>
+(set (c/s-pages state) 0)
+(set (c/s-next state) (+ state c/state-struct))
+(set (c/s-end state) (+ state sys/page-size))
+(set (c/s-total-alloc state) 0)
+@
+
+When compilation is done, we return all pages with [code sys/page-put].
+
+@= <finalize memory allocation state>
+(log/msg "allocated %d bytes\n" (c/s-total-alloc state))
+(var p (c/s-pages state))
+(while p
+  (var n (u64 p))
+  (sys/page-put p)
+  (set p n))
+@
+
+Here comes the allocation function. If the requested size fits
+in-between [code s/next] and [code s/end], we just bump [code
+s/next]. If not, we get a new page and add it into the list.
+
+@=
+(fun (c/alloc size)
+  (var state (c/state))
+  (set (c/s-total-alloc state) (+ (c/s-total-alloc state) size))
+  (var ptr (c/s-next state))
+  (if ((< (+ ptr size) (c/s-end state))
+       (set (c/s-end state) (+ ptr size)))
+      (else
+       (var p (sys/page-get))
+       (set (u64 p) (c/s-pages state))
+       (set (c/s-pages state) p)
+       (set ptr (+ p u64))
+       (set (c/s-next state) (+ ptr size))
+       (set (c/s-end state) (+ p sys/page-size))))
+  ptr)
+@
+
+@* Expression objects
+
+Now that memory allocation is sorted, we can put it to use for
+the expression objects that represent the code that is being
+compiled. As always, we need lists, numbers, strings, and symbols.
+
+Lists are made from [emph pairs], which contain two pointers to
+other objects each. One pointer points to a list element, the
+other at the pair that starts the rest of the list. For example,
+the s-expression [code (+ x 1)] is a list of three elements:
+the symbol named "+", the symbol named "x", and the number "1".
+It looks like this in memory:
+
+[pic/c-list-pairs]
+
+For numbers, we will have integers and [emph floats]. So we end
+up with these five kinds of expressions:
+
+@=
+(enum
+  x-kind-pair
+  x-kind-int
+  x-kind-float
+  x-kind-string
+  x-kind-symbol)
+@
+
+All expression objects have two fields in common: the [emph kind]
+to tell us what the expression is concretely, and a [emph position]
+that tells us from where in the source code is comes from, for
+error messages.
+
+@=
+(struct c/exp-base
+  x-kind
+  x-pos)
+@
+
+A pair is very straightforward. In addition to the common fields,
+it just has the two pointers for forming lists.
+
+@=
+(struct c/exp-pair
+  (:base c/exp-base)
+  x-first
+  x-rest)
+
+(fun (c/make-pair first rest)
+  (var x (c/alloc c/exp-pair))
+  (set (c/x-kind x) c/x-kind-pair)
+  (set (c/x-first x) first)
+  (set (c/x-rest x) rest)
+  x)
+@
+
+Integers and floats are equally simple. (S-expressions as a whole
+are super simple. There is almost no hidden complexity. That's
+what makes them great.)
+
+@=
+(struct c/exp-int
+  (:base c/exp-base)
+  x-int-val)
+
+(fun (c/make-int val)
+  (var x (c/alloc c/exp-pair))
+  (set (c/x-kind x) c/x-kind-int)
+  (set (c/x-int-val x) val)
+  x)
+
+(struct c/exp-float
+  (:base c/exp-base)
+  x-float-val)
+
+(fun (c/make-float val)
+  (var x (c/alloc c/exp-pair))
+  (set (c/x-kind x) c/x-kind-float)
+  (set (c/x-float-val x) val)
+  x)
+@
+
+Strings are sligthly less easy since they don't have a fixed size.
+We get around that by declaring a structure that has an array
+of characters as its last field, and officially give that array
+a length of zero. Then we ignore that and put all the characters
+right after the structure.
+
+@=
+(struct c/exp-string
+  (:base c/exp-base)
+  (x-chars u8 0))
+
+(fun (c/make-string chars)
+  (var x (c/alloc (+ c/exp-string (c/strlen chars) 1)))
+  (set (c/x-kind x) c/x-kind-string)
+  (c/strcpy (c/x-chars x) chars)
+  x)
+
+@
+
+The most complicated expression objects are the symbols. They
+are just like strings and put their characters after the header
+structure, but we also need to keep them [emph unique].
+
+If our input contains two separate places that refer to the same
+symbol, then we want that to be represented by a single expression
+object.
+
+For example, this input
+@c
+(fun (inc x)
+  (+ x 1))
+@
+should be represented like this
+
+[pic/c-inc-fun]
+
+That way, we can stick extra information into the expression objects
+for a symbol and find it again easily. For example, when processing
+the header of the function [code inc] above, it would put information
+into the object for [code x] that it is the first argument of
+the function. Then, when the compiler sees it again in the [code
+(+ x 1)] expression, it immediately knows where the get the value
+for [code x] from. In fact, the names of symbols are not used
+very much anymore after we have turned the input source code
+into these expression objects.
+
+Thus, whenever constructing a symbol object for a given name,
+we first look through all previously created ones to see whether
+we can find an object for that name.
+
+Any kind of data structure could be used for this, like a linked
+list that we would search from start to end each time. But we
+do better: we'll use a hash table, which (in our case) means
+that we don't use one long linked list, but very many short ones.
+
+Knuth will tell you that a prime number of lists works best:
+
+@=
+(defconst c/symtab-size 107)
+@
+
+Which list to search for a given name is determined by computing
+a deterministic but random-looking number between 0 and 107 from
+the characters of the symbol name. Equal names result in the
+same number, and if an object for that name already exists, it
+must be in the list for that number.
+
+A good hash function is one that spreads out the numbers as evenly
+as possible so that the individual lists are all of about the
+same length and thus rather short. It's usually more important
+to spread the numbers out more by spending a little more time
+in the hash function, than it is to make the hash function itself
+fast.
+
+I always use this hash function proposed by djb, because he knows
+what he's doing:
+@d
+[emph h][sub 0] = 5381
+
+[emph h][sub i]  = 33[emph h][sub i-1] ^ [emph c][sub i]
+@
+Here [emph c][sub i] is the [emph i]th character of the string
+and ^ means "bitwise exclusive or". To constrain the result to
+the size [emph s] of the hash table, we will simple compute [emph
+h][sub n] mod [emph s].
+
+Unfortunately, Z1 has neither bitwise exclusive or, nor can it
+compute the remainder after division. We will fix that oversight
+in Z2 of course, but here we must implement "xor" and "mod" explicitly.
+
+We could probably just use "+" instead of "xor" without making
+the hash function significantly worse. But implementing "xor"
+with just "or" and "and" is a fun little excersize.
+
+@=
+(fun (c/xor a b)
+  (- (bit-or a b) (bit-and a b)))
+
+(fun (c/mod a m)
+  (- a (* (/ a m) m)))
+@
+
+The hashing function is then very straightforward to write.
+
+@=
+(fun (c/strhash str size)
+  (var h 5381)
+  (while (u8 str)
+    (set h (c/xor (* h 33) (u8 str)))
+    (set str (+ str 1)))
+  (c/mod h size))
+@
+
+The [code c/make-symbol] function has to first search the symbol
+table, and only no symbol with the given name is found does it
+need to allocate memory for a new one, and put it into the right
+list.
+
+@=
+(struct c/exp-symbol
+  (:base c/exp-base)  
+  x-sym-next
+  (x-sym-chars u8 0))
+
+(fun (c/make-symbol chars)
+  (var state (c/state))
+  (var h (c/strhash chars c/symtab-size))
+  (var sym)
+  (set sym (u64 (c/s-symtab state) h))
+  (while sym
+    (if ((c/streq (c/x-sym-chars sym) chars)
+         (goto done)))
+    (set sym (c/x-sym-next sym)))
+  (set sym (c/alloc (+ c/exp-symbol (c/strlen chars) 1)))
+  (set (c/x-kind sym) c/x-kind-symbol)
+  (c/strcpy (c/x-sym-chars sym) chars)
+  (set (c/x-sym-next sym) (u64 (c/s-symtab state) h))
+  (set (u64 (c/s-symtab state) h) sym)
+  (label done)
+  sym)
+@
+
+The hash table for symbols is part of the compiler state, and
+we need to declare and initialize it.
+
+@= <state for expression objects>
+s-symtab
+
+@= <init expression objects state>
+(set (c/s-symtab state) (c/alloc (* c/symtab-size u64)))
+(var i 0)
+(while (< i c/symtab-size)
+  (set (u64 (c/s-symtab state) i) 0)
+  (set i (+ i 1)))
+@
+
+We wrap up expression objeccts with a function to turn them back
+into their textual representations (almost).
+
+@=
+(fun (c/write x)
+  (var k (c/x-kind x))
+  (if ((== k c/x-kind-pair)
+       (log/msg "(")
+       (while x
+         (c/write (c/x-first x))
+         (set x (c/x-rest x))
+         (if (x
+              (log/msg " ")
+              (if ((!= (c/x-kind x) c/x-kind-pair)
+                   (log/msg ". ")
+                   (c/write x)
+                   (set x 0))))))
+       (log/msg ")"))
+      ((== k c/x-kind-int)
+       (log/msg "%d" (c/x-int-val x)))
+      ((== k c/x-kind-float)
+       (log/msg "<float>"))
+      ((== k c/x-kind-string)
+       (log/msg "\"%s\"" (c/x-chars x)))
+      ((== k c/x-kind-symbol)
+       (log/msg "%s" (c/x-sym-chars x)))))
+@
+
+@* Reading files
+
+The compiler can open and read one file, and we have to implement
+that from scratch as well (since the real filesystem code will
+be compiled by this compiler).
+
+Luckily, the Zollern diks structure is trivial. If it ever gets
+more complicated, we will probably keep some part of the disk
+in the trivial "bootstrap" format so that we don't have to implement
+anything too sophisticated here. Or maybe reading will always
+be easy enough.
+
+A Zollern disk is an array of 16 kB blocks. The first block is
+the index, which is an array of "nodes" of size 256 each. Each
+node represents one file, excpept the first, which contains meta
+data about the whole filesystem.
+
+A node contains 64 bytes for the name of a file, the size of the
+file, and a number of "pointers" into the rest of the disk. A
+pointer is an index into the array of blocks, and the pointed
+to blocks contain the data for the file, of course.
+
+@=
+(defconst c/fs-block-size (* 16 1024))
+(defconst c/fs-node-size  256)
+(defconst c/fs-name-size  64)
+(defconst c/fs-ptr-size   2)
+
+(defconst c/fs-node-count (/ c/fs-block-size c/fs-node-size))
+(defconst c/fs-ptr-count (/ (- c/fs-node-size c/fs-name-size 4 4) c/fs-ptr-size))
+
+(struct c/fs-node
+  (fnode-name u8 c/fs-name-size)
+  (fnode-size u32)
+  (fnode-time u32)
+  (fnode-ptr u16 c/fs-ptr-count))
+@
+
+[emph Opening] a file means finding its node in the disk index. The
+Z1 bootstrap process has already made the whole disk available
+in memory and thus we don't need to actually interface with any
+hardware in order to read what's on disk.
+
+@= <state for reading files>
+file-node
+file-next-ptr
+file-cur
+file-end
+
+@=
+(struct c/fs-disk
+  fs-disk-start)
+
+(fun (c/fs-open name)
+  (var state (c/state))
+  (var ptr (c/fs-disk-start (ctxt/disk context)))
+  (var i 1)
+  (var found 0)
+  (while (< i c/fs-node-count)
+    (set ptr (+ ptr c/fs-node-size))
+    (if ((c/streq ptr name)
+         (set (c/file-node state) ptr)
+         (set (c/file-next-ptr state) 0)
+         (set (c/file-cur state) 0)
+         (set (c/file-end state) 0)
+         (set found 1)
+         (goto done)))
+    (set i (+ i 1)))
+  (label done)
+  found)
+@
+
+Parsing is done character by character by advancing the [code
+c/file-cur] pointer until it hits [code c/file-end]. At that
+point, we need to advance to the next block and reset those pointers.
+This is done by the [code c/fs-read] function.
+
+@=
+(fun (c/fs-read)
+  (var state (c/state))
+  (var node (c/file-node state))
+  (var ptr (c/file-next-ptr state))
+  (var rest-size (- (c/fnode-size node) (* ptr c/fs-block-size)))
+  (if ((> rest-size 0)
+       (set (c/file-next-ptr state) (+ ptr 1))
+       (set (c/file-cur state) (+ (c/fs-disk-start (ctxt/disk context))
+                                  (* (c/fnode-ptr node ptr) c/fs-block-size)))
+       (if ((> rest-size c/fs-block-size)
+            (set (c/file-end state) (+ (c/file-cur state) c/fs-block-size)))
+           (else
+            (set (c/file-end state) (+ (c/file-cur state) rest-size))))
+       1)
+      (else
+       0)))
+@
+
+Getting the next character will first call [code c/fs-read] if
+necessary, and then take the character from [code c/file-cur].
+The end of the file is signalled by returning -1.
+
+@=  
+(fun (c/get-char)
+  (var state (c/state))
+  (var res)
+  (if ((== (c/file-cur state) (c/file-end state))
+       (if ((not (c/fs-read))
+            (set res -1)
+            (goto done)))))
+  (set res (u8 (c/file-cur state)))
+  (set (c/file-cur state) (+ (c/file-cur state) 1))
+  (label done)
+  res)
+@
+
+While parsing the input, we usually get characters until we find
+one that doesn't belong to the current token anymore. Such a
+character is put back into the input by a [emph unget] function.
+
+It's only allowed to do that once. We don't support rewinding
+the whole input this way and thus it is enough to step the [code
+c/file-cur] pointer backwards one position. We don't have to
+worry about crossing block boundaries.
+
+@=
+(fun (c/unget-char)
+  (var state (c/state))
+  (set (c/file-cur state) (- (c/file-cur state) 1)))  
+@
+
+@* Parsing into tokens
+
+While constructing the expression objects for a file, the compiler
+state maintains the [emph current token]. This is the most recently
+encountered sequence of characters that form one unit of the
+s-expression syntax. For example, a opening parentheses is a
+token, or a the characters that form a symbol.
+
+We have a number of different kind of tokens:
+
+@=
+(enum
+  tk-eof
+  tk-open-paren
+  tk-close-paren
+  tk-string
+  tk-word
+  tk-header)
+@
+
+Note that numbers and symbols have not yet appeared. They are
+both just words at this point.
+
+The characters of the current token are stored in a full page.
+That's hopefully enough.
+
+@= <state for the current token>
+token
+token-kind
+@
+
+@= <init state for current token>
+(set (c/token state) (sys/page-get))
+
+@= <finalize state for current token>
+(sys/page-put (c/token state))
+
+@* Reading S-Expressions
+
+@* Main
+
+@=
+(fun (c/init-state)
+  (var state (sys/page-get))
+  (set (c/s-prev-state state) (c/state))
+  (set (ctxt/comp context) state)
+  <init memory allocation state>
+  <init expression objects state>
+  <init state for current token>)
+
+(fun (c/fini-state)
+  (var state (c/state))
+  <finalize state for current token>
+  <finalize memory allocation state>
+  (set (ctxt/comp context) (c/s-prev-state state)))
+
+@=
+(fun (c/compile-file name)
+  (if ((not (c/fs-open name))
+       (log/msg "Not found: %s\n" name))
+      (else
+       (var ch)
+       (mem x 2)
+       (set (u8 x 1) 0)
+       (while (>= (set ch (c/get-char)) 0)
+         (set (u8 x) ch)
+         (log/msg "%s" x)))))
+  
+(fun (c/main)
+  (c/init-state)
+  (c/write (c/make-pair (c/make-symbol "foo") (c/make-pair (c/make-string "bar") 0)))
+  (log/msg "\n")
+  (c/compile-file "TEXT")
+  (c/fini-state))
+@
+
+
