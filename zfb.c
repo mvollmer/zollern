@@ -175,8 +175,8 @@ float scale = 1.0;
 void
 setup_window ()
 {
-  if (SDL_GetNumVideoDisplays() == 1)
-    scale = 1.25;
+  /* if (SDL_GetNumVideoDisplays() == 1) */
+  /*   scale = 1.25; */
 
   window = SDL_CreateWindow ("Z",
                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
