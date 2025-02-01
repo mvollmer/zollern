@@ -14,6 +14,12 @@
   deps
   ood-flag)
 
+(struct book/global
+  glb-link
+  glb-val
+  (glb-type u8)
+  (glb-name u8 100))
+
 (struct book/link
   bl-link
   bl-book)
