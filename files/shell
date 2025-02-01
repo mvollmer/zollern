@@ -4,27 +4,36 @@ The shell is the root [book ui user interface] element. It maintains
 the narrow navigation column at the right, and also the main
 application area.
 
-@=
+The shell itself consists of two UI elements, the root and the
+navigation. The root is pretty simple, it queries the navigation
+element what should be displayed, and then paints that. So let's
+start with the navigation element.
 
+@* Navigation state
+
+The navigation element has all the state and implements all the
+actual shell behavior. It keeps a list of the UI elements that
+might be shown in the main area. This list contains [book ed
+ed] sessions, [book tx tx] viewers, and the elements of running
+programs. We call them the [emph main] elements in the sequel.
+
+The state also contains a whole lot of UI elements for the actual
+UI, like the buttons and lists. These UI elements in turn contain
+the actual state that determines what should be painted
+in the application area.
+
+@=
 (struct shell/instance
   (:base ui/element)
   root
-  mode
   elements
-  ;; ui elements
-  read-btn
-  read-list
-  write-btn
-  write-list
-  run-btn
-  run-list
-  minibuf-active
-  minibuf-tin
-  quit-btn
-  restart-btn)
+  <UI elements>)
 @
 
-@* Elements
+Each main element has a [emph name] and [emph mode]. The name
+is the name of the book that is associated with that element,
+and the mode is one of the strings [code "tx"], [code "ed"],
+or [code "main"]. They are simply linked together.
 
 @=
 (struct shell/elt-link
@@ -32,7 +41,33 @@ application area.
   el-name
   el-mode
   el-next)
+@
 
+Here is the function that finds the element with a given name
+and mode. Very straightforward, but note that it returns the
+actual UI element, not the [code shell/elt-link] list node.
+
+@=
+(fun (shell/find-element inst name mode)
+  (var l (shell/elements inst))
+  (while l
+    (if ((and name
+              (str/eq (shell/el-name l) name)
+              (str/eq (shell/el-mode l) mode))
+         (goto done)))
+    (set l (shell/el-next l)))
+  (label done)
+  (and l (shell/el-element l)))
+@
+
+The list of main elements only contains at most one entry for
+a given name and mode. Here is how old ones are removed when
+new ones with the same name and mode are added. Note how this
+function keeps a pointer to the pointer of the currently examined
+list node to be able to modify it once the wanted element is
+found.
+
+@=
 (fun (shell/remove-element inst element)
   (if ((ui/elt-contains-focus element)
        (ui/set-focus 0)))
@@ -48,18 +83,11 @@ application area.
          (set ptr (loc (shell/el-next l))))))
   (ui/free element)
   (ui/paint-needed (shell/root inst)))
+@
 
-(fun (shell/find-element inst name mode)
-  (var l (shell/elements inst))
-  (while l
-    (if ((and name
-              (str/eq (shell/el-name l) name)
-              (str/eq (shell/el-mode l) mode))
-         (goto done)))
-    (set l (shell/el-next l)))
-  (label done)
-  (and l (shell/el-element l)))
+How to add a new element should be obvious now.
 
+@=
 (fun (shell/add-element inst element name mode)
   (var old (shell/find-element inst name mode))
   (if (old
@@ -71,10 +99,29 @@ application area.
   (set (shell/el-mode l) (str/dup mode))
   (set (shell/el-next l) (shell/elements inst))
   (set (shell/elements inst) l))
+@
+
+Now that we know how the main elements are maintained in general,
+we can look at specific ones. Let's start with the [code "ed"]
+ones for writing code.
 
 @* Writing
-@=
 
+The [book ed ed] book does all the hard work of implementing an
+editor, but it does not expose it as a UI element, just as a
+couple of lower level functions. We have to wrap them up into
+a UI element ourselves, much like the [book ui ui] book does
+for text input fields.
+
+Each editor actually consists of two parts: a data structure for
+the text (called a [code textbuf]), and the data structure for
+the editing state. In addition to these, we also store a callback
+that tells the rest of the Shell whenever a text buffer is [emph
+dirty], that is, when it has been modified but not yet saved.
+The Shell uses that to update its display of which books are
+out of date.
+
+@=
 (struct shell/ed-app
   (:base ui/element)
   ed-update-func
@@ -111,13 +158,6 @@ application area.
   (if ((ed/dirty (shell/ed-ed inst))
        (shell/ed-write inst))))
 
-(fun (shell/ed-save-all shell-inst)
-  (var el (shell/elements shell-inst))
-  (while el
-    (if ((str/eq (shell/el-mode el) "ed")
-         (shell/ed-save (shell/el-element el))))
-    (set el (shell/el-next el))))
-
 (fun (shell/ed-fini inst)
   (if ((ed/dirty (shell/ed-ed inst))
        (shell/ed-write inst)))
@@ -139,48 +179,119 @@ application area.
   shell/ed-fini
   shell/ed-paint
   shell/ed-input)
+@
 
+When clicking on a book in "Write" mode, the Shell eventually
+calls [code shell/launch-ed].
+
+@=
 (fun (shell/launch-ed inst name update)
   (mem rbuf fs/rbuf)
-  (if ((and (not (shell/find-element inst name "ed"))
-            (fs/open rbuf name))
-       (shell/add-element inst (ui/new shell/ed-app shell/ed-funcs name rbuf update inst) name "ed"))))
+  (if ((fs/open rbuf name)
+       (shell/add-element inst (ui/new shell/ed-app shell/ed-funcs name rbuf update inst) name "ed")
+       (fs/close rbuf))))
+@
+
+The Shell automatically saves all files before compiling a book
+or running it through the typesetter. It does that by calling
+[code shell/ed-save-all].
+
+@=
+(fun (shell/ed-save-all shell-inst)
+  (var el (shell/elements shell-inst))
+  (while el
+    (if ((str/eq (shell/el-mode el) "ed")
+         (shell/ed-save (shell/el-element el))))
+    (set el (shell/el-next el))))
 
 @* Running
-@=
 
+Compared to implementing editor sessions, running a book is pretty
+simple. We call [code book/get] to run the compiler (if necessary),
+and then call either the [code new] function in the book or [code
+main]. The [code new] function is implemented by books that want
+to run their own UI, while [code main] can be used to just execute
+some code and leave some messages in the log.
+
+The Shell wants to know whether we got a new element. It will
+automatically show the Log viewer otherwise. This will reveal
+the compiler errors, or the output of the [code main] function.
+
+Note that [code shell/launch-book] always runs the book code.
+Whether or not to simply switch to a running book or start a
+fresh one is decided further down in the UI code of the shell.
+
+@=
 (fun (shell/launch-book inst name)
   (log/msg "Launching %s:\n" name)
   (var result 0)
   (if ((var book (book/get name log/write 0))
        (if ((var new-func (book/search-fun book "new"))
-            (set result (new-func)))
+            (shell/add-element inst (new-func) name "main")
+            (set result 1))
            ((var main-func (book/search-fun book "main"))
             (main-func))
            (else
-            (log/write "no 'new' or 'main' function\n")))
+            (log/msg "no 'new' or 'main' function\n")))
        (book/unref book)))
   result)
 @
 
-@* ...
-@=
+@* Reading
 
+Reading is even easier to implement than running. But note how
+we try to keep the old scrolling position when replacing a old
+viewer with a new one.
+
+@=
+(fun (shell/launch-tx inst name goto-func)
+  (var offset 0)
+  (var old-elt (shell/find-element inst name "tx"))
+  (if (old-elt
+       (set offset (ui/scrollbar-pos (tx/inst-sb old-elt)))))
+  (shell/add-element inst (ui/new tx/instance tx/funcs name offset goto-func inst) name "tx"))
+
+@* Files
+
+When in "write" mode, the Shell shows a list of all files in the
+filesystem. In the future, this might be more sophisticated and
+somehow reduce the list to only interesting files. We could do
+some version control and only show files that have changed relative
+to some base version, for example. That might be fun, but for
+now it's just a list of all files.
+
+The Shell does show, however, which files are [emph out of date].
+Those are the files that have been changed since they have been
+last compiled, or that use another book that is out of date.
+
+Whether or not a file is out of date is determined by the [code
+book/is-out-of-date] function. That function knows about the
+dependencies between books and about file modification times.
+It does not know about our editor sessions and thus doesn't know
+whether a file has unsaved modifications. Luckily, we can tell
+it with a callback.
+
+@=
 (fun (shell/is-unsaved name inst)
   (var element (shell/find-element inst name "ed"))
   (and element (ed/dirty (shell/ed-ed element))))
 
-(fun (shell/compute-flags inst node)
+(fun (shell/is-out-of-date inst node)
   (var name (fs/node-name node))
   (var bk (book/find name))
   (or (shell/is-unsaved name inst)
       (and bk (book/is-out-of-date bk shell/is-unsaved inst))))
+@
 
+The list of files is stored in a [code ui/list] element, by calling
+[code ui/list-add-sorted] once for each file.
+
+@=
 (fun (shell/insert-file node inst)
   (var list (shell/write-list inst))
   (var name (fs/node-name node))
-  (var flags (shell/compute-flags inst node))
-  (ui/list-add-sorted list 0 flags name name))
+  (var flagged (shell/is-out-of-date inst node))
+  (ui/list-add-sorted list 0 flagged name name))
 
 (fun (shell/update-files inst)
   (book/reset-out-of-date)
@@ -189,6 +300,30 @@ application area.
   (ui/list-commit (shell/write-list inst))
   (ui/paint-needed inst))
 
+@* Catalogs
+
+The list of files is just a flat, sorted list of their names.
+We want something nicer for the list of books in "read" mode.
+We want proper titles and levels.
+
+We could device some scheme for somehow constructing such a "catalog
+of books" from the markup of the books themselves, but it seems
+much easier to just have a dedicated file with a explicit manually
+maintained description. That file is called [code cat] and looks
+like this:
+
+@c
+mybook ... Nice long book title
+@
+
+The first word is the name of the file to run through the typesetter,
+the number of dots determine the level in the list, and the rest
+is the text that appears in list on screen.
+
+Yes, this should use s-expressions for this, but Z1 is too primitive
+still. So we have to whip up a quick parser.
+
+@=
 (fun (shell/read-char rbuf)
   (if ((== (fs/rbuf-size rbuf) 0)
        (if ((not (fs/read rbuf))
@@ -244,20 +379,65 @@ application area.
        (while (shell/read-line rbuf line)
          (shell/parse-catalog-line line list))
        (fs/close rbuf))))
+@
 
+Ok, that wasn't all that quick...
+
+But filling a list element from a catalog file is now straighforward:
+
+@=
 (fun (shell/update-list inst list catname)
   (ui/list-reset list)
   (shell/read-catalog catname list)
   (ui/list-commit list))
+@
 
+At the right times, the Shell will call the following [code shell/update]
+function to update all its lists. As you can see, the "run" mode
+also has its own catalog, in the file named [code runcat].
+
+@=
 (fun (shell/update inst)
   (shell/update-files inst)
   (shell/update-list inst (shell/read-list inst) "cat")
   (shell/update-list inst (shell/run-list inst) "runcat"))
 
 @* Commands
-@=
 
+Let's now implement the actual user interface, by placing buttons
+and lists. The lists have already been referenced above in the
+[code shell/update] function, and here is a complete list of
+all elements:
+
+@= <UI elements>
+read-btn
+read-list
+write-btn
+write-list
+run-btn
+run-list
+minibuf-active
+minibuf-tin
+quit-btn
+restart-btn
+@
+
+If you compare this with the how the navigation area actually
+looks, you should be able to identify which element on the screen
+correspond to which field in the shell state. But maybe you haven't
+seen the "minibuf" yet...
+
+The shell stores the navigation state indirectly in its UI elements.
+Thus, to figure out which element should currently be shown in
+the main area, we have to figure out which of [code shell/read-btn],
+[code shell/write-btn], and [code shell/run-btn] is in the [emph
+selected] state, and the ask the corresponding list for its selected
+item.
+
+This is a bit tedious, but pretty straightfoward. It's probably
+not worth optimizing this.
+
+@=
 (fun (shell/current-element-name inst)
   (if ((ui/btn-selected (shell/read-btn inst))
        (ui/list-get-selected (shell/read-list inst)))
@@ -278,87 +458,151 @@ application area.
   (var cur (shell/find-current-element inst))
   (if ((and cur (ui/elt-can-focus cur))
        (ui/set-focus cur))))
+@
 
-(fun (shell/add-tx-element inst name goto-func)
-  (var offset 0)
-  (var old-elt (shell/find-element inst name "tx"))
-  (if (old-elt
-       (set offset (ui/scrollbar-pos (tx/inst-sb old-elt)))))
-  (shell/add-element inst (ui/new tx/instance tx/funcs name offset goto-func inst) name "tx"))
+Switching to a mode is done by setting the [emph selected] state
+of the three buttons accordingly. This might change which element
+is current, so we reset the focus as well, and then paint everything.
 
-(fun (shell/cmd-read-mode inst)
-  (ui/button-set-selected (shell/read-btn inst) 1)
-  (ui/button-set-selected (shell/write-btn inst) 0)
-  (ui/button-set-selected (shell/run-btn inst) 0)
+@=
+(fun (shell/set-mode inst m)
+  (ui/button-set-selected (shell/read-btn inst) (== m 0))
+  (ui/button-set-selected (shell/write-btn inst) (== m 1))
+  (ui/button-set-selected (shell/run-btn inst) (== m 2))
+  (shell/focus-current inst)
   (ui/paint-needed (shell/root inst)))
+@
 
+The following three functions are used to switch to a specific
+mode. They are called when the user clicks on the corresponding
+button.
+
+@=
+(fun (shell/cmd-read-mode inst)
+  (shell/set-mode inst 0))
+
+(fun (shell/cmd-write-mode inst)
+  (shell/set-mode inst 1))
+
+(fun (shell/cmd-run-mode inst)
+  (shell/set-mode inst 2))
+@
+
+Now come the functions that are called when the user clicks on
+an entry in one of the lists, of which there are of course three,
+called [code shell/view] (for the "read" mode list), [code shell/edit]
+(for the "write" mode list), and [code shell/switch-to-or-launch]
+(for the "run" mode list).
+
+But these the three functions are not exclusively used for handling
+clicks in the lists. They are also called for key presses: [code
+shell/cmd-view] is invoked by [code C-x C-v], for example.
+
+Because of the uncertainties of manual memory management, these
+functions first call [code ui/list-set-selected] with the passed
+name. After this, [code ui/list-get-selected] will return a string
+that is equal to that name, but is guaranteed to be stored in
+stable memory. Then we can proceed to call functions like [code
+shell/update] that might (or might not) free the memory that
+the original name argument was stored in. We just have to be
+careful not to call [code ui/list-set-selected] in other places.
+
+Automatic memory management would help with this easily and we
+wouldn't even have to think about it or do something special
+here, but trying to explain the situation to a static checker
+would probably end in frustration on both sides.
+
+The [code shell/cmd-view] function saves all files (which means
+the lists need to be updated) and unconditionally runs the named
+book through the typesetter. This is fast and we will not destroy
+any interesting state (since we save the scroll position).
+
+@=
 (fun (shell/cmd-view inst name)
   (if (name
        (shell/cmd-read-mode inst)
        (ui/list-set-selected (shell/read-list inst) name)
        (set name (ui/list-get-selected (shell/read-list inst)))
        (shell/ed-save-all inst)
-       (shell/add-tx-element inst name shell/cmd-view)
-       (shell/focus-current inst)
        (shell/update inst)
+       (shell/launch-tx inst name shell/cmd-view)
+       (shell/focus-current inst)
        (ui/paint-needed (shell/root inst)))))
+@
 
-(fun (shell/cmd-write-mode inst)
-  (ui/button-set-selected (shell/read-btn inst) 0)
-  (ui/button-set-selected (shell/write-btn inst) 1)
-  (ui/button-set-selected (shell/run-btn inst) 0)
-  (ui/paint-needed (shell/root inst)))
+The [code shell/cmd-edit] function doesn't need to save files
+or update the shell state, it will just switch to the existing
+editor (if there is one), or create a new one.
 
+@=
 (fun (shell/cmd-edit inst name)
   (if (name
        (shell/cmd-write-mode inst)
+       (var elt (shell/find-element inst name "ed"))
        (ui/list-set-selected (shell/write-list inst) name)
        (set name (ui/list-get-selected (shell/write-list inst)))
-       (shell/launch-ed inst name shell/update)
+       (if ((not (shell/find-element inst name "ed"))
+            (shell/launch-ed inst name shell/update)))
        (shell/focus-current inst)
        (ui/paint-needed (shell/root inst)))))
+@
 
-(fun (shell/cmd-run-mode inst)
-  (ui/button-set-selected (shell/read-btn inst) 0)
-  (ui/button-set-selected (shell/write-btn inst) 0)
-  (ui/button-set-selected (shell/run-btn inst) 1)
-  (ui/paint-needed (shell/root inst)))
+Running programs is a bit more complicated. Clicking in the list
+will just switch to a already running program, even if its book
+is out-of-date. That program might have interesting internal
+state, and we don't want to wipe that out with a single click.
 
+However, typing [code C-x C-r] will quit any running instance
+of the given book and start a fresh one. Thus, we have two [emph
+UI commands] that are used in different contexts.
+
+Also, the log viewer is treated specially. We don't really want
+to recompile it whenever it should be shown, since it is the
+very thing that shows compilation errors.
+
+@=
 (fun (shell/show-logview inst)
-  (shell/cmd-run-mode inst)
-  (ui/list-set-selected (shell/run-list inst) "logview")
-  (var elt (shell/find-element inst "logview" "main"))
-  (if ((not elt)
+  (if ((not (shell/find-element inst "logview" "main"))
        (shell/add-element inst (logview/new) "logview" "main")))
+  (ui/list-set-selected (shell/run-list inst) "logview")
   (ui/paint-needed (shell/root inst)))
 
 (fun (shell/cmd-launch inst name)
+  (shell/cmd-run-mode inst)
   (if ((str/eq name "logview")
        (shell/show-logview inst))
       (else
-       (shell/cmd-run-mode inst)
        (ui/list-set-selected (shell/run-list inst) name)
        (set name (ui/list-get-selected (shell/run-list inst)))
        (shell/ed-save-all inst)
-       (var new-element (shell/launch-book inst name))
-       (if ((not new-element)
-            (shell/show-logview inst))
-           (else
-            (shell/add-element inst new-element name "main")))
-       (shell/update inst)))
+       (shell/update inst)
+       (if ((not (shell/launch-book inst name))
+            (shell/show-logview inst)))))
   (shell/focus-current inst)
   (ui/paint-needed (shell/root inst)))
 
 (fun (shell/cmd-switch-to-or-launch inst name)
-  (var elt (shell/find-element inst name "main"))
-  (if (elt
-       (shell/cmd-run-mode inst)
-       (ui/list-set-selected (shell/run-list inst) name))
+  (if ((shell/find-element inst name "main")
+       (ui/list-set-selected (shell/run-list inst) name)
+       (shell/cmd-run-mode inst))
       (else
-       (shell/cmd-launch inst name)))
-  (shell/focus-current inst)
-  (ui/paint-needed (shell/root inst)))
+       (shell/cmd-launch inst name))))
+@
 
+Do you know about [code C-x b]? Learning about it is your reward
+for reading this book all the way to the end!
+
+Typing [code C-x b] will open the [emph mini buffer], which takes
+care of creating new files and deleting files that we don't want
+anymore. It might do other random jobs in the future, or might
+get replaced with a more structured approach.
+
+The mini buffer is a text input. Typing a file name into it will
+open that file in the editor. The file will be created if it
+doesn't exist yet. Also, if you type "remove" into it, followed
+by a space and a file name, that file will be removed.
+
+@=
 (fun (shell/cmd-remove inst name)
   (if ((and name (u8 name))
        (fs/remove name)
@@ -383,7 +627,26 @@ application area.
   (set (shell/minibuf-active inst) 0)
   (ui/textinput-set (shell/minibuf-tin inst) "")
   (ui/paint-needed inst))
+@
 
+And the last two commands, [code shell/cmd-restart] for restarting
+all of Zollern, and [code shell/cmd-quit] for quitting it.
+
+Restarting Zollern is very common: Whenever you have made changes
+to code that is called directly or indirectly from [code boot/start],
+restarting Zollern is the only way to actually update that code.
+The shell could just call [code sys/restart] here, but instead,
+we launch the [book boot boot] book. This will actually compile
+that book and all its direct and indirect dependencies, and only
+if that is successfull, will we restart Zollern.
+
+(During the restart, everything is compiled again, since Zollern
+always does a full [emph from source] bootstrap. But by compiling
+it also before restarting, we at least know that there aren't
+any syntax errors. The new code might still be buggy and Zollern
+might still crash before reaching the Shell, of course...)
+
+@=
 (fun (shell/cmd-restart inst)
   (shell/cmd-launch inst "boot"))
 
@@ -392,8 +655,11 @@ application area.
   (sys/halt))
 
 @* Instance
-@=
 
+And now we are ready for the navigation instance. It mostly creates
+all the UI elements and wires up the commands defined above.
+
+@=
 (fun (shell/instance-init inst root)
   (ui/element-init inst)
   (set (shell/root inst) root)
@@ -422,10 +688,14 @@ application area.
   (ui/free (shell/restart-btn inst))
   (ui/free (shell/quit-btn inst))
   (ui/element-fini inst))
+@
 
+Painting the navigation instance does a lot of manual layout computations.
+There really should be some help for this, but Zollern has so
+little UI at the moment that we haven't bothered yet.
+
+@=
 (fun (shell/instance-paint inst)
-  (var x 0)
-  (var y 0)
   (var w (ui/elt-width inst))
   (var h (ui/elt-height inst))
   (gfx/rect 0 0 1 (ui/elt-height inst) (gfx/color 0 0 0))
@@ -447,11 +717,16 @@ application area.
   (var bw2 (/ (- (ui/elt-width inst) (* 3 ui/gap)) 2))
   (ui/paint inst (shell/restart-btn inst) ui/gap (+ ui-top ui/textinput-height ui/gap) bw2 bh)
   (ui/paint inst (shell/quit-btn inst) (+ ui/gap bw2 ui/gap) (+ ui-top ui/textinput-height ui/gap) bw2 bh))
+@
 
+The navigation part of the Shell doesn't have any key bindings...
+mostly because it is almost never in focus. But it does handle
+all the global key inputs.
+
+@=
 (fun (shell/instance-input inst state input x y))
 
 (fun (shell/instance-global-input inst state input)
-  (var dup-name)
   (var element (shell/find-current-element inst))
   (if ((== state 0)
        (if  ((== input ch/e)
@@ -465,7 +740,7 @@ application area.
              (set (shell/minibuf-active inst) 1)
              (ui/set-focus (shell/minibuf-tin inst)))
             ((== input ch/q)
-             (if ((and element (not (== element inst)))
+             (if (element
                   (shell/remove-element inst element)
                   (ui/paint-needed (shell/root inst)))))
             ((== input ch/R)
@@ -482,11 +757,19 @@ application area.
   shell/instance-fini
   shell/instance-paint
   shell/instance-input)
+@
 
-@* Fake root
+@* Zollerns root UI element
 
-This will eventuall absorb much of the [book app Application]
-code and everything will become simpler.
+The [code shell/instance] UI element implemented above only takes
+care of the navigation area on the right, it is not the root
+element given to [code ui/loop]. That is implemented here and
+called [code shell/root-instance].
+
+It creates a [code shell/instance] element and consults it to
+figure out what to paint in the main area. The [code shell/instance]
+element triggers a repaint of the [code shell/root-instance]
+element whenever necessary.
 
 @=
 (struct shell/root-instance
@@ -519,9 +802,13 @@ code and everything will become simpler.
   shell/root-fini
   shell/root-paint
   shell/root-input)
+@
 
+This is the function called last by [code boot/start]. It will
+never return.
+
+@=
 (fun (shell/main-loop)
   (var inst (ui/new shell/root-instance shell/root-funcs))
-  (set (ctxt/shell context) inst)
   (shell/cmd-view (shell/r-sidebar inst) "intro")
   (ui/loop inst shell/root-global-input inst))
