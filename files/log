@@ -115,7 +115,7 @@ since the least-significant digit is easy to obtain via [code
 (% n 10)].
 
 @=
-(fun (log/write-int n)
+(fun (log/write-dec n)
   (if ((< n 0)
        (log/write "-")
        (set n (- n))))
@@ -126,6 +126,21 @@ since the least-significant digit is easy to obtain via [code
            (set ptr (- ptr 1))
            (set (u8 ptr) (+ (% n 10) ch/d0))
            (set n (/ n 10))
+           n))
+  (log/write ptr))
+
+(fun (log/write-hex n)
+  (if ((< n 0)
+       (log/write "-")
+       (set n (- n))))
+  (mem buf 40)
+  (var ptr (+ buf 39))
+  (set (u8 ptr) 0)
+  (while (begin
+           (set ptr (- ptr 1))
+           (var d (% n 16))
+           (set (u8 ptr) (if ((< d 10) (+ d ch/d0)) (else (+ d -10 ch/a))))
+           (set n (/ n 16))
            n))
   (log/write ptr))
 @
@@ -158,7 +173,9 @@ strings and [code %d] for integers.
          (if ((== (u8 ptr) ch/s)
               (log/write (u64 args)))
              ((== (u8 ptr) ch/d)
-              (log/write-int (u64 args)))
+              (log/write-dec (u64 args)))
+             ((== (u8 ptr) ch/x)
+              (log/write-hex (u64 args)))
              (else
               (log/write "???")))
          (set ptr (+ ptr 1))
