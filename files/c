@@ -1,0 +1,20 @@
+@** Z2 Compiler
+
+This is Zollerns second compiler. It is a long Z1 program and
+we allow ourselves the luxurious "c" prefix.
+
+Current plan to get initial machine code:
+
+@d
+[item - ]Pool allocation of s-expressions and other data structures, stack allocation of others.
+
+[item - ]One pass direct code generation via s-exp walking, no intermediate representation.
+
+[item - ]Constant expression evaluation while walking.
+
+[item - ]Special code generation for "if" context, to get something reasonable.
+
+[item - ]Register allocation for temporary results of expressions.
+
+[item - ]Maybe explicitly requested optimizations, like local vars in registers, inlining.
+@

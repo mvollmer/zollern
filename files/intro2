@@ -1,0 +1,29 @@
+@** The Z2 programming language
+
+The second programming level of Zollern is called, obviously,
+Z2. It is much the same kind of language as Z1, but improved.
+
+Z1 was constrained by the way it was implemented. We had to write
+it all in assembler, and it isn't fun to change it and improve
+it after it got off the ground enough to write programs in. It
+was much more fun to write those programs, including the first
+versions of the editor, the type setter, the UI framework, and
+of course the shell.
+
+The plan with Z2 is now to move forward in history a bit and add
+a mild type system and write a compiler that does at least [emph
+some] optimizations.
+
+Initially however, Z2 will be fully compatible with Z1 and we
+will develop it until it can successfully compile all the existing
+Z1 code. Then we change the bootstrap process to only use the
+old Z1 compiler to compile the Z2 compiler, which will then compile
+the rest. And [emph then] we will start adding the good stuff
+to Z2 and improve the existing programs to make use of it. We
+can drop compatibility with Z1 at that point.
+
+The interoperability of Z1 and Z2 is limited by macros: The Z2
+compiler can not run macro expansion code compiled by Z1 since
+the data structured that represent the code are all different.
+So might just not let them interact at all. Let's see.
+ 

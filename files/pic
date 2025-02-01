@@ -4,6 +4,9 @@ Diagrams deserve a proper programming language, and the only one
 we have right now is Z1. So we write our pictures in Z1 and collect
 them all here.
 
+(Pictures also deserve a proper interactive editor, but that is
+too hard for Zollern.)
+
 Not embedding the code for diagrams in the book where they belong
 has the advantage that we can explain those picture programs
 properly, with all the tools we have for documenting programs.
