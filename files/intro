@@ -96,10 +96,9 @@ I see nothing wrong in implementing an editor in it. Or a simple
 type setter. It can be done and it's just fine. And fun.
 
 But proving that memory safety or type checking is not necessary
-is not the point. (there is no point.) There might be a Z2 language
-later on, maybe with dynamic types and a garbage collector, or
-maybe with a static types and a optimizing compiler. Maybe we
-rewrite parts of the editor in it, if that feels like fun.
+is not the point. (There is no point.) There will be a Z2 language,
+with static types and a slightly optimizing compiler. We will
+rewrite all of the Z1 programs in it, because that will be fun.
 
 But Zollern will always use s-expressions, I guess. I find them
 elegantly simple, and macros are fun. (But hygienic macros are

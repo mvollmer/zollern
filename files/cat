@@ -5,7 +5,8 @@ asm1       ... Assembler
 comp1      ... Compiler
 lang       ... Surface syntax
 intro2     .. Z2
-asm        ... Assembler
+disasm     ... Disassembler
+c          ... Compiler
 runtime    . Language runtime
 ctxt       .. Context
 mem        .. Memory

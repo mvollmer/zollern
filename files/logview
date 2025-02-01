@@ -108,9 +108,9 @@ own custom state structure.
          (set y (+ y 16)))
         (else
          (set x (+ x (gfx/glyph fonts/mono x y (u8 str))))))
-    (if ((> x (- w 14))
-         (set x 4)
-         (set y (+ y 16))))
+;;    (if ((> x (- w 14))
+;;         (set x 4)
+;;         (set y (+ y 16))))
     (set str (+ str 1)))
   (set (logview/pd-x pd) x)
   (set (logview/pd-y pd) y))

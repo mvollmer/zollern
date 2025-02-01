@@ -27,7 +27,7 @@ file can be larger than one page...
 @=
 
 (struct ed/textbuf
-  (textbuf-pages u64 32)
+  (textbuf-pages u64 32) 
   (textbuf-page-count u64)
   (textbuf-len u64))
 
