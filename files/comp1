@@ -4473,6 +4473,25 @@ the compiler entry point.
   (set l0 (u64 sp 8))
   (jmp book-unref))
 
+(code sys-call-with-longret
+  (set l0 (u64 sp (* 1 8)))  ;; handle pointer
+  (set l1 (u64 sp (* 2 8)))  ;; func
+  (set l2 (u64 sp (* 3 8)))  ;; arg
+  (push x1)
+  (set (u64 l0) sp)
+  (push l2)
+  (call l1)
+  (add sp 8)
+  (pop x1)
+  (ret))
+
+(code sys-longret
+  (set l1 (u64 sp (* 1 8)))  ;; sp
+  (set l0 (u64 sp (* 2 8)))  ;; result
+  (set sp (u64 l1))
+  (pop x1)
+  (ret))
+
 (code sys-export-table
   (8 sys-call .sys-call-name)
   (8 sys-page-get .sys-page-get-name)
@@ -4481,6 +4500,8 @@ the compiler entry point.
   (8 sys-book-search-fun .sys-book-search-fun-name)
   (8 sys-book-ref .sys-book-ref-name)
   (8 sys-book-unref .sys-book-unref-name)
+  (8 sys-call-with-longret .sys-call-with-longret)
+  (8 sys-longret .sys-longret)
   (8 0 0)
 .sys-call-name
   (1 "call" 0)
@@ -4495,7 +4516,11 @@ the compiler entry point.
 .sys-book-ref-name
   (1 "book-ref" 0)
 .sys-book-unref-name
-  (1 "book-unref" 0))
+  (1 "book-unref" 0)
+.sys-call-with-longret
+  (1 "call-with-longret" 0)
+.sys-longret
+  (1 "longret" 0))
 
 @* Main
 
