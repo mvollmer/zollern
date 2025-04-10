@@ -176,7 +176,7 @@ setup_window ()
   window = SDL_CreateWindow ("Z",
                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                              1280, 1024,
-                             SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS);
+                             SDL_WINDOW_SHOWN);
 
   if (window == NULL)
     exitf (1, "%s\n", SDL_GetError());
@@ -411,7 +411,7 @@ main (int argc, char **argv)
   const char *prog;
   char **args;
 
-  setenv ("SDL_VIDEODRIVER", "x11", 0);
+  setenv ("SDL_VIDEODRIVER", "wayland", 0);
 
   init_pixels ();
 
