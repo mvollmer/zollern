@@ -257,7 +257,7 @@ input_from_code (SDL_Keycode sym, SDL_Keymod mod)
     case SDLK_HOME:
       return -EV_KEY_BEGIN;
     default:
-      if ((mod & KMOD_CTRL) && sym < 128)
+      if ((mod & (KMOD_CTRL|KMOD_ALT)) && sym < 128)
         return sym;
       else
         return 0;
