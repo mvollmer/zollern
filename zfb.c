@@ -170,12 +170,17 @@ SDL_Renderer *renderer;
 SDL_Texture *texture;
 int tx_width, tx_height;
 
+float scale = 1.0;
+
 void
 setup_window ()
 {
+  if (SDL_GetNumVideoDisplays() == 1)
+    scale = 1.25;
+
   window = SDL_CreateWindow ("Z",
                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                             1280, 1024,
+                             1280*scale, 1024*scale,
                              SDL_WINDOW_SHOWN);
 
   if (window == NULL)
@@ -210,6 +215,8 @@ configure (int width, int height)
                                width, height);
   if (texture == NULL)
     exitf (1, "%s\n", SDL_GetError());
+  if (scale != 1.0)
+    SDL_SetTextureScaleMode (texture, SDL_ScaleModeBest);
 }
 
 void
@@ -295,6 +302,8 @@ send_input_event (int input, int mod)
 {
   int x, y, state;
   state = state_from_mod (mod) | state_from_buttons (SDL_GetMouseState(&x, &y));
+  x /= scale;
+  y /= scale;
   if (input > 0)
     state &= ~EV_STATE_SHIFT;
   send_event (EV_INPUT, x, y, state, input);
