@@ -134,14 +134,34 @@ Of course, the scrollbar element itself also needs to be painted.
   (ui/paint inst (logview/sb inst) (- (ui/elt-width inst) ui/scrollbar-width) 0 ui/scrollbar-width (ui/elt-height inst)))
 @
 
-@* The rest
+@* Saving the log
 
-The log viewer doesn't react to input events itself, so we just
-pass them all on to the scrollbar.
+Obviously, it should be be possible to copy and paste text from
+the log. But that is annoying to implement, so we offer to dump
+the log into a file which can then be opened in the editor.
+
+(In fact, this log viewer should probably just [emph be] an editor
+element, in read only mode, with a special buffer. Something
+for later...) 
+
+@=
+(fun (logview/save inst)
+  (mem wbuf fs/wbuf)
+  (fs/create wbuf)
+  (log/dump fs/write wbuf)
+  (fs/commit wbuf ".log"))
+@
+
+@* The rest
 
 @=
 (fun (logview/element-input inst state input)
-  (ui/scrollbar-key-input (logview/sb inst) state input))
+  (if ((== input ch/w)
+       (logview/save inst)
+       (log/msg "Log saved.\n")
+       (ui/paint-needed inst))
+      (else
+       (ui/scrollbar-key-input (logview/sb inst) state input))))
 @
 
 And we finish with the usual element definition boilerplate.
