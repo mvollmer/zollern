@@ -79,7 +79,9 @@
   (gfx/cmd 2))
 
 (fun (gfx/read-event event)
-  (sys/read 5 event gfx/event))
+  (var n (sys/read 5 event gfx/event))
+  (if ((!= n gfx/event)
+       (sys/exit 0))))
 
 (fun (gfx/resize w h)
   (var gfx (ctxt/gfx context))

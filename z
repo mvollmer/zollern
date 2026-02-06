@@ -20,7 +20,7 @@ files/fonts: zttf z
 	./zttf /usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Oblique.ttf 12 fonts/sans-o-s >>files/fonts
 
 zfb: zfb.c
-	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags sdl2) -lrt
+	gcc -g -o zfb zfb.c $$(pkg-config --libs --cflags gtk4)
 
 zttf: zttf.c
 	gcc -g -o zttf zttf.c $$(freetype-config --cflags --libs)
