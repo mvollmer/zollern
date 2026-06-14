@@ -12,8 +12,10 @@
 
 #include <gtk/gtk.h>
 
-#define WIDTH  1280
-#define HEIGHT 1024
+#define BASE 400
+
+#define WIDTH  (4*BASE)
+#define HEIGHT (3*BASE)
 
 __attribute__ ((noreturn))
 void
@@ -310,7 +312,7 @@ void spawn() {
   close (commands_write_fd);
   close (events_read_fd);
 
-  queue_event(EV_SIZE, 1280, 1024, 0, 0);
+  queue_event(EV_SIZE, WIDTH, HEIGHT, 0, 0);
   want_event();
 
   GIOChannel *cmd_channel = g_io_channel_unix_new (commands_read_fd);
