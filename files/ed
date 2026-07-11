@@ -139,6 +139,8 @@ file can be larger than one page...
   (mark u64)
   (highlight-1 u64)
   (highlight-2 u64)
+  (note-pos u64)
+  (note-text u64)
   (point u64)
   (last-input s32)
   (last-state s32))
@@ -149,6 +151,8 @@ file can be larger than one page...
   (set (ed/title ed) title)
   (set (ed/search-len ed) -1)
   (set (ed/search-buf ed 0) 0)
+  (set (ed/note-pos ed) -1)
+  (set (ed/note-text ed) 0)
   (set (ed/mark ed) -1)
   (set (ed/point ed) 0)
   (set (ed/window-top ed) 0)
@@ -157,6 +161,8 @@ file can be larger than one page...
   ed)
 
 (fun (ed/free ed)
+  (if ((ed/note-text ed)
+       (mem/free (ed/note-text ed))))
   (mem/free ed))
 
 @* Abstracting the buffer
@@ -228,6 +234,8 @@ file can be larger than one page...
       (if ((or (== pos (ed/highlight-1 ed))
                (== pos (ed/highlight-2 ed)))
            (gfx/tint-rect (- x w) y w h 250 200 0)))
+      (if ((== pos (ed/note-pos ed))
+           (gfx/tint-rect (- x w) y w h 250 0 0)))
       (if ((and (>= (ed/search-len ed) 0)
                 (> pos (ed/point ed))
                 (< pos (+ (ed/point ed) (ed/search-match-len ed))))
@@ -274,7 +282,7 @@ file can be larger than one page...
          (set buf (+ buf 1))
          (set i (+ i 1))))
       (else
-       (var txt (ed/title ed))
+       (var txt (if ((== (ed/point ed) (ed/note-pos ed)) (ed/note-text ed)) (else (ed/title ed))))
        (while (u8 txt)
          (set x (+ x (gfx/glyph fonts/mono x y (u8 txt))))
          (set txt (+ txt 1)))
@@ -793,3 +801,12 @@ file can be larger than one page...
   (set (ed/last-input ed) input)
   (set (ed/last-state ed) state)
   (ed/highlight ed))
+
+(fun (ed/set-note ed pos text)
+  (if ((ed/note-text ed)
+       (mem/free (ed/note-text ed))))
+  (set (ed/note-pos ed) pos)
+  (if (text
+       (set (ed/note-text ed) (str/dup text)))
+      (else
+       (set (ed/note-text ed) 0))))

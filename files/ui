@@ -273,11 +273,13 @@ it early enough during boot.
 
 @=
 (struct ui/context
+  c-root
   c-focus)
 
 (fun (ui/init)
   (var c (mem/alloc ui/context))
   (set (ctxt/ui context) c)
+  (set (ui/c-root c) 0)
   (set (ui/c-focus c) 0))
 
 (fun (ui/set-focus inst)
@@ -362,6 +364,8 @@ The [code ui/button] element uses this, for example.
   (var control-x-prefix 0)
   (var grab 0)
   (var gfx (ctxt/gfx context))
+  (var ctxt (ctxt/ui context))
+  (set (ui/c-root ctxt) root)
   (gfx/reset-window)
   (gfx/clear)
   (ui/paint 0 root 0 0 (gfx/gfx-screen-width gfx) (gfx/gfx-screen-height gfx))
@@ -385,7 +389,6 @@ The [code ui/button] element uses this, for example.
               (set (ui/qr-top res) 0)
               (if ((ui/query-xy root x y res)
                    (var top (ui/qr-top res))
-                   (var c (ctxt/ui context))
                    (if ((== input gfx/ev-button-1-press)
                         (ui/set-focus (ui/qr-focus res))
                         (set grab top))
@@ -404,7 +407,7 @@ The [code ui/button] element uses this, for example.
               (if (control-x-prefix
                    (global-input-handler global-input-data state input x y))
                   (else
-                   (var target (ui/c-focus (ctxt/ui context)))
+                   (var target (ui/c-focus ctxt))
                    (if (target
                         ((ui/-eltf-input (ui/-elt-functions target)) target state input x y)))))
               (set control-x-prefix 0)))))

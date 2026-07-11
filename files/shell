@@ -812,3 +812,20 @@ never return.
   (var inst (ui/new shell/root-instance shell/root-funcs))
   (shell/cmd-view (shell/r-sidebar inst) "intro")
   (ui/loop inst shell/root-global-input inst))
+@
+
+@* The Shell API
+
+@=
+(fun (shell/edit-with-note name pos note)
+  (var inst (shell/r-sidebar (ui/c-root (ctxt/ui context))))
+  (shell/cmd-edit inst name)
+  (var ed (shell/find-element inst name "ed"))
+  (ed/set-note (shell/ed-ed ed) pos note)) 
+
+(fun (shell/reset-notes name)
+  (var inst (shell/r-sidebar (ui/c-root (ctxt/ui context))))
+  (var ed (shell/find-element inst name "ed"))
+  (if (ed
+       (ed/set-note (shell/ed-ed ed) -1 0))))
+@
